@@ -89,9 +89,8 @@ export class WebSocketTransport implements ConnectionTransport {
   async closeAndWait() {
     if (this.ws.readyState === WebSocket.CLOSED)
       return;
-    const promise = new Promise((f: any) => this.ws.addEventListener('close', f));
     this.close();
-    await promise; // Make sure to await the actual disconnect.
+    // TODO wait for close event
   }
 
   toString(): string {
