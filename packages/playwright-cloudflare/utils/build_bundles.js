@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 const bundles = {
   'utilsBundleImpl': '../../playwright-core/bundles/utils',
   'zipBundleImpl': '../../playwright-core/bundles/zip',
+  'fs': '../bundles/fs',
 };
 
 const external = [
