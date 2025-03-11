@@ -1,0 +1,9 @@
+name = "cloudflare-playwright-example"
+main = "src/index.ts"
+workers_dev = true
+compatibility_flags = ["nodejs_compat_v2"]
+compatibility_date = "2025-03-05"
+upload_source_maps = true
+
+[browser]
+binding = "MYBROWSER"
