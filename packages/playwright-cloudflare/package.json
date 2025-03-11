@@ -1,0 +1,21 @@
+{
+  "name": "@cloudflare/playwright",
+  "version": "0.0.1-next",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "scripts": {
+    "generate-injected:core": "cd ../.. && node ./utils/generate_injected.js", 
+    "build:bundles": "node utils/build_bundles.js",
+    "build": "npm run generate-injected:core && npm run build:bundles && vite build"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250310.0",
+    "vite": "^5.0.13"
+  }
+}
