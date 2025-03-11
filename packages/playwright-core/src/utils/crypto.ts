@@ -17,7 +17,13 @@
 import crypto from 'crypto';
 
 export function createGuid(): string {
-  return crypto.randomBytes(16).toString('hex');
+  // crypto.randomBytes fails in Cloudflare Workers:
+  // Uncaught Error: Disallowed operation called within global scope. Asynchronous I/O
+  // (ex: fetch() or connect()), setting a timeout, and generating random values are not allowed within
+  // global scope. To fix this error, perform this operation within a handler.
+  return Array.from({ length: 16 }, () => Math.floor(Math.random() * 256))
+      .map(byte => byte.toString(16).padStart(2, '0'))
+      .join('');
 }
 
 export function calculateSha1(buffer: Buffer | string): string {
