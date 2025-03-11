@@ -11,9 +11,13 @@
   },
   "scripts": {
     "generate-injected:core": "cd ../.. && node ./utils/generate_injected.js", 
+    "ci:core:bundles:utils": "cd ../playwright-core/bundles/utils && npm ci --save=false --fund=false --audit=false",
+    "ci:core:bundles:zip": "cd ../playwright-core/bundles/zip && npm ci --save=false --fund=false --audit=false",
+    "ci:bundles:fs": "cd ./bundles/fs && npm ci --save=false --fund=false --audit=false",
+    "ci:bundles": "npm run ci:core:bundles:utils && npm run ci:core:bundles:zip && npm run ci:bundles:fs",
     "build:bundles": "node utils/build_bundles.js",
     "build:types": "node utils/copy_types.js",
-    "build": "npm run generate-injected:core && npm run build:bundles && npm run build:types && vite build"
+    "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:types && vite build"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250310.0",
