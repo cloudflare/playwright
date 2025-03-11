@@ -29,8 +29,7 @@ export default {
 
     const img = await page.screenshot();
 
-    // TODO not working yet 
-    // await browser.close();
+    await browser.close();
 
     return new Response(img, {
       headers: {
