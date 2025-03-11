@@ -3,7 +3,7 @@ import fs from 'fs';
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 
 import type { Browser, BrowserWorker, WorkersLaunchOptions } from '../..';
-import { kBrowserConnectParams } from './workersWebSocketTransport';
+import { kBrowserConnectParams } from './webSocketTransport';
 
 const FAKE_HOST = 'ws://fake.host';
 

@@ -40,8 +40,8 @@ export default defineConfig({
       './zipBundleImpl': path.resolve(__dirname, './src/generated/zipBundleImpl'),
       'fs': path.resolve(__dirname, './src/generated/fs'),
 
-      './transport': path.resolve(__dirname, './src/cloudflare/workersWebSocketTransport'),
-      '../transport': path.resolve(__dirname, './src/cloudflare/workersWebSocketTransport'),
+      './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
+      '../transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
 
       // IMPORTANT `require('../playwright')` in `recorderApp.ts` causes a circular dependency,
       // so we need to mock it (it's not needed, it's related with recorder).
