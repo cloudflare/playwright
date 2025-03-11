@@ -1,0 +1,8 @@
+{
+  "name": "fs-bundle",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "memfs": "^4.17.0"
+  }
+}
