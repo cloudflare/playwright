@@ -26,8 +26,8 @@ import type { Location } from './../types/testReporter';
 import { calculateSha1, isRegExp, isString, sanitizeForFilePath, stringifyStackFrames } from 'playwright-core/lib/utils';
 import type { RawStack } from 'playwright-core/lib/utils';
 
-const PLAYWRIGHT_TEST_PATH = path.join(__dirname, '..');
-const PLAYWRIGHT_CORE_PATH = path.dirname(require.resolve('playwright-core/package.json'));
+const PLAYWRIGHT_TEST_PATH = '.';
+const PLAYWRIGHT_CORE_PATH = '.';
 
 export function filterStackTrace(e: Error): { message: string, stack: string } {
   const name = e.name ? e.name + ': ' : '';
