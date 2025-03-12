@@ -11,6 +11,8 @@ lib/**/injected/
 # Include playwright types
 !types/**/*.d.ts
 
-# Include types from lib, but not map files.
+# Include playwright core and test entry points
 !index.js
 !index.d.ts
+!test.js
+!test.d.ts

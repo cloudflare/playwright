@@ -1,5 +1,6 @@
 import type { Fetcher } from '@cloudflare/workers-types';
 import { launch } from "@cloudflare/playwright";
+import { expect } from "@cloudflare/playwright/test";
 
 interface Env {
   MYBROWSER: Fetcher;
@@ -26,6 +27,12 @@ export default {
       await newTodo.fill(item);
       await newTodo.press('Enter');
     }
+
+    await expect(page.getByTestId('todo-title')).toHaveCount(TODO_ITEMS.length);
+
+    await Promise.all(TODO_ITEMS.map(
+      (value, index) => expect(page.getByTestId('todo-title').nth(index)).toHaveText(value)
+    ));
 
     const img = await page.screenshot();
 

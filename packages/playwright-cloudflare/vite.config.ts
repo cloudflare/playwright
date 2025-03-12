@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       'playwright-core/lib': path.resolve(__dirname, '../playwright-core/src'),
+      'playwright/lib': path.resolve(__dirname, '../playwright/src'),
 
       // https://workers-nodejs-compat-matrix.pages.dev/
       'async_hooks': 'node:async_hooks',
@@ -38,16 +39,21 @@ export default defineConfig({
       // bundles
       './utilsBundleImpl': path.resolve(__dirname, './src/generated/utilsBundleImpl'),
       './zipBundleImpl': path.resolve(__dirname, './src/generated/zipBundleImpl'),
+      './expectBundleImpl': path.resolve(__dirname, './src/generated/expectBundleImpl'),
       'fs': path.resolve(__dirname, './src/generated/fs'),
 
+      // replace playwright transport with cloudflare workers transport
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
       '../transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
 
+      // It's not needed and this way we don't need to build and import utilsBundleImpl and babelBundleImpl
+      '../transform/transform': path.resolve(__dirname, './src/mocks/transform'),
+
       // IMPORTANT `require('../playwright')` in `recorderApp.ts` causes a circular dependency,
       // so we need to mock it (it's not needed, it's related with recorder).
-      '../playwright': path.resolve(__dirname, './src/shims/empty'),
-      './bidiOverCdp': path.resolve(__dirname, './src/shims/empty'),
-      'electron/index.js': path.resolve(__dirname, './src/shims/empty'),
+      '../playwright': path.resolve(__dirname, './src/mocks/empty'),
+      './bidiOverCdp': path.resolve(__dirname, './src/mocks/empty'),
+      'electron/index.js': path.resolve(__dirname, './src/mocks/empty'),
     },
   },
   define: {
@@ -60,7 +66,8 @@ export default defineConfig({
     minify: false,
     lib: {
       name: '@cloudflare/playwright',
-      entry: path.resolve(__dirname, './src/cloudflare/index.ts'),
+      // test also includes playwright-core
+      entry: path.resolve(__dirname, './src/cloudflare/test.ts'),
       formats: ['es'],
     },
     // prevents __defProp, __defNormalProp, __publicField in compiled code
@@ -82,7 +89,6 @@ export default defineConfig({
         'node:crypto',
         'node:dns',
         'node:events',
-        'node:fs',
         'node:http',
         'node:http2',
         'node:https',
@@ -109,6 +115,7 @@ export default defineConfig({
       ],
       include: [
         path.resolve(__dirname, '../playwright-core/src/**/*'),
+        path.resolve(__dirname, '../playwright/src/**/*'),
         /node_modules/,
       ],
     }

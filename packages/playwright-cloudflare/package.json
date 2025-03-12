@@ -7,14 +7,19 @@
     ".": {
       "types": "./index.d.ts",
       "default": "./index.js"
+    },
+    "./test": {
+      "types": "./test.d.ts",
+      "default": "./test.js"
     }
   },
   "scripts": {
     "generate-injected:core": "cd ../.. && node ./utils/generate_injected.js", 
     "ci:core:bundles:utils": "cd ../playwright-core/bundles/utils && npm ci --save=false --fund=false --audit=false",
     "ci:core:bundles:zip": "cd ../playwright-core/bundles/zip && npm ci --save=false --fund=false --audit=false",
+    "ci:test:bundles:expect": "cd ../playwright/bundles/expect && npm ci --save=false --fund=false --audit=false",
     "ci:bundles:fs": "cd ./bundles/fs && npm ci --save=false --fund=false --audit=false",
-    "ci:bundles": "npm run ci:core:bundles:utils && npm run ci:core:bundles:zip && npm run ci:bundles:fs",
+    "ci:bundles": "npm run ci:core:bundles:utils && npm run ci:core:bundles:zip && npm run ci:test:bundles:expect && npm run ci:bundles:fs",
     "build:bundles": "node utils/build_bundles.js",
     "build:types": "node utils/copy_types.js",
     "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:types && vite build"
