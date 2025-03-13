@@ -1,15 +1,12 @@
 {
   "name": "cloudflare-playwright-example",
   "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {},
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "devDependencies": {
     "@cloudflare/playwright": "file:../..",
-    "@cloudflare/puppeteer": "^0.0.14",
     "@cloudflare/workers-types": "^4.20250303.0",
     "wrangler": "^3.112.0"
   }

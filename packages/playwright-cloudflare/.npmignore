@@ -12,7 +12,5 @@ lib/**/injected/
 !types/**/*.d.ts
 
 # Include playwright core and test entry points
-!index.js
 !index.d.ts
-!test.js
 !test.d.ts

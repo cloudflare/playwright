@@ -2,8 +2,8 @@ import fs from 'fs';
 
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 
-import type { Browser, BrowserWorker, WorkersLaunchOptions } from '../..';
-import { storageManager } from './webSocketTransport';
+import type { Browser, BrowserWorker, WorkersLaunchOptions } from '..';
+import { storageManager } from './cloudflare/webSocketTransport';
 
 const FAKE_HOST = 'ws://fake.host';
 
