@@ -1,8 +1,12 @@
 {
   "name": "@cloudflare/playwright",
+  "description": "Playwright for Cloudflare Workers",
   "version": "0.0.1-next",
   "license": "Apache-2.0",
   "type": "module",
+  "publishConfig": {
+    "access": "restricted"
+  },
   "exports": {
     ".": {
       "types": "./index.d.ts",
@@ -10,7 +14,7 @@
     }
   },
   "scripts": {
-    "generate-injected:core": "cd ../.. && node ./utils/generate_injected.js", 
+    "generate-injected:core": "cd ../.. && node ./utils/generate_injected.js",
     "ci:core:bundles:utils": "cd ../playwright-core/bundles/utils && npm ci --save=false --fund=false --audit=false",
     "ci:core:bundles:zip": "cd ../playwright-core/bundles/zip && npm ci --save=false --fund=false --audit=false",
     "ci:bundles:fs": "cd ./bundles/fs && npm ci --save=false --fund=false --audit=false",
