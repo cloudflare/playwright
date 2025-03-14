@@ -1,9 +1,9 @@
-import fs from 'fs';
+import * as FS from 'fs';
 import { Browser } from './types/types';
 
 export * from './types/types';
 
-export const fs: typeof fs;
+export const fs: typeof FS;
 
 export interface BrowserWorker {
   fetch: typeof fetch;
