@@ -29,8 +29,9 @@
     "ci:bundles:fs": "cd ./bundles/fs && npm ci --save=false --fund=false --audit=false",
     "ci:bundles": "npm run ci:core:bundles:utils && npm run ci:core:bundles:zip && npm run ci:test:bundles:expect && npm run ci:bundles:fs",
     "build:bundles": "node utils/build_bundles.js",
+    "build:injected": "node utils/build_injected.js",
     "build:types": "node utils/copy_types.js",
-    "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:types && vite build"
+    "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:injected && npm run build:types && vite build"
   },
   "devDependencies": {
     "vite": "^5.0.13"
