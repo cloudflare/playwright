@@ -3,9 +3,15 @@ import type { BrowserWorker, WorkersLaunchOptions } from '../..';
 
 import { chunksToMessage, messageToChunks } from './chunking';
 import { Progress } from 'playwright-core/lib/server/progress';
+import { AsyncLocalStorage } from 'async_hooks';
 
 interface AcquireResponse {
   sessionId: string;
+}
+
+export interface LaunchParams {
+  endpoint: BrowserWorker;
+  options?: WorkersLaunchOptions;
 }
 
 declare global {
@@ -19,7 +25,8 @@ declare global {
 
 const FAKE_HOST = 'https://fake.host';
 
-export const kBrowserConnectParams = Symbol('kBrowserConnectParams');
+// stores the endpoint and options for client -> server communication
+export const storageManager = new AsyncLocalStorage<LaunchParams>();
 
 export class WebSocketTransport implements ConnectionTransport {
   ws: WebSocket;
@@ -29,11 +36,12 @@ export class WebSocketTransport implements ConnectionTransport {
   onclose?: () => void;
   sessionId: string;
   
-  static async connect(progress: (Progress|undefined), url: string, headers?: Record<string, string>, followRedirects?: boolean, debugLogHeader?: string): Promise<WebSocketTransport> {
-    const params = (globalThis as any)[kBrowserConnectParams];
-    if (!params?.endpoint)
+  static async connect(progress: (Progress|undefined), url: string): Promise<WebSocketTransport> {
+    // read the endpoint and options injected in cliend side
+    const data = storageManager.getStore();
+    if (!data?.endpoint)
       throw new Error('Endpoint is not available in the current zone');
-    return await WebSocketTransport.create(params.endpoint, params.options);
+    return await WebSocketTransport.create(data.endpoint, data.options);
   }
 
   static async create(
