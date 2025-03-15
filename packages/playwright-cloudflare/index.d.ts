@@ -1,5 +1,5 @@
 import * as FS from 'fs';
-import { Browser } from './types/types';
+import { Playwright, Browser } from './types/types';
 
 export * from './types/types';
 
@@ -100,3 +100,5 @@ export async function history(endpoint: BrowserWorker): Promise<ClosedSession[]>
  * @returns current limits
  */
 export async function limits(endpoint: BrowserWorker): Promise<LimitsResponse>;
+
+export default Playwright;

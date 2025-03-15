@@ -1,3 +1,4 @@
 src/bundles/
 src/injected/
+.vitest-reports
 types/

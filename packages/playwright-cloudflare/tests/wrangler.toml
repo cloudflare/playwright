@@ -1,0 +1,14 @@
+name = "test-workers"
+main = "src/index.ts"
+workers_dev = true
+compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-03-05"
+upload_source_maps = true
+
+[browser]
+binding = "BROWSER"
+
+[assets]
+directory = "../../../tests/assets"
+binding = "ASSETS"
+run_worker_first = true

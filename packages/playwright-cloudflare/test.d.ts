@@ -1,3 +1,3 @@
 export * from './index';
+export { expect, mergeExpects } from './types/test';
 
-export { expect } from './types/test';
