@@ -19,6 +19,12 @@
       "import": "./lib/esm/test.js",
       "require": "./lib/cjs/test.js",
       "default": "./lib/esm/test.js"
+    },
+    "./internal": {
+      "types": "./internal.d.ts",
+      "import": "./lib/esm/internal.js",
+      "require": "./lib/cjs/internal.js",
+      "default": "./lib/esm/internal.js"
     }
   },
   "scripts": {
@@ -31,7 +37,13 @@
     "build:bundles": "node utils/build_bundles.js",
     "build:injected": "node utils/build_injected.js",
     "build:types": "node utils/copy_types.js",
-    "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:injected && npm run build:types && vite build"
+    "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:injected && npm run build:types && npx vite build",
+    "test:generate:worker": "node ./utils/generate_worker_tests.js",
+    "test:generate:proxy": "node ./utils/generate_proxy_tests.js",
+    "test:deploy": "npm run test:generate:worker && cd tests && npm ci --save=false --fund=false --audit=false && npx wrangler deploy",
+    "test:dev": "npm run test:generate:worker && cd tests && npx wrangler dev --remote",
+    "test:full": "npm run test:generate:proxy && cd tests && npx vitest run",
+    "test:smoke": "npm run test:generate:proxy && cd tests && npx vitest run -t '@smoke'"
   },
   "devDependencies": {
     "vite": "^5.0.13"

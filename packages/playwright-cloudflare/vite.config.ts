@@ -51,7 +51,13 @@ export default defineConfig({
       './snapshotterInjected': path.resolve(__dirname, './src/injected/snapshotterInjected'),
 
       // It's not needed and this way we don't need to build and import utilsBundleImpl and babelBundleImpl
+      './transform': path.resolve(__dirname, './src/mocks/transform'),
       '../transform/transform': path.resolve(__dirname, './src/mocks/transform'),
+      
+      '../transform/compilationCache': path.resolve(__dirname, './src/mocks/compilationCache'),
+      '../transform/esmUtils': path.resolve(__dirname, './src/mocks/esmUtils'),
+
+      '../common/testLoader': path.resolve(__dirname, './src/mocks/testLoader'),
 
       // IMPORTANT `require('../playwright')` in `recorderApp.ts` causes a circular dependency,
       // so we need to mock it (it's not needed, it's related with recorder).
@@ -69,8 +75,11 @@ export default defineConfig({
     minify: false,
     lib: {
       name: '@cloudflare/playwright',
-      // test also includes playwright-core
-      entry: path.resolve(__dirname, './src/test.ts'),
+      entry: [
+        path.resolve(__dirname, './src/index.ts'),
+        path.resolve(__dirname, './src/test.ts'),
+        path.resolve(__dirname, './src/internal.ts')
+      ],
     },
     // prevents __defProp, __defNormalProp, __publicField in compiled code
     target: 'esnext',
