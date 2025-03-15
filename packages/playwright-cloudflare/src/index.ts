@@ -1,3 +1,4 @@
+import './patch';
 import fs from 'fs';
 
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
