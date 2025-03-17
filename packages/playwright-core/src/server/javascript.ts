@@ -315,11 +315,14 @@ export function normalizeEvaluationExpression(expression: string, isFunction: bo
   expression = expression.trim();
 
   if (isFunction) {
-    try {
-      new Function('(' + expression + ')');
-    } catch (e1) {
-      // check if CSP doesn't allow 'unsafe-eval' or if in cloudflare context
-      if (!(e1 instanceof EvalError && e1.message.includes('unsafe-eval')) && navigator.userAgent !== 'Cloudflare-Workers') {
+    if (navigator.userAgent === 'Cloudflare-Workers') {
+      // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+      // See: https://github.com/cloudflare/workers-sdk/issues/7107
+      expression = `(() => { const __name = (target) => target; return (${expression}); })()`;
+    } else {
+      try {
+        new Function('(' + expression + ')');
+      } catch (e1) {
         // This means we might have a function shorthand. Try another
         // time prefixing 'function '.
         if (expression.startsWith('async '))
