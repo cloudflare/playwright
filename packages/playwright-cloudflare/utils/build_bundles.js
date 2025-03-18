@@ -51,7 +51,7 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
         rollupOptions: {
           external: name === 'fs' ? external : [...external, 'fs'],
           output: {
-            dir: path.join(basedir, '../src/generated'),
+            dir: path.join(basedir, '../src/bundles'),
             entryFileNames: `${name}.js`,
           },
         },

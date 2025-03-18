@@ -14,15 +14,6 @@ export interface LaunchParams {
   options?: WorkersLaunchOptions;
 }
 
-declare global {
-  interface Response {
-    readonly webSocket: WebSocket | null;
-  }
-  interface WebSocket {
-    accept(): void;
-  }
-}
-
 const FAKE_HOST = 'https://fake.host';
 
 // stores the endpoint and options for client -> server communication
@@ -36,7 +27,7 @@ export class WebSocketTransport implements ConnectionTransport {
   onclose?: () => void;
   sessionId: string;
   
-  static async connect(progress: (Progress|undefined), url: string): Promise<WebSocketTransport> {
+  static async connect(): Promise<WebSocketTransport> {
     // read the endpoint and options injected in cliend side
     const data = storageManager.getStore();
     if (!data?.endpoint)
@@ -48,7 +39,7 @@ export class WebSocketTransport implements ConnectionTransport {
     endpoint: BrowserWorker,
     options?: WorkersLaunchOptions
   ): Promise<WebSocketTransport> {
-    const sessionId = options?.sessionId ?? await connect(endpoint, options);
+    const sessionId = await connect(endpoint, options);
     const path = `${FAKE_HOST}/v1/connectDevtools?browser_session=${sessionId}`;
     const response = await endpoint.fetch(path, {
       headers: {

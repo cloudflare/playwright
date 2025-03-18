@@ -37,10 +37,10 @@ export default defineConfig({
       'zlib': 'node:zlib',
 
       // bundles
-      './utilsBundleImpl': path.resolve(__dirname, './src/generated/utilsBundleImpl'),
-      './zipBundleImpl': path.resolve(__dirname, './src/generated/zipBundleImpl'),
-      './expectBundleImpl': path.resolve(__dirname, './src/generated/expectBundleImpl'),
-      'fs': path.resolve(__dirname, './src/generated/fs'),
+      './utilsBundleImpl': path.resolve(__dirname, './src/bundles/utilsBundleImpl'),
+      './zipBundleImpl': path.resolve(__dirname, './src/bundles/zipBundleImpl'),
+      './expectBundleImpl': path.resolve(__dirname, './src/bundles/expectBundleImpl'),
+      'fs': path.resolve(__dirname, './src/bundles/fs'),
 
       // replace playwright transport with cloudflare workers transport
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
@@ -60,25 +60,36 @@ export default defineConfig({
     '__dirname': `'${baseDir}'`,
   },
   build: {
-    outDir: path.resolve(__dirname, './lib/'),
     assetsInlineLimit: 0,
     // skip code obfuscation
     minify: false,
     lib: {
       name: '@cloudflare/playwright',
       // test also includes playwright-core
-      entry: path.resolve(__dirname, './src/cloudflare/test.ts'),
-      formats: ['es'],
+      entry: path.resolve(__dirname, './src/test.ts'),
     },
     // prevents __defProp, __defNormalProp, __publicField in compiled code
     target: 'esnext',
     rollupOptions: {
-      output: {
-        preserveModules: true,
-        preserveModulesRoot: 'src',
-        entryFileNames: '[name].js',
-        chunkFileNames: '[name].js',
-      },
+      output: [
+        {
+          format: 'es',
+          dir: 'lib/esm',
+          preserveModules: true,
+          preserveModulesRoot: 'src',
+          entryFileNames: '[name].js',
+          chunkFileNames: '[name].js',
+        },
+        {
+          format: 'cjs',
+          dir: 'lib/cjs',
+          preserveModules: true,
+          preserveModulesRoot: 'src',
+          entryFileNames: '[name].js',
+          chunkFileNames: '[name].js',
+          exports: 'named',
+        },
+      ],
       external: [
         'node:async_hooks',
         'node:assert',

@@ -6,11 +6,15 @@
   "exports": {
     ".": {
       "types": "./index.d.ts",
-      "default": "./index.js"
+      "import": "./lib/esm/index.js",
+      "require": "./lib/cjs/index.js",
+      "default": "./lib/esm/index.js"
     },
     "./test": {
       "types": "./test.d.ts",
-      "default": "./test.js"
+      "import": "./lib/esm/test.js",
+      "require": "./lib/cjs/test.js",
+      "default": "./lib/esm/test.js"
     }
   },
   "scripts": {
@@ -25,7 +29,6 @@
     "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:types && vite build"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250310.0",
     "vite": "^5.0.13"
   }
 }
