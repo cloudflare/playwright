@@ -1,5 +1,5 @@
 import type { Fetcher } from '@cloudflare/workers-types';
-import { launch } from "@cloudflare/playwright";
+import { launch, fs } from "@cloudflare/playwright";
 import { expect } from "@cloudflare/playwright/test";
 
 interface Env {
@@ -10,9 +10,12 @@ export default {
   async fetch(request: Request, env: Env) {
     const { searchParams } = new URL(request.url);
     const todos = searchParams.getAll('todo');
+    const trace = searchParams.has('trace');
 
     const browser = await launch(env.MYBROWSER);
     const page = await browser.newPage();
+
+    if (trace) await page.context().tracing.start({ screenshots: true, snapshots: true });
     
     await page.goto('https://demo.playwright.dev/todomvc');
 
@@ -34,14 +37,26 @@ export default {
       (value, index) => expect(page.getByTestId('todo-title').nth(index)).toHaveText(value)
     ));
 
-    const img = await page.screenshot();
+    if (trace) {
+      await page.context().tracing.stop({ path: 'trace.zip' });
+      await browser.close();
+      const file = await fs.promises.readFile('trace.zip');
 
-    await browser.close();
-
-    return new Response(img, {
-      headers: {
-        'Content-Type': 'image/png',
-      },
-    });
+      return new Response(file, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/zip',
+        },
+      });
+    } else {
+      const img = await page.screenshot();
+      await browser.close();
+  
+      return new Response(img, {
+        headers: {
+          'Content-Type': 'image/png',
+        },
+      });
+    }
   },
 };

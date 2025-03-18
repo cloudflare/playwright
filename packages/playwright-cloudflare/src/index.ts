@@ -1,13 +1,16 @@
+import './patch';
 import fs from 'fs';
 
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 
 import type { Browser, BrowserWorker, WorkersLaunchOptions } from '..';
 import { storageManager } from './cloudflare/webSocketTransport';
-
-const FAKE_HOST = 'ws://fake.host';
+import { wrapClientApis } from './cloudflare/wrapClientApis';
 
 const playwright = createInProcessPlaywright();
+wrapClientApis();
+
+const FAKE_HOST = 'ws://fake.host';
 
 export async function launch(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<Browser> {
   // keeps the endpoint and options for client -> server async communication

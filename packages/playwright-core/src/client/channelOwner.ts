@@ -25,6 +25,7 @@ import { zones } from '../utils/zones';
 import type { ClientInstrumentation } from './clientInstrumentation';
 import type { Connection } from './connection';
 import type { Logger } from './types';
+import { apiCallZone } from '../../../playwright-cloudflare/src/cloudflare/apiCallZone';
 
 type Listener = (...args: any[]) => void;
 
@@ -166,8 +167,10 @@ export abstract class ChannelOwner<T extends channels.Channel = channels.Channel
     if (apiZone)
       return await func(apiZone);
 
+    const apiCall = apiCallZone.getStore();
+
     const stackTrace = captureLibraryStackTrace(stack);
-    let apiName: string | undefined = stackTrace.apiName;
+    let apiName: string | undefined = apiCall?.apiName ?? stackTrace.apiName;
     const frames: channels.StackFrame[] = stackTrace.frames;
 
     isInternal = isInternal || this._type === 'LocalUtils';
