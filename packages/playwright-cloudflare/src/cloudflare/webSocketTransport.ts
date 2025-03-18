@@ -2,22 +2,19 @@ import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from 'pla
 import type { BrowserWorker, WorkersLaunchOptions } from '../..';
 
 import { chunksToMessage, messageToChunks } from './chunking';
-import { Progress } from 'playwright-core/lib/server/progress';
 import { AsyncLocalStorage } from 'async_hooks';
 
-interface AcquireResponse {
+interface WorkersConnectOptions {
   sessionId: string;
-}
-
-export interface LaunchParams {
-  endpoint: BrowserWorker;
-  options?: WorkersLaunchOptions;
 }
 
 const FAKE_HOST = 'https://fake.host';
 
 // stores the endpoint and options for client -> server communication
-export const storageManager = new AsyncLocalStorage<LaunchParams>();
+export const storageManager = new AsyncLocalStorage<{
+  endpoint: BrowserWorker;
+  options?: WorkersLaunchOptions | WorkersConnectOptions;
+}>();
 
 export class WebSocketTransport implements ConnectionTransport {
   ws: WebSocket;
@@ -37,9 +34,9 @@ export class WebSocketTransport implements ConnectionTransport {
 
   static async create(
     endpoint: BrowserWorker,
-    options?: WorkersLaunchOptions
+    options?: WorkersLaunchOptions | WorkersConnectOptions
   ): Promise<WebSocketTransport> {
-    const sessionId = await connect(endpoint, options);
+    const sessionId = (options as WorkersConnectOptions)?.sessionId ?? await acquire(endpoint, options as WorkersLaunchOptions);
     const path = `${FAKE_HOST}/v1/connectDevtools?browser_session=${sessionId}`;
     const response = await endpoint.fetch(path, {
       headers: {
@@ -97,7 +94,7 @@ export class WebSocketTransport implements ConnectionTransport {
   }
 }
 
-async function connect(endpoint: BrowserWorker, options?: WorkersLaunchOptions) {
+async function acquire(endpoint: BrowserWorker, options?: WorkersLaunchOptions) {
   let acquireUrl = `${FAKE_HOST}/v1/acquire`;
   if (options?.keep_alive)
     acquireUrl = `${acquireUrl}?keep_alive=${options.keep_alive}`;
@@ -111,6 +108,6 @@ async function connect(endpoint: BrowserWorker, options?: WorkersLaunchOptions) 
     );
   }
   // Got a 200, so response text is actually an AcquireResponse
-  const response: AcquireResponse = JSON.parse(text);
+  const response: WorkersConnectOptions = JSON.parse(text);
   return response.sessionId;
 }
