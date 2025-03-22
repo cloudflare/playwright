@@ -1,3 +1,5 @@
+import './browser-rendering/api.spec.ts';
+
 import '../workerTests/page/elementhandle-bounding-box.spec.ts';
 import '../workerTests/page/elementhandle-click.spec.ts';
 import '../workerTests/page/elementhandle-content-frame.spec.ts';
