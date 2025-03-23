@@ -104,6 +104,12 @@ export class Dispatcher<Type extends { guid: string }, ChannelType, ParentScopeT
 
   async _handleCommand(callMetadata: CallMetadata, method: string, validParams: any) {
     const commandPromise = (this as any)[method](validParams, callMetadata);
+
+    // workaround to prevent the following warning from occuring in workers runtime:
+    // A promise rejection was handled asynchronously. This warning occurs when attaching a catch handler to a promise after it rejected. (rejection #1)
+    if (callMetadata.potentiallyClosesScope)
+      return await commandPromise;
+
     try {
       return await this._openScope.race(commandPromise);
     } catch (e) {
