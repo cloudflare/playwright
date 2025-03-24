@@ -7,6 +7,8 @@ import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
 import { ManualPromise } from 'playwright-core/lib/utils';
 
+export { debug } from 'playwright-core/lib/utilsBundle';
+
 // @ts-ignore
 export const _baseTest: TestType<{}, {}> = rootTestType.test;
 

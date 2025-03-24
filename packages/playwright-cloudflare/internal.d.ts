@@ -54,3 +54,11 @@ export class TestRunner {
   constructor(options?: { timeout?: number });
   runTest(file: string, testId: string): Promise<TestEndPayload>;
 }
+
+interface Debug {
+  disable: () => string;
+  enable: (namespaces: string) => void;
+  enabled: (namespaces: string) => boolean;
+}
+
+export const debug: Debug;
