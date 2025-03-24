@@ -9,9 +9,10 @@ const sourceTestsDir = path.join(basedir, '..', '..', '..', 'tests');
 const workerTestsDir = path.join(basedir, '..', 'tests', 'workerTests');
 
 const testExtendFiles = [
-  'page/pageTest.ts',
+  'config/browserTest.ts',
   'config/utils.ts',
   'config/errors.ts',
+  'page/pageTest.ts',
 ];
 
 const content = fs.readFileSync(path.join(basedir, '../tests/src/tests.ts'), { encoding: 'utf-8' });

@@ -123,6 +123,8 @@ import '../workerTests/page/selectors-vue.spec.ts';
 import '../workerTests/page/wheel.spec.ts';
 import '../workerTests/page/workers.spec.ts';
 
+import '../workerTests/library/browsercontext-pages.spec.ts';
+
 export const skipTests: string[][] = [
   ["page/elementhandle-screenshot.spec.ts", "element screenshot", "path option should create subdirectories"], // Error: Error: [unenv] fs.readFile is not implemented yet!
   ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should capture full element when larger than viewport in parallel"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-larger-than-viewport-workers.png, writing actual.

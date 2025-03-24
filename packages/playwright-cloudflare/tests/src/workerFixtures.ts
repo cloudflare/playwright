@@ -1,7 +1,7 @@
 import type { Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, ViewportSize } from "@cloudflare/playwright/test";
-import type { ScreenshotMode, VideoMode } from "../../types/test";
+import type { BrowserContextOptions, ScreenshotMode, VideoMode } from "../../types/test";
 import { expect } from "@cloudflare/playwright/test";
-import { _baseTest } from "@cloudflare/playwright/internal";
+import { _baseTest, debug } from "@cloudflare/playwright/internal";
 import playwright from "@cloudflare/playwright";
 
 export { expect } from '@cloudflare/playwright/test';
@@ -72,6 +72,10 @@ export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
   isElectron: boolean;
 };
 
+type BrowserTestTestFixtures = {
+  contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>;
+};
+
 export type TestModeName = 'default' | 'driver' | 'service' | 'service2';
 
 export type TestModeWorkerOptions = {
@@ -97,7 +101,7 @@ export function setAssetsUrl(url: string) {
   assetsUrl = url;
 }
 
-export const test = platformTest.extend<PageTestFixtures & ServerFixtures & TestModeTestFixtures, WorkersWorkerFixtures & PlaywrightWorkerArgs & BrowserTestWorkerFixtures & PageWorkerFixtures & TestModeWorkerOptions>({
+export const test = platformTest.extend<PageTestFixtures & ServerFixtures & TestModeTestFixtures & BrowserTestTestFixtures, WorkersWorkerFixtures & PlaywrightWorkerArgs & BrowserTestWorkerFixtures & PageWorkerFixtures & TestModeWorkerOptions>({
   headless: [true, { scope: 'worker' }],
   channel: ['stable', { scope: 'worker' }],
   screenshot: ['off', { scope: 'worker' }],
@@ -136,10 +140,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await run(browser);
   }, { scope: 'worker' }],
 
-  context: async ({ browser }, run) => {
-    const context = await browser.newContext();
-    await run(context);
-    await context.close();
+  context: async ({ contextFactory }, run) => {
+    await run(await contextFactory());
   },
 
   page: async ({ context }, run) => {
@@ -177,6 +179,17 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   loopback: async ({}, run, testInfo) => {
     testInfo.skip(true, 'assets not supported, skipping');
+  },
+
+  contextFactory: async ({ browser }: any, run) => {
+    const contexts: BrowserContext[] = [];
+    await run(async options => {
+      const context = await browser.newContext(options);
+      contexts.push(context);
+      return context;
+    });
+    for (const context of contexts)
+      await context.close();
   },
 });
 
