@@ -3,9 +3,12 @@ import fs from 'fs';
 
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 
-import type { ActiveSession, Browser, BrowserWorker, ClosedSession, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
-import { storageManager } from './cloudflare/webSocketTransport';
+import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
+import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
+import type { AcquireResponse, ActiveSession, Browser, BrowserWorker, ClosedSession, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
+import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
 import { wrapClientApis } from './cloudflare/wrapClientApis';
+import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
 
 export { fs };
 
@@ -15,19 +18,61 @@ wrapClientApis();
 const HTTP_FAKE_HOST = 'http://fake.host';
 const WS_FAKE_HOST = 'ws://fake.host';
 
+async function createBrowser(transport: WebSocketTransport): Promise<Browser> {
+  return await transportZone.run(transport, async () => await playwright.chromium.connectOverCDP(WS_FAKE_HOST) as Browser);
+}
+
 export async function connect(endpoint: BrowserWorker, sessionId: string): Promise<Browser> {
+  const webSocket = await connectDevtools(endpoint, sessionId);
+  const transport = new WebSocketTransport(webSocket, sessionId);
   // keeps the endpoint and options for client -> server async communication
-  return await storageManager.run({ endpoint, options: { sessionId } }, 
-    async () => await playwright.chromium.connectOverCDP(WS_FAKE_HOST) as Browser
-  );
+  return await createBrowser(transport);
 }
 
 export async function launch(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<Browser> {
+  const { sessionId } = await acquire(endpoint, options);
+  const webSocket = await connectDevtools(endpoint, sessionId);
+  const transport = new WebSocketTransport(webSocket, sessionId);
   // keeps the endpoint and options for client -> server async communication
-  return await storageManager.run({ endpoint, options }, 
-    // TODO this actually connects, it doesn't launch. That means that closing the browser will not close the session
-    async () => await playwright.chromium.connectOverCDP(WS_FAKE_HOST) as Browser
-  );
+  const browser = await createBrowser(transport) as Browser;
+  const browserImpl = (browser as any)._toImpl() as CRBrowser;
+  // ensure we actually close the browser
+  const doClose = async () => {
+    const message: ProtocolRequest = { method: 'Browser.close', id: kBrowserCloseMessageId, params: {} };
+    transport.send(message);
+  };
+  browserImpl.options.browserProcess = { close: doClose, kill: doClose };
+  return browser;
+}
+
+async function connectDevtools(endpoint: BrowserWorker, sessionId: string): Promise<WebSocket> {
+  const path = `${HTTP_FAKE_HOST}/v1/connectDevtools?browser_session=${sessionId}`;
+  const response = await endpoint.fetch(path, {
+    headers: {
+      Upgrade: 'websocket'
+    },
+  });
+  const webSocket = response.webSocket!;
+  webSocket.accept();
+  return webSocket;
+}
+
+export async function acquire(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<AcquireResponse> {
+  let acquireUrl = `${HTTP_FAKE_HOST}/v1/acquire`;
+  if (options?.keep_alive)
+    acquireUrl = `${acquireUrl}?keep_alive=${options.keep_alive}`;
+
+  const res = await endpoint.fetch(acquireUrl);
+  const status = res.status;
+  const text = await res.text();
+  if (status !== 200) {
+    throw new Error(
+        `Unable to create new browser: code: ${status}: message: ${text}`
+    );
+  }
+  // Got a 200, so response text is actually an AcquireResponse
+  const response: AcquireResponse = JSON.parse(text);
+  return response;
 }
 
 export async function sessions(endpoint: BrowserWorker): Promise<ActiveSession[]> {
