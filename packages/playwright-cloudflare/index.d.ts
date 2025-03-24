@@ -40,6 +40,10 @@ export interface ClosedSession extends ActiveSession {
   closeReasonText: string; // close reason description
 }
 
+export interface AcquireResponse {
+  sessionId: string;
+}
+
 /**
  * @public
  */
@@ -73,6 +77,8 @@ export interface WorkersLaunchOptions {
 
 export async function connect(endpoint: BrowserWorker, sessionId: string): Promise<Browser>;
 export async function launch(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<Browser>;
+
+export async function acquire(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<AcquireResponse>;
 
 /**
  * Returns active sessions

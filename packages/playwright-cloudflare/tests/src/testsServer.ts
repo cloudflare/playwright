@@ -1,4 +1,4 @@
-import { launch, connect, sessions, limits } from '@cloudflare/playwright';
+import { launch, connect, sessions, limits, acquire } from '@cloudflare/playwright';
 
 import { testSuites, TestRunner } from '@cloudflare/playwright/internal';
 import { setAssetsUrl, setCurrentBrowser, setCurrentEnv } from './workerFixtures';
@@ -75,7 +75,7 @@ export default {
 
 async function connectBrowser(env: Env) {
   const actives = await sessions(env.BROWSER);
-  const [sessionId] = actives.filter(a => !a.connectionId).map(a => a.sessionId);
+  let [sessionId] = actives.filter(a => !a.connectionId).map(a => a.sessionId);
 
   if (!sessionId) {
     const sessionLimits = await limits(env.BROWSER);
@@ -84,8 +84,9 @@ async function connectBrowser(env: Env) {
     if (sessionLimits.timeUntilNextAllowedBrowserAcquisition > 0)
       throw new Error('Cannot acquire browser yet');
     console.log('🚀 Launching new browser');
+    sessionId = (await acquire(env.BROWSER)).sessionId;
   }
 
-  const browser = sessionId ? await connect(env.BROWSER, sessionId) : await launch(env.BROWSER);
+  const browser = await connect(env.BROWSER, sessionId);
   return browser;
 }

@@ -1,6 +1,6 @@
 import { setCurrentTestFile } from '@cloudflare/playwright/internal';
 import { test, expect } from '../workerFixtures';
-import { launch, connect, sessions, BrowserWorker, Browser, history } from '@cloudflare/playwright';
+import { launch, connect, sessions, BrowserWorker, Browser, history, acquire } from '@cloudflare/playwright';
 
 setCurrentTestFile("browser-rendering/api.spec.ts");
 
@@ -12,9 +12,9 @@ async function launchAndGetSession(endpoint: BrowserWorker): Promise<[Browser, s
   const before = await sessions(endpoint);
   const browser = await launch(endpoint);
   const after = await sessions(endpoint);
-  const [newSessionId] = diff(after.map(a => a.sessionId), before.map(b => b.sessionId));
-  expect(newSessionId).toBeDefined();
-  return [browser, newSessionId];
+  const newSessionIds = diff(after.map(a => a.sessionId), before.map(b => b.sessionId));
+  expect(newSessionIds).toHaveLength(1);
+  return [browser, newSessionIds[0]];
 }
 
 test(`should list sessions @smoke`, async ({ env }) => {
@@ -32,10 +32,7 @@ test(`should list sessions @smoke`, async ({ env }) => {
 });
 
 test(`should keep session open when closing browser created with connect`, async ({ env }) => {
-  const [launchedBrowse, sessionId] = await launchAndGetSession(env.BROWSER);
-  // this only works because launched browser doesn't close session yet, only disconnects from it, see test below
-  await launchedBrowse.close();
-
+  const { sessionId } = await acquire(env.BROWSER);
   const before = await sessions(env.BROWSER);
 
   const connectedBrowser = await connect(env.BROWSER, sessionId);
@@ -49,18 +46,11 @@ test(`should keep session open when closing browser created with connect`, async
   expect(afterClose.map(b => b.sessionId)).toEqual(after.map(a => a.sessionId));
 });
 
-// TODO browsers created with launch don't close session yet
-test.fixme(`should close session when launched browser is closed`, async ({ env }) => {
-  const before = await sessions(env.BROWSER);
-  const browser = await launch(env.BROWSER);
-  const after = await sessions(env.BROWSER);
-  const [newSessionId] = diff(after.map(a => a.sessionId), before.map(b => b.sessionId));
-
+test(`should close session when launched browser is closed`, async ({ env }) => {
+  const [browser, sessionId] = await launchAndGetSession(env.BROWSER);
   await browser.close();
-
   const afterClose = await sessions(env.BROWSER);
-  expect(afterClose).toHaveLength(before.length);
-  expect(afterClose.map(a => a.sessionId)).not.toContain(newSessionId);
+  expect(afterClose.map(a => a.sessionId)).not.toContain(sessionId);
 });
 
 

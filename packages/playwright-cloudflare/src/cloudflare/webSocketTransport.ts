@@ -1,20 +1,10 @@
 import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from 'playwright-core/lib/server/transport';
-import type { BrowserWorker, WorkersLaunchOptions } from '../..';
 
 import { chunksToMessage, messageToChunks } from './chunking';
 import { AsyncLocalStorage } from 'async_hooks';
 
-interface WorkersConnectOptions {
-  sessionId: string;
-}
-
-const FAKE_HOST = 'https://fake.host';
-
 // stores the endpoint and options for client -> server communication
-export const storageManager = new AsyncLocalStorage<{
-  endpoint: BrowserWorker;
-  options?: WorkersLaunchOptions | WorkersConnectOptions;
-}>();
+export const transportZone = new AsyncLocalStorage<WebSocketTransport>();
 
 export class WebSocketTransport implements ConnectionTransport {
   ws: WebSocket;
@@ -26,25 +16,10 @@ export class WebSocketTransport implements ConnectionTransport {
   
   static async connect(): Promise<WebSocketTransport> {
     // read the endpoint and options injected in cliend side
-    const data = storageManager.getStore();
-    if (!data?.endpoint)
-      throw new Error('Endpoint is not available in the current zone');
-    return await WebSocketTransport.create(data.endpoint, data.options);
-  }
-
-  static async create(
-    endpoint: BrowserWorker,
-    options?: WorkersLaunchOptions | WorkersConnectOptions
-  ): Promise<WebSocketTransport> {
-    const sessionId = (options as WorkersConnectOptions)?.sessionId ?? await acquire(endpoint, options as WorkersLaunchOptions);
-    const path = `${FAKE_HOST}/v1/connectDevtools?browser_session=${sessionId}`;
-    const response = await endpoint.fetch(path, {
-      headers: {
-        Upgrade: 'websocket'
-      },
-    });
-    response.webSocket!.accept();
-    return new WebSocketTransport(response.webSocket! as unknown as WebSocket, sessionId);
+    const transport = transportZone.getStore();
+    if (!transport)
+      throw new Error('Transport is not available in the current zone');
+    return transport;
   }
 
   constructor(ws: WebSocket, sessionId: string) {
@@ -92,22 +67,4 @@ export class WebSocketTransport implements ConnectionTransport {
   toString(): string {
     return this.sessionId;
   }
-}
-
-async function acquire(endpoint: BrowserWorker, options?: WorkersLaunchOptions) {
-  let acquireUrl = `${FAKE_HOST}/v1/acquire`;
-  if (options?.keep_alive)
-    acquireUrl = `${acquireUrl}?keep_alive=${options.keep_alive}`;
-
-  const res = await endpoint.fetch(acquireUrl);
-  const status = res.status;
-  const text = await res.text();
-  if (status !== 200) {
-    throw new Error(
-        `Unable to create new browser: code: ${status}: message: ${text}`
-    );
-  }
-  // Got a 200, so response text is actually an AcquireResponse
-  const response: WorkersConnectOptions = JSON.parse(text);
-  return response.sessionId;
 }
