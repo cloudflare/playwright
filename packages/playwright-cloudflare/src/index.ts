@@ -116,4 +116,10 @@ export async function limits(endpoint: BrowserWorker): Promise<LimitsResponse> {
   return data;
 }
 
+export const chromium = playwright.chromium;
+export const selectors = playwright.selectors;
+export const devices = playwright.devices;
+export const errors = playwright.errors;
+export const request = playwright.request;
+
 export default playwright;

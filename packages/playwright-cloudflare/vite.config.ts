@@ -10,6 +10,7 @@ export default defineConfig({
     alias: {
       'playwright-core/lib': path.resolve(__dirname, '../playwright-core/src'),
       'playwright/lib': path.resolve(__dirname, '../playwright/src'),
+      'playwright-core': path.resolve(__dirname, '../playwright-cloudflare/src/index'),
 
       // https://workers-nodejs-compat-matrix.pages.dev/
       'async_hooks': 'node:async_hooks',

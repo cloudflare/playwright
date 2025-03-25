@@ -24,6 +24,14 @@ export function transformConfig() {
   };
 }
 
+export function setSingleTSConfig() {
+  // do nothing
+}
+
+export function singleTSConfig() {
+  // do nothing
+}
+
 export function wrapFunctionWithLocation<A extends any[], R>(func: (location: Location, ...args: A) => R): (...args: A) => R {
   return (...args) => {
     const location = {

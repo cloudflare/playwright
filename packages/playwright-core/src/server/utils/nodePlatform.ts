@@ -61,7 +61,7 @@ export function setBoxedStackPrefixes(prefixes: string[]) {
   boxedStackPrefixes = prefixes;
 }
 
-const coreDir = path.dirname(require.resolve('../../../package.json'));
+const coreDir = path.dirname('.');
 
 export const nodePlatform: Platform = {
   name: 'node',

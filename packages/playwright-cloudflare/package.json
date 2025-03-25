@@ -58,6 +58,6 @@
     "test:smoke": "npm run test:generate:proxy && cd tests && npx playwright test --grep \"@smoke\""
   },
   "devDependencies": {
-    "vite": "^5.0.13"
+    "vite": "^6.1.0"
   }
 }
