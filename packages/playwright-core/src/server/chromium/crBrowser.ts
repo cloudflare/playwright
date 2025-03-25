@@ -531,6 +531,9 @@ export class CRBrowserContext extends BrowserContext {
       return;
     }
 
+    // PATCH ensure all pages are closed before closing the context
+    await Promise.all(this._crPages().map(page => page.closePage(true))).catch(() => {});
+
     await this._browser._session.send('Target.disposeBrowserContext', { browserContextId: this._browserContextId });
     this._browser._contexts.delete(this._browserContextId);
     for (const [targetId, serviceWorker] of this._browser._serviceWorkers) {
