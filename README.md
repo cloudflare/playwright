@@ -1,3 +1,11 @@
+# Workers version of Playwright
+
+This repo is an experimental work-in-progress fork of [Playwright](https://playwright.dev/) that has been modified to be compatible with Cloudflare Workers and [Browser Rendering](https://developers.cloudflare.com/browser-rendering/).
+
+We are working on developer documentation on installing and using this package and will update this page soon.
+
+Original README follows:
+
 # 🎭 Playwright
 
 [![npm version](https://img.shields.io/npm/v/playwright.svg)](https://www.npmjs.com/package/playwright) <!-- GEN:chromium-version-badge -->[![Chromium version](https://img.shields.io/badge/chromium-124.0.6367.29-blue.svg?logo=google-chrome)](https://www.chromium.org/Home)<!-- GEN:stop --> <!-- GEN:firefox-version-badge -->[![Firefox version](https://img.shields.io/badge/firefox-124.0-blue.svg?logo=firefoxbrowser)](https://www.mozilla.org/en-US/firefox/new/)<!-- GEN:stop --> <!-- GEN:webkit-version-badge -->[![WebKit version](https://img.shields.io/badge/webkit-17.4-blue.svg?logo=safari)](https://webkit.org/)<!-- GEN:stop -->
