@@ -12,7 +12,10 @@ export async function proxyTests(file: string) {
 
   return {
     beforeAll: async () => {
-      websocket = new WebSocket(`${testsServerUrl}/${file}`.replace(/^http/, 'ws'));
+      const wsUrl = new URL(`${testsServerUrl}/${file}`.replace(/^http/, 'ws'));
+      if (process.env.CI)
+        wsUrl.searchParams.set('timeout', '30');
+      websocket = new WebSocket(wsUrl);
       websocket.addEventListener('message',  (ev: MessageEvent) => {
         const payload = JSON.parse(ev.data as string) as TestPayload;
         const promise = testResults.get(payload.testId);
