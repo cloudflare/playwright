@@ -1,4 +1,4 @@
-name = "test-workers"
+name = "playwright-test-workers"
 main = "src/index.ts"
 workers_dev = true
 compatibility_flags = ["nodejs_compat"]
