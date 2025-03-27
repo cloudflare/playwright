@@ -10,6 +10,10 @@
     "allowSyntheticDefaultImports": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
+    "paths": {
+      "@workerTests/*": ["./workerTests/*"],
+      "@cloudflareTests/*": ["./workerTests/packages/playwright-cloudflare/tests/src/*"],
+    },
     "types": ["./worker-configuration.d.ts"]
   },
   "include": ["./**/*.ts", "./**/*.d.ts"],
