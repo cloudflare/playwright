@@ -8,5 +8,6 @@ export default defineConfig({
     maxConcurrency: 1,
     minWorkers: 1,
     maxWorkers: 1,
+    globalSetup: './src/globalSetup.ts',
   },
 });

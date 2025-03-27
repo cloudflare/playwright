@@ -1,6 +1,9 @@
 import type { TestEndPayload } from "@cloudflare/playwright/internal";
 import { ManualPromise } from "./manualPromise";
 import { WebSocket, MessageEvent } from "ws";
+import { inject } from 'vitest';
+
+const sessionId = inject('sessionId');
 
 type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'errors'>;
 
@@ -15,6 +18,8 @@ export async function proxyTests(file: string) {
       const wsUrl = new URL(`${testsServerUrl}/${file}`.replace(/^http/, 'ws'));
       if (process.env.CI)
         wsUrl.searchParams.set('timeout', '30');
+      if (sessionId)
+        wsUrl.searchParams.set('sessionId', sessionId);
       websocket = new WebSocket(wsUrl);
       websocket.addEventListener('message',  (ev: MessageEvent) => {
         const payload = JSON.parse(ev.data as string) as TestPayload;
