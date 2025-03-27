@@ -8,6 +8,7 @@ import { WorkerMain } from 'playwright/lib/worker/workerMain';
 import { ManualPromise } from 'playwright-core/lib/utils';
 
 export { debug } from 'playwright-core/lib/utilsBundle';
+export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
 
 // @ts-ignore
 export const _baseTest: TestType<{}, {}> = rootTestType.test;

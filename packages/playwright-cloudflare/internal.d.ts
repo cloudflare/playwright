@@ -1,3 +1,5 @@
+import { isUnderTest } from 'playwright-core/lib/utils';
+
 export * from './tests';
 export { expect, _baseTest, Fixtures } from './types/test';
 
@@ -62,3 +64,6 @@ interface Debug {
 }
 
 export const debug: Debug;
+
+export function setUnderTest(underTest: boolean): boolean;
+export function isUnderTest(): boolean;
