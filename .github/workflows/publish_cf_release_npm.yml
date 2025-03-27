@@ -5,7 +5,7 @@ on:
     types: [published]
 
 jobs:
-  release:
+  cf-release:
     name: "publish to NPM"
     runs-on: ubuntu-latest
     steps:
