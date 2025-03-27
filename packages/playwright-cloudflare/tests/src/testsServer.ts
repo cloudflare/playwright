@@ -1,7 +1,7 @@
 import { connect, sessions, limits, acquire } from '@cloudflare/playwright';
 
 import { testSuites, TestRunner, setUnderTest } from '@cloudflare/playwright/internal';
-import { setAssetsUrl, setCurrentBrowser, setCurrentEnv } from './workerFixtures';
+import { setCurrentContext } from './workerFixtures';
 
 import { skipTests } from './tests';
 
@@ -21,7 +21,7 @@ const skipTestsFullTitles = new Set(skipTests.map(t => t.join(' > ')));
 setUnderTest(true);
 
 export default {
-  
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const timeout = url.searchParams.has('timeout') ? parseInt(url.searchParams.get('timeout')!, 10) * 1000 : 10_000;
@@ -29,24 +29,23 @@ export default {
     const file = url.pathname.substring(1);
 
     const upgradeHeader = request.headers.get('Upgrade');
-    
+
     if (upgradeHeader !== 'websocket') {
       const suites = await testSuites();
       const response = file ? suites.find(s => s.file === file) : suites;
       return response ? Response.json(response) : new Response('Not found', { status: 404 });
     }
-    
+
     const webSocketPair = new WebSocketPair();
     const [client, server] = Object.values(webSocketPair);
     server.accept();
-    
-    setCurrentEnv(env);
 
     const browser = await connectBrowser(env, sessionId);
-    setCurrentBrowser(browser);
     // we need to run browser rendering in dev remote mode,
     // so URL will ne a public one which is what we need
-    setAssetsUrl(url.origin);
+    const assetsUrl = url.origin;
+
+    setCurrentContext({ env, browser, assetsUrl });
 
     const testRunner = new TestRunner({ timeout });
 
@@ -60,14 +59,14 @@ export default {
       }
 
       console.log(`🧪 Running ${fullTitle}`);
-      
+
       testRunner.runTest(file, testId)
         .then(result => send(server, result))
         .catch(e => server.close(1011, e.message));
     });
     server.addEventListener('close', () => {
       browser.close().catch(e => console.error(e));
-      setCurrentBrowser(undefined);
+      setCurrentContext(undefined);
     });
 
     return new Response(null, {

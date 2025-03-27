@@ -31,7 +31,12 @@
       "import": "./lib/esm/bundles/fs.js",
       "require": "./lib/cjs/bundles/fs.js",
       "default": "./lib/esm/bundles/fs.js"
-    }
+    },
+    "./lib/*": {
+      "import": "./lib/esm/playwright-core/src/*.js",
+      "require": "./lib/cjs/playwright-core/src/*.js",
+      "default": "./lib/esm/playwright-core/src/*.js"
+		}
   },
   "scripts": {
     "generate-injected:core": "cd ../.. && node ./utils/generate_injected.js",

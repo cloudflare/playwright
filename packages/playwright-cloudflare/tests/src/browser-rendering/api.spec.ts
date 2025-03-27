@@ -1,8 +1,5 @@
-import { setCurrentTestFile } from '@cloudflare/playwright/internal';
 import { test, expect } from '../workerFixtures';
 import { launch, connect, sessions, BrowserWorker, Browser, history, acquire } from '@cloudflare/playwright';
-
-setCurrentTestFile("browser-rendering/api.spec.ts");
 
 async function launchAndGetSession(endpoint: BrowserWorker): Promise<[Browser, string]> {
   const browser = await launch(endpoint);
@@ -55,5 +52,3 @@ test(`should add new session to history when launching browser`, async ({ env })
 
   await launchedBrowse.close();
 });
-
-setCurrentTestFile(undefined);
