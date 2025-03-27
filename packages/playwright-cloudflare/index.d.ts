@@ -3,8 +3,6 @@ import { Playwright, Browser } from './types/types';
 
 export * from './types/types';
 
-export const fs: typeof FS;
-
 /**
  * @public
  */

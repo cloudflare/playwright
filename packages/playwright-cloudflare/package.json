@@ -25,6 +25,12 @@
       "import": "./lib/esm/internal.js",
       "require": "./lib/cjs/internal.js",
       "default": "./lib/esm/internal.js"
+    },
+    "./fs": {
+      "types": "./fs.d.ts",
+      "import": "./lib/esm/bundles/fs.js",
+      "require": "./lib/cjs/bundles/fs.js",
+      "default": "./lib/esm/bundles/fs.js"
     }
   },
   "scripts": {
