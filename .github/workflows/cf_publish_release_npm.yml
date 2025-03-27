@@ -1,4 +1,4 @@
-name: "publish Cloudflare release - NPM"
+name: "Cloudflare Publish - NPM"
 
 on:
   push:
