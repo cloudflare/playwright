@@ -22,6 +22,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const timeout = url.searchParams.has('timeout') ? parseInt(url.searchParams.get('timeout')!, 10) * 1000 : 10_000;
+    const sessionId = url.searchParams.get('sessionId') ?? undefined;
     const file = url.pathname.substring(1);
 
     const upgradeHeader = request.headers.get('Upgrade');
@@ -38,7 +39,7 @@ export default {
     
     setCurrentEnv(env);
 
-    const browser = await connectBrowser(env);
+    const browser = await connectBrowser(env, sessionId);
     setCurrentBrowser(browser);
     // we need to run browser rendering in dev remote mode,
     // so URL will ne a public one which is what we need
@@ -73,9 +74,11 @@ export default {
   }
 };
 
-async function connectBrowser(env: Env) {
-  const actives = await sessions(env.BROWSER);
-  let [sessionId] = actives.filter(a => !a.connectionId).map(a => a.sessionId);
+async function connectBrowser(env: Env, sessionId?: string) {
+  if (!sessionId) {
+    const actives = await sessions(env.BROWSER);
+    sessionId = actives.filter(a => !a.connectionId).map(a => a.sessionId)[0];
+  }
 
   if (!sessionId) {
     const sessionLimits = await limits(env.BROWSER);
