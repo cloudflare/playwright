@@ -1,5 +1,4 @@
 import './patch';
-import fs from 'fs';
 
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 
@@ -10,8 +9,6 @@ import { transportZone, WebSocketTransport } from './cloudflare/webSocketTranspo
 import { wrapClientApis } from './cloudflare/wrapClientApis';
 import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
 import { isUnderTest } from 'playwright-core/lib/utils';
-
-export { fs };
 
 const playwright = createInProcessPlaywright();
 wrapClientApis();

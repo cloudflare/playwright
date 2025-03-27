@@ -1,6 +1,7 @@
 import type { Fetcher } from '@cloudflare/workers-types';
-import { launch, fs } from "@cloudflare/playwright";
+import { launch } from "@cloudflare/playwright";
 import { expect } from "@cloudflare/playwright/test";
+import fs from "@cloudflare/playwright/fs";
 
 interface Env {
   MYBROWSER: Fetcher;
