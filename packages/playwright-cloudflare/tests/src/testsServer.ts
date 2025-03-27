@@ -1,6 +1,6 @@
-import { launch, connect, sessions, limits, acquire } from '@cloudflare/playwright';
+import { connect, sessions, limits, acquire } from '@cloudflare/playwright';
 
-import { testSuites, TestRunner } from '@cloudflare/playwright/internal';
+import { testSuites, TestRunner, setUnderTest } from '@cloudflare/playwright/internal';
 import { setAssetsUrl, setCurrentBrowser, setCurrentEnv } from './workerFixtures';
 
 import { skipTests } from './tests';
@@ -16,6 +16,9 @@ function send(ws: WebSocket, message: any) {
 }
 
 const skipTestsFullTitles = new Set(skipTests.map(t => t.join(' > ')));
+
+// ensure we are in test mode
+setUnderTest(true);
 
 export default {
   

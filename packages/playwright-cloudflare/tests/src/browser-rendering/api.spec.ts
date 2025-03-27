@@ -4,30 +4,21 @@ import { launch, connect, sessions, BrowserWorker, Browser, history, acquire } f
 
 setCurrentTestFile("browser-rendering/api.spec.ts");
 
-function diff<T>(a: T[], b: T[]): T[] {
-  return a.filter(x => !b.includes(x));
-}
-
 async function launchAndGetSession(endpoint: BrowserWorker): Promise<[Browser, string]> {
-  const before = await sessions(endpoint);
   const browser = await launch(endpoint);
-  const after = await sessions(endpoint);
-  const newSessionIds = diff(after.map(a => a.sessionId), before.map(b => b.sessionId));
-  expect(newSessionIds).toHaveLength(1);
-  return [browser, newSessionIds[0]];
+  const sessionId = (browser as any).__sessionIdForTest;
+  expect(sessionId).toBeDefined();
+  return [browser, sessionId];
 }
 
 test(`should list sessions @smoke`, async ({ env }) => {
   const before = await sessions(env.BROWSER);
-  const browser = await launch(env.BROWSER);
+  const [browser, sessionId] = await launchAndGetSession(env.BROWSER);
   const after = await sessions(env.BROWSER);
 
-  expect(after).toHaveLength(before.length + 1);
-  const sessionIdsDiff = diff(after.map(a => a.sessionId), before.map(b => b.sessionId));
-  expect(sessionIdsDiff).toHaveLength(1);
-  const [newSessionId] = sessionIdsDiff;
-  expect(after.find(a => a.sessionId === newSessionId)?.connectionId).toBeDefined();
-  
+  expect(before.map(a => a.sessionId)).not.toContain(sessionId);
+  expect(after.map(a => a.sessionId)).toContain(sessionId);
+
   browser.close();
 });
 

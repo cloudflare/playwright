@@ -9,6 +9,7 @@ import type { AcquireResponse, ActiveSession, Browser, BrowserWorker, ClosedSess
 import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
 import { wrapClientApis } from './cloudflare/wrapClientApis';
 import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
+import { isUnderTest } from 'playwright-core/lib/utils';
 
 export { fs };
 
@@ -35,6 +36,10 @@ export async function launch(endpoint: BrowserWorker, options?: WorkersLaunchOpt
   const transport = new WebSocketTransport(webSocket, sessionId);
   // keeps the endpoint and options for client -> server async communication
   const browser = await createBrowser(transport) as Browser;
+
+  if (isUnderTest())
+    (browser as any).__sessionIdForTest = sessionId;
+
   const browserImpl = (browser as any)._toImpl() as CRBrowser;
   // ensure we actually close the browser
   const doClose = async () => {
