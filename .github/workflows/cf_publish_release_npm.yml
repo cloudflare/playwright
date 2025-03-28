@@ -49,14 +49,3 @@ jobs:
           npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
-
-      - name: Commit and push version bump
-        if: ${{ steps.version.outputs.VERSION != '0.0.0-test' }}
-        run: |
-          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
-          git config user.name "GitHub Actions"
-          git config user.email "ci@github.com"
-          git commit -am "chore: set version to ${GITHUB_REF#refs/tags/v}"
-          git push origin HEAD
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
