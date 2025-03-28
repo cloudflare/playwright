@@ -42,25 +42,28 @@ jobs:
           # Set the output for later steps
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Set version to match tag
-        run: npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
-
       - name: Dry run
         run: |
           cd packages/playwright-cloudflare
+          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
           npm publish --dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
       - name: Publish to npm
         if: ${{ steps.version.outputs.VERSION != '0.0.0-test' }}
-        run: npm publish
+        
+        run: |
+          cd packages/playwright-cloudflare
+          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Commit and push version bump
         if: ${{ steps.version.outputs.VERSION != '0.0.0-test' }}
         run: |
+          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
           git config user.name "GitHub Actions"
           git config user.email "ci@github.com"
           git commit -am "chore: set version to ${GITHUB_REF#refs/tags/v}"
