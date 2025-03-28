@@ -3,7 +3,7 @@ import { launch, connect, sessions, BrowserWorker, Browser, history, acquire } f
 
 async function launchAndGetSession(endpoint: BrowserWorker): Promise<[Browser, string]> {
   const browser = await launch(endpoint);
-  const sessionId = (browser as any).__sessionIdForTest;
+  const sessionId = browser.sessionId();
   expect(sessionId).toBeDefined();
   return [browser, sessionId];
 }

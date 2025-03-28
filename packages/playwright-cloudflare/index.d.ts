@@ -3,6 +3,17 @@ import { Playwright, Browser } from './types/types';
 
 export * from './types/types';
 
+declare module './types/types' {
+  interface Browser {
+    /**
+     * Get the BISO session ID associated with this browser
+     *
+     * @public
+     */
+    sessionId(): string;
+  }
+}
+
 /**
  * @public
  */
