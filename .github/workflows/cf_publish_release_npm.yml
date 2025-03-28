@@ -32,7 +32,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "Triggered by tag: ${GITHUB_REF#refs/tags/}"
             VERSION="${GITHUB_REF#refs/tags/}"
-          elif [[ "${GITHUB_REF}" == refs/heads/test-action ]]; then
+          elif [[ "${GITHUB_REF}" == refs/heads/publish-action ]]; then
             echo "Triggered by push to publish-action branch"
             VERSION="0.0.0-test"
           else
