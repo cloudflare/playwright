@@ -41,14 +41,6 @@ jobs:
           fi
           # Set the output for later steps
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Dry run
-        run: |
-          cd packages/playwright-cloudflare
-          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
-          npm publish --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
       
       - name: Publish to npm
         run: |
