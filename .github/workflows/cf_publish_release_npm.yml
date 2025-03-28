@@ -41,6 +41,7 @@ jobs:
           fi
           # Set the output for later steps
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+      
       - name: Publish to npm
         run: |
           cd packages/playwright-cloudflare
