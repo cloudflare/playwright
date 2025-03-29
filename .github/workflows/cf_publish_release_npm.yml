@@ -3,13 +3,10 @@ name: "Cloudflare Publish - NPM"
 on:
   release:
     types: [published]
-  push:
-    branches:
-      - publish-action
 
 jobs:
   cf-release:
-    name: "publish to NPM"
+    name: "Publish Cloudflare Playwright to NPM"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,9 +29,6 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "Triggered by tag: ${GITHUB_REF#refs/tags/}"
             VERSION="${GITHUB_REF#refs/tags/}"
-          elif [[ "${GITHUB_REF}" == refs/heads/publish-action ]]; then
-            echo "Triggered by push to publish-action branch"
-            VERSION="0.0.0-test"
           else
             echo "❌ Unexpected trigger: ${GITHUB_REF}"
             exit 1
