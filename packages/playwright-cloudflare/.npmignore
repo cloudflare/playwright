@@ -11,3 +11,4 @@
 # Include playwright core and test entry points
 !index.d.ts
 !test.d.ts
+!fs.d.ts
