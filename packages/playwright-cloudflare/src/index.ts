@@ -1,13 +1,14 @@
 import './patch';
 
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
+import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
+
+import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
+import { wrapClientApis } from './cloudflare/wrapClientApis';
 
 import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
 import type { AcquireResponse, ActiveSession, Browser, BrowserWorker, ClosedSession, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
-import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
-import { wrapClientApis } from './cloudflare/wrapClientApis';
-import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
 
 const playwright = createInProcessPlaywright();
 wrapClientApis();
@@ -83,7 +84,7 @@ export async function sessions(endpoint: BrowserWorker): Promise<ActiveSession[]
   const text = await res.text();
   if (status !== 200) {
     throw new Error(
-      `Unable to fetch new sessions: code: ${status}: message: ${text}`
+        `Unable to fetch new sessions: code: ${status}: message: ${text}`
     );
   }
   const data: SessionsResponse = JSON.parse(text);
@@ -96,7 +97,7 @@ export async function history(endpoint: BrowserWorker): Promise<ClosedSession[]>
   const text = await res.text();
   if (status !== 200) {
     throw new Error(
-      `Unable to fetch account history: code: ${status}: message: ${text}`
+        `Unable to fetch account history: code: ${status}: message: ${text}`
     );
   }
   const data: HistoryResponse = JSON.parse(text);
@@ -109,7 +110,7 @@ export async function limits(endpoint: BrowserWorker): Promise<LimitsResponse> {
   const text = await res.text();
   if (status !== 200) {
     throw new Error(
-      `Unable to fetch account limits: code: ${status}: message: ${text}`
+        `Unable to fetch account limits: code: ${status}: message: ${text}`
     );
   }
   const data: LimitsResponse = JSON.parse(text);

@@ -1,15 +1,20 @@
 import { connect, sessions, limits, acquire } from '@cloudflare/playwright';
-
 import { testSuites, TestRunner, setUnderTest } from '@cloudflare/playwright/internal';
-import { setCurrentContext } from './workerFixtures';
 
+import { setCurrentContext } from './workerFixtures';
 import { skipTests } from './tests';
 
 export type TestRequestPayload = {
   file: string;
   testId: string;
   fullTitle: string;
-}
+};
+
+// eslint-disable-next-line no-console
+const log = console.log.bind(console);
+
+// eslint-disable-next-line no-console
+const error = console.error.bind(console);
 
 function send(ws: WebSocket, message: any) {
   ws.send(JSON.stringify(message));
@@ -53,19 +58,19 @@ export default {
       const { testId, fullTitle } = JSON.parse(event.data) as TestRequestPayload;
 
       if (skipTestsFullTitles.has(fullTitle)) {
-        console.log(`🚫 Skipping ${fullTitle}`);
+        log(`🚫 Skipping ${fullTitle}`);
         send(server, { testId, status: 'skipped', errors: [] });
         return;
       }
 
-      console.log(`🧪 Running ${fullTitle}`);
+      log(`🧪 Running ${fullTitle}`);
 
       testRunner.runTest(file, testId)
-        .then(result => send(server, result))
-        .catch(e => server.close(1011, e.message));
+          .then(result => send(server, result))
+          .catch(e => server.close(1011, e.message));
     });
     server.addEventListener('close', () => {
-      browser.close().catch(e => console.error(e));
+      browser.close().catch(e => error(e));
       setCurrentContext(undefined);
     });
 
@@ -88,7 +93,7 @@ async function connectBrowser(env: Env, sessionId?: string) {
       throw new Error('Too many active sessions');
     if (sessionLimits.timeUntilNextAllowedBrowserAcquisition > 0)
       throw new Error('Cannot acquire browser yet');
-    console.log('🚀 Launching new browser');
+    log('🚀 Launching new browser');
     sessionId = (await acquire(env.BROWSER)).sessionId;
   }
 

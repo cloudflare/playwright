@@ -1,11 +1,11 @@
-import { MessageEvent, WebSocket } from 'ws';
 import { test as baseTest } from '@playwright/test';
+import { MessageEvent, WebSocket } from 'ws';
 
 import { ManualPromise } from './manualPromise';
 
-import type { TestInfo } from '@playwright/test';
 import type { AcquireResponse } from '@cloudflare/playwright';
 import type { TestEndPayload } from '@cloudflare/playwright/internal';
+import type { TestInfo } from '@playwright/test';
 
 type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'errors'>;
 
@@ -78,5 +78,5 @@ export async function proxyTests(file: string) {
           throw new Error(error ?? 'Test timed out');
       }
     }
-  }
+  };
 }

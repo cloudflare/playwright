@@ -54,7 +54,7 @@ export default defineConfig({
       // It's not needed and this way we don't need to build and import utilsBundleImpl and babelBundleImpl
       './transform': path.resolve(__dirname, './src/mocks/transform'),
       '../transform/transform': path.resolve(__dirname, './src/mocks/transform'),
-      
+
       '../transform/compilationCache': path.resolve(__dirname, './src/mocks/compilationCache'),
       '../transform/esmUtils': path.resolve(__dirname, './src/mocks/esmUtils'),
 

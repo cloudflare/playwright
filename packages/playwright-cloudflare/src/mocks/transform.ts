@@ -1,5 +1,6 @@
-import { currentlyLoadingFileSuite } from "playwright/lib/common/globals";
-import { playwrightTestConfig } from "../internal";
+import { currentlyLoadingFileSuite } from 'playwright/lib/common/globals';
+
+import { playwrightTestConfig } from '../internal';
 
 type Location = {
   file: string;

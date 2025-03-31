@@ -1,4 +1,3 @@
-import type { SuiteInfo, TestCaseInfo, TestEndPayload } from '../internal';
 import { setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 import { Suite, TestCase } from 'playwright/lib/common/test';
 import { loadConfig } from 'playwright/lib/common/configLoader';
@@ -6,6 +5,8 @@ import { bindFileSuiteToProject } from 'playwright/lib/common/suiteUtils';
 import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
 import { ManualPromise } from 'playwright-core/lib/utils';
+
+import type { SuiteInfo, TestCaseInfo, TestEndPayload } from '../internal';
 
 export { debug } from 'playwright-core/lib/utilsBundle';
 export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
@@ -115,7 +116,7 @@ export class TestRunner {
   constructor(options?: { timeout?: number }) {
     this._options = options;
   }
-  
+
   async runTest(file: string, testId: string): Promise<TestEndPayload> {
     const testWorker = new TestWorker(this._options);
     try {

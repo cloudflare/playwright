@@ -45,6 +45,9 @@ const ignores = [
   "output/",
   "**/playwright-report/",
   "packages/*/lib/",
+  "**/.wrangler/",
+  "packages/playwright-cloudflare/src/bundles/*",
+  "packages/playwright-cloudflare/src/injected/*",
   "packages/playwright-core/src/generated/*",
   "packages/playwright-core/src/third_party/",
   "packages/playwright-core/types/*",
@@ -407,6 +410,12 @@ export default [
     },
     rules: {
       ...noFloatingPromisesRules,
+    },
+  },
+  {
+    files: ['packages/playwright-cloudflare/**/*'],
+    rules: {
+      'notice/notice': 'off',
     },
   },
   ...reactBaseConfig.map((config) => ({
