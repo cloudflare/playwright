@@ -3,7 +3,7 @@
 ## Capabilities
 
 **Tracing**. Configure test retry strategy, capture execution trace, videos and screenshots to eliminate flakes.
-**Testing**.
+**Assertions**.
 
 ## Getting Started
 
@@ -35,6 +35,8 @@ You can find a full running example here [Cloudflare Playwright running example]
 ### Screenshot 
 
 ```js
+import { launch } from '@cloudflare/playwright';
+
 const todos = searchParams.getAll('todo');
 
 const browser = await launch(env.MYBROWSER);
@@ -54,16 +56,21 @@ for (const item of TODO_ITEMS) {
     await newTodo.press('Enter');
 }
 
-await expect(page.getByTestId('todo-title')).toHaveCount(TODO_ITEMS.length);
+const img = await page.screenshot();
+    await browser.close();
 
-await Promise.all(TODO_ITEMS.map(
-    (value, index) => expect(page.getByTestId('todo-title').nth(index)).toHaveText(value)
-));
+    return new Response(img, {
+        headers: {
+            'Content-Type': 'image/png',
+        },
+    });
 ```
 
 ### Trace
 
 ```js
+import { launch, fs } from '@cloudflare/playwright';
+
 const browser = await launch(env.MYBROWSER);
 const page = await browser.newPage();
 
@@ -86,6 +93,9 @@ return new Response(file, {
 ### Assertions
 
 ```js
+import { launch } from '@cloudflare/playwright';
+import { expect } from '@cloudflare/playwright/test';
+
 const browser = await launch(env.MYBROWSER);
 const page = await browser.newPage();
 
