@@ -2,11 +2,11 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './proxyTests',
-  reporter: process.env.CI ? 'blob' : 'html',
+  reporter: process.env.CI ? 'dot' : 'list',
   workers: 1,
   projects: [
     {
-      name: 'proxy',
+      name: 'workers',
     },
   ]
 });
