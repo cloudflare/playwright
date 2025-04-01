@@ -88,5 +88,6 @@ export function deliverBindingResult(arg: { name: string, seq: number, result?: 
 }
 
 export function createPageBindingScript(playwrightBinding: string, name: string, needsHandle: boolean) {
-  return `(${addPageBinding.toString()})(${JSON.stringify(playwrightBinding)}, ${JSON.stringify(name)}, ${needsHandle}, (${source}), (${ensureBuiltins})(globalThis))`;
+  const script = `(${addPageBinding.toString()})(${JSON.stringify(playwrightBinding)}, ${JSON.stringify(name)}, ${needsHandle}, (${source}), (${ensureBuiltins})(globalThis))`;
+  return `((__name => (${script}))(t => t))`;
 }
