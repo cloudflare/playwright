@@ -1,11 +1,25 @@
-import type { TestEndPayload } from "@cloudflare/playwright/internal";
-import { ManualPromise } from "./manualPromise";
-import { WebSocket, MessageEvent } from "ws";
-import { inject } from 'vitest';
+import { MessageEvent, WebSocket } from 'ws';
+import { test as baseTest } from '@playwright/test';
 
-const sessionId = inject('sessionId');
+import { ManualPromise } from './manualPromise';
+
+import type { TestInfo } from '@playwright/test';
+import type { AcquireResponse } from '@cloudflare/playwright';
+import type { TestEndPayload } from '@cloudflare/playwright/internal';
 
 type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'errors'>;
+
+export type WorkerFixture = {
+  sessionId: string;
+};
+
+export const test = baseTest.extend<{}, WorkerFixture>({
+  sessionId: [async ({}, use) => {
+    const response = await fetch(`${testsServerUrl}/v1/acquire`, { method: 'GET' });
+    const { sessionId } = await response.json() as AcquireResponse;
+    await use(sessionId);
+  }, { scope: 'worker' }],
+});
 
 const testsServerUrl = process.env.TESTS_SERVER_URL ?? `http://localhost:8787`;
 
@@ -14,7 +28,7 @@ export async function proxyTests(file: string) {
   let websocket!: WebSocket;
 
   return {
-    beforeAll: async () => {
+    beforeAll: async ({ sessionId }: WorkerFixture) => {
       const wsUrl = new URL(`${testsServerUrl}/${file}`.replace(/^http/, 'ws'));
       if (process.env.CI)
         wsUrl.searchParams.set('timeout', '30');
@@ -38,12 +52,12 @@ export async function proxyTests(file: string) {
         }
       });
     },
-  
+
     afterAll: async () => {
       websocket.close();
     },
 
-    runTest: async ({ testId, fullTitle, skip }: { testId: string, fullTitle: string, skip: () => void }) => {
+    runTest: async ({ testId, fullTitle }: { testId: string, fullTitle: string }, testInfo: TestInfo) => {
       const testPromise = new ManualPromise<TestPayload>();
       testResults.set(testId, testPromise);
       websocket.send(JSON.stringify({ testId, fullTitle }));
@@ -57,9 +71,9 @@ export async function proxyTests(file: string) {
         case 'failed':
           throw new Error(error ?? 'Test failed');
         case 'skipped':
-          skip();
+          testInfo.skip();
         case 'interrupted':
-          skip();
+          testInfo.skip();
         case 'timedOut':
           throw new Error(error ?? 'Test timed out');
       }

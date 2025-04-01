@@ -14,15 +14,14 @@ function generateDescribeOrTest(entry, indent = '') {
   const title = entry.title.replace('\'', '\\\'');
   const fullTitle = entry.fullTitle.replace('\'', '\\\'');
   if (entry.type === 'describe') {
-    return `${indent}describe('${title}', async () => {
+    return `${indent}test.describe('${title}', async () => {
 ${entry.entries.map(entry => generateDescribeOrTest(entry, `${indent}  `)).join('\n\n')}
 ${indent}});`;
   } else {
-    return `${indent}test('${title}', async ({ skip }) => await proxy.runTest({
+    return `${indent}test('${title}', async ({}, testInfo) => await proxy.runTest({
 ${indent}  testId: '${entry.testId}',
 ${indent}  fullTitle: '${fullTitle}',
-${indent}  skip,
-${indent}}));`;
+${indent}}, testInfo));`;
   }
 }
 
@@ -32,14 +31,16 @@ ${indent}}));`;
     const targetProxyTestFile = path.join(proxyTestsDir, suite.file);
     const proxyTests = path.join(basedir, '../tests/src/proxyTests.ts');
     const relativePath = path.relative(path.dirname(targetProxyTestFile), proxyTests).replace(/\\/g, '/');
-    writeFile(targetProxyTestFile, `import { describe, test, beforeAll, afterAll } from 'vitest';
-import { proxyTests } from '${relativePath}';
+    writeFile(targetProxyTestFile, `import { proxyTests, test } from '${relativePath}';
 
-const proxy = await proxyTests('${suite.file}');
+let proxy: any;
 
-beforeAll(async () => await proxy.beforeAll());
+test.beforeAll(async ({ sessionId }) => {
+  proxy = await proxyTests('${suite.file}');
+  await proxy.beforeAll({ sessionId });
+});
 
-afterAll(async () => await proxy.afterAll());
+test.afterAll(async () => await proxy.afterAll());
 
 ${suite.entries.map(entry => generateDescribeOrTest(entry)).join('\n\n')}
 `);
