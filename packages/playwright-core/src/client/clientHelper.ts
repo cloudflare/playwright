@@ -31,7 +31,9 @@ export function envObjectToArray(env: types.Env): { name: string, value: string 
 
 export async function evaluationScript(platform: Platform, fun: Function | string | { path?: string, content?: string }, arg?: any, addSourceUrl: boolean = true): Promise<string> {
   if (typeof fun === 'function') {
-    const source = fun.toString();
+    // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+    // See: https://github.com/cloudflare/workers-sdk/issues/7107
+    const source = `((__name => (${fun.toString()}))(t => t))`;
     const argString = Object.is(arg, undefined) ? 'undefined' : JSON.stringify(arg);
     return `(${source})(${argString})`;
   }

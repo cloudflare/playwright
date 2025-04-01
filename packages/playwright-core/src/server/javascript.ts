@@ -297,7 +297,7 @@ export function normalizeEvaluationExpression(expression: string, isFunction: bo
     if (navigator.userAgent === 'Cloudflare-Workers') {
       // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
       // See: https://github.com/cloudflare/workers-sdk/issues/7107
-      expression = `(() => { const __name = (target) => target; return (${expression}); })()`;
+      expression = `((__name => (${expression}))(t => t))`;
     } else {
       try {
         new Function('(' + expression + ')');
