@@ -55,14 +55,14 @@ export const playwrightTestConfig = {
   projects: [
     {
       timeout: 5000,
-      name: 'workers',
+      name: 'chromium',
     },
   ],
 };
 
-const configLocation = {
-  resolvedConfigFile: 'playwright.config.ts',
-  configDir: 'playwright.config.ts',
+export const configLocation = {
+  resolvedConfigFile: '/tmp/workerTests/playwright.config.ts',
+  configDir: '/tmp/workerTests',
 };
 
 async function bindSuites() {
