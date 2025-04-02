@@ -1,8 +1,6 @@
 # Workers version of Playwright
 
-This repo is an experimental work-in-progress fork of [Playwright](https://playwright.dev/) that has been modified to be compatible with Cloudflare Workers and [Browser Rendering](https://developers.cloudflare.com/browser-rendering/).
-
-We are working on developer documentation on installing and using this package and will update this page soon.
+This repo is an experimental work-in-progress fork of [Playwright](https://playwright.dev/) that has been modified to be compatible with Cloudflare Workers and [Browser Rendering](https://developers.cloudflare.com/browser-rendering/). For installation and usage instructions specific to this fork, see our [Developer Documentation](./packages/playwright-cloudflare/README.md).
 
 Original README follows:
 
