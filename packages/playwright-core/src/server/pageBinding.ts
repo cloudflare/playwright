@@ -88,6 +88,8 @@ export function deliverBindingResult(arg: { name: string, seq: number, result?: 
 }
 
 export function createPageBindingScript(playwrightBinding: string, name: string, needsHandle: boolean) {
+  // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+  // See: https://github.com/cloudflare/workers-sdk/issues/7107
   const script = `(${addPageBinding.toString()})(${JSON.stringify(playwrightBinding)}, ${JSON.stringify(name)}, ${needsHandle}, (${source}), (${ensureBuiltins})(globalThis))`;
   return `((__name => (${script}))(t => t))`;
 }
