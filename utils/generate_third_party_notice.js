@@ -49,8 +49,10 @@ This project incorporates components from the projects listed below. The origina
     const allPackages = {};
     const projectDir = path.join(__dirname, '..', 'packages', project);
     const bundlesDir = path.join(projectDir, 'bundles');
-    for (const bundle of fs.readdirSync(bundlesDir)) {
-      const dir = path.join(bundlesDir, bundle);
+    for (const bundle of fs.readdirSync(bundlesDir, { withFileTypes: true })) {
+      if (!bundle.isDirectory())
+        continue;
+      const dir = path.join(bundlesDir, bundle.name);
       execSync('npm ci', { cwd: dir });
       const packages = await checkDir(dir);
       for (const [key, value] of Object.entries(packages)) {
@@ -59,7 +61,7 @@ This project incorporates components from the projects listed below. The origina
       }
     }
 
-    const packages = await checkDir('node_modules/codemirror-shadow-1');
+    const packages = await checkDir('node_modules/codemirror');
     for (const [key, value] of Object.entries(packages)) {
       if (value.licenseText)
         allPackages[key] = value;

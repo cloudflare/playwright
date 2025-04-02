@@ -15,13 +15,11 @@
  * limitations under the License.
  */
 
-import { test as it, expect } from './pageTest';
+import { test as it, expect, rafraf } from './pageTest';
 import { attachFrame, detachFrame } from '../config/utils';
+import type { Page } from '@playwright/test';
 
-async function giveItAChanceToClick(page) {
-  for (let i = 0; i < 5; i++)
-    await page.evaluate(() => new Promise(f => requestAnimationFrame(() => requestAnimationFrame(f))));
-}
+const giveItAChanceToClick = (page: Page) => rafraf(page, 5);
 
 it('should click the button @smoke', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/input/button.html');
@@ -87,8 +85,9 @@ it('should click on a span with an inline element inside', async ({ page }) => {
   expect(await page.evaluate('CLICKED')).toBe(42);
 });
 
-it('should not throw UnhandledPromiseRejection when page closes', async ({ page, isWebView2 }) => {
+it('should not throw UnhandledPromiseRejection when page closes', async ({ page, isWebView2, browserName, isWindows }) => {
   it.skip(isWebView2, 'Page.close() is not supported in WebView2');
+  it.fixme(browserName === 'firefox' && isWindows, 'makes the next test to always timeout');
 
   await Promise.all([
     page.close(),
@@ -96,8 +95,38 @@ it('should not throw UnhandledPromiseRejection when page closes', async ({ page,
   ]).catch(e => {});
 });
 
-it('should click the 1x1 div', async ({ page }) => {
+it('should click the aligned 1x1 div', async ({ page }) => {
   await page.setContent(`<div style="width: 1px; height: 1px;" onclick="window.__clicked = true"></div>`);
+  await page.click('div');
+  expect(await page.evaluate('window.__clicked')).toBe(true);
+});
+
+it('should click the half-aligned 1x1 div', async ({ page }) => {
+  await page.setContent(`<div style="margin-left: 20.5px; margin-top: 11.5px; width: 1px; height: 1px;" onclick="window.__clicked = true"></div>`);
+  await page.click('div');
+  expect(await page.evaluate('window.__clicked')).toBe(true);
+});
+
+it('should click the unaligned 1x1 div v1', async ({ page }) => {
+  await page.setContent(`<div style="margin-left: 20.23px; margin-top: 11.65px; width: 1px; height: 1px;" onclick="window.__clicked = true"></div>`);
+  await page.click('div');
+  expect(await page.evaluate('window.__clicked')).toBe(true);
+});
+
+it('should click the unaligned 1x1 div v2', async ({ page }) => {
+  await page.setContent(`<div style="margin-left: 20.68px; margin-top: 11.13px; width: 1px; height: 1px;" onclick="window.__clicked = true"></div>`);
+  await page.click('div');
+  expect(await page.evaluate('window.__clicked')).toBe(true);
+});
+
+it('should click the unaligned 1x1 div v3', async ({ page }) => {
+  await page.setContent(`<div style="margin-left: 20.68px; margin-top: 11.52px; width: 1px; height: 1px;" onclick="window.__clicked = true"></div>`);
+  await page.click('div');
+  expect(await page.evaluate('window.__clicked')).toBe(true);
+});
+
+it('should click the unaligned 1x1 div v4', async ({ page }) => {
+  await page.setContent(`<div style="margin-left: 20.15px; margin-top: 11.24px; width: 1px; height: 1px;" onclick="window.__clicked = true"></div>`);
   await page.click('div');
   expect(await page.evaluate('window.__clicked')).toBe(true);
 });
@@ -338,7 +367,7 @@ it('should click the button inside an iframe', async ({ page, server }) => {
 });
 
 it('should click the button with fixed position inside an iframe', async ({ page, server, browserName }) => {
-  it.fixme(browserName === 'chromium' || browserName === 'webkit');
+  it.fixme(browserName === 'chromium');
 
   // @see https://github.com/GoogleChrome/puppeteer/issues/4110
   // @see https://bugs.chromium.org/p/chromium/issues/detail?id=986390
@@ -455,6 +484,8 @@ it('should wait for stable position', async ({ page, server }) => {
     button.style.display = 'block';
     document.body.style.margin = '0';
   });
+  // rafraf for Firefox to kick in the animation.
+  await rafraf(page);
   await page.click('button');
   expect(await page.evaluate(() => window['result'])).toBe('Clicked');
   expect(await page.evaluate('pageX')).toBe(300);
@@ -979,7 +1010,7 @@ it('should click in a transformed iframe', async ({ page }) => {
   expect(await page.evaluate('window._clicked')).toBe(true);
 });
 
-it('should click a button that is overlayed by a permission popup', async ({ page, server }) => {
+it('should click a button that is overlaid by a permission popup', async ({ page, server }) => {
   it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/23280' });
   await page.setViewportSize({ width: 500, height: 500 });
   await page.goto(server.EMPTY_PAGE);
@@ -1070,7 +1101,7 @@ it('ensure events are dispatched in the individual tasks', async ({ page, browse
     function onClick(name) {
       console.log(`click ${name}`);
 
-      setTimeout(function() {
+      window.builtins.setTimeout(function() {
         console.log(`timeout ${name}`);
       }, 0);
 

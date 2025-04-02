@@ -1,8 +1,11 @@
 [*]
 ../
+../codegen/language.ts
+../codegen/languages.ts
 ../isomorphic/**
 ../registry/**
-../../common/
+../utils/**
+../../generated/pollingRecorderSource.ts
 ../../protocol/
 ../../utils/**
 ../../utilsBundle.ts

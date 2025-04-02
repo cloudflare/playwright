@@ -104,38 +104,23 @@ await page.Keyboard.PressAsync("Shift+A");
 An example to trigger select-all with the keyboard
 
 ```js
-// on Windows and Linux
-await page.keyboard.press('Control+A');
-// on macOS
-await page.keyboard.press('Meta+A');
+await page.keyboard.press('ControlOrMeta+A');
 ```
 
 ```java
-// on Windows and Linux
-page.keyboard().press("Control+A");
-// on macOS
-page.keyboard().press("Meta+A");
+page.keyboard().press("ControlOrMeta+A");
 ```
 
 ```python async
-# on windows and linux
-await page.keyboard.press("Control+A")
-# on mac_os
-await page.keyboard.press("Meta+A")
+await page.keyboard.press("ControlOrMeta+A")
 ```
 
 ```python sync
-# on windows and linux
-page.keyboard.press("Control+A")
-# on mac_os
-page.keyboard.press("Meta+A")
+page.keyboard.press("ControlOrMeta+A")
 ```
 
 ```csharp
-// on Windows and Linux
-await page.Keyboard.PressAsync("Control+A");
-// on macOS
-await page.Keyboard.PressAsync("Meta+A");
+await page.Keyboard.PressAsync("ControlOrMeta+A");
 ```
 
 ## async method: Keyboard.down
@@ -151,7 +136,8 @@ generate the text for. A superset of the [`param: key`] values can be found
 `F1` - `F12`, `Digit0`- `Digit9`, `KeyA`- `KeyZ`, `Backquote`, `Minus`, `Equal`, `Backslash`, `Backspace`, `Tab`,
 `Delete`, `Escape`, `ArrowDown`, `End`, `Enter`, `Home`, `Insert`, `PageDown`, `PageUp`, `ArrowRight`, `ArrowUp`, etc.
 
-Following modification shortcuts are also supported: `Shift`, `Control`, `Alt`, `Meta`, `ShiftLeft`.
+Following modification shortcuts are also supported: `Shift`, `Control`, `Alt`, `Meta`, `ShiftLeft`, `ControlOrMeta`.
+`ControlOrMeta` resolves to `Control` on Windows and Linux and to `Meta` on macOS.
 
 Holding down `Shift` will type the text that corresponds to the [`param: key`] in the upper case.
 
@@ -227,7 +213,8 @@ generate the text for. A superset of the [`param: key`] values can be found
 `F1` - `F12`, `Digit0`- `Digit9`, `KeyA`- `KeyZ`, `Backquote`, `Minus`, `Equal`, `Backslash`, `Backspace`, `Tab`,
 `Delete`, `Escape`, `ArrowDown`, `End`, `Enter`, `Home`, `Insert`, `PageDown`, `PageUp`, `ArrowRight`, `ArrowUp`, etc.
 
-Following modification shortcuts are also supported: `Shift`, `Control`, `Alt`, `Meta`, `ShiftLeft`.
+Following modification shortcuts are also supported: `Shift`, `Control`, `Alt`, `Meta`, `ShiftLeft`, `ControlOrMeta`.
+`ControlOrMeta` resolves to `Control` on Windows and Linux and to `Meta` on macOS.
 
 Holding down `Shift` will type the text that corresponds to the [`param: key`] in the upper case.
 
@@ -255,7 +242,7 @@ await browser.close();
 Page page = browser.newPage();
 page.navigate("https://keycode.info");
 page.keyboard().press("A");
-page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("A.png"));
+page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("A.png")));
 page.keyboard().press("ArrowLeft");
 page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get("ArrowLeft.png")));
 page.keyboard().press("Shift+O");

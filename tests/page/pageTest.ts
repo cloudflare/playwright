@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { TestType } from '@playwright/test';
+import type { Frame, Page, TestType, Locator } from '@playwright/test';
 import type { PlatformWorkerFixtures } from '../config/platformFixtures';
 import type { TestModeTestFixtures, TestModeWorkerFixtures, TestModeWorkerOptions } from '../config/testModeFixtures';
 import { androidTest } from '../android/androidTest';
@@ -26,6 +26,7 @@ import type { ServerFixtures, ServerWorkerOptions } from '../config/serverFixtur
 export { expect } from '@playwright/test';
 
 let impl: TestType<PageTestFixtures & ServerFixtures & TestModeTestFixtures, PageWorkerFixtures & PlatformWorkerFixtures & TestModeWorkerFixtures & TestModeWorkerOptions & ServerWorkerOptions> = browserTest;
+export type BoundingBox = Awaited<ReturnType<Locator['boundingBox']>>;
 
 if (process.env.PWPAGE_IMPL === 'android')
   impl = androidTest;
@@ -35,3 +36,20 @@ if (process.env.PWPAGE_IMPL === 'webview2')
   impl = webView2Test;
 
 export const test = impl;
+
+export async function rafraf(target: Page | Frame, count = 1) {
+  for (let i = 0; i < count; i++) {
+    await target.evaluate(async () => {
+      await new Promise(f => window.builtins.requestAnimationFrame(() => window.builtins.requestAnimationFrame(f)));
+    });
+  }
+}
+
+export function roundBox(box: BoundingBox): BoundingBox {
+  return {
+    x: Math.round(box.x),
+    y: Math.round(box.y),
+    width: Math.round(box.width),
+    height: Math.round(box.height),
+  };
+}

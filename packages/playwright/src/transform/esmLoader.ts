@@ -16,9 +16,11 @@
 
 import fs from 'fs';
 import url from 'url';
+
 import { addToCompilationCache, currentFileDepsCollector, serializeCompilationCache, startCollectingFileDeps, stopCollectingFileDeps } from './compilationCache';
-import { transformHook, resolveHook, setTransformConfig, shouldTransform } from './transform';
 import { PortTransport } from './portTransport';
+import { resolveHook, setSingleTSConfig, setTransformConfig, shouldTransform, transformHook } from './transform';
+import { fileIsModule } from '../util';
 
 // Node < 18.6: defaultResolve takes 3 arguments.
 // Node >= 18.6: nextResolve from the chain takes 2 arguments.
@@ -38,12 +40,23 @@ async function resolve(specifier: string, context: { parentURL?: string }, defau
   return result;
 }
 
+// non-js files have undefined
+// some js files have null
+// {module/commonjs}-typescript are changed to {module,commonjs} because we handle typescript ourselves
+const kSupportedFormats = new Map([
+  ['commonjs', 'commonjs'],
+  ['module', 'module'],
+  ['commonjs-typescript', 'commonjs'],
+  ['module-typescript', 'module'],
+  [null, null],
+  [undefined, undefined]
+]);
+
 // Node < 18.6: defaultLoad takes 3 arguments.
 // Node >= 18.6: nextLoad from the chain takes 2 arguments.
 async function load(moduleUrl: string, context: { format?: string }, defaultLoad: Function) {
   // Bail out for wasm, json, etc.
-  // non-js files have context.format === undefined
-  if (context.format !== 'commonjs' && context.format !== 'module' && context.format !== undefined)
+  if (!kSupportedFormats.has(context.format))
     return defaultLoad(moduleUrl, context, defaultLoad);
 
   // Bail for built-in modules.
@@ -62,9 +75,13 @@ async function load(moduleUrl: string, context: { format?: string }, defaultLoad
   if (transformed.serializedCache)
     await transport?.send('pushToCompilationCache', { cache: transformed.serializedCache });
 
-  // Output format is always the same as input format, if it was unknown, we always report modules.
+  // Output format is required, so we determine it manually when unknown.
   // shortCircuit is required by Node >= 18.6 to designate no more loaders should be called.
-  return { format: context.format || 'module', source: transformed.code, shortCircuit: true };
+  return {
+    format: kSupportedFormats.get(context.format) || (fileIsModule(filename) ? 'module' : 'commonjs'),
+    source: transformed.code,
+    shortCircuit: true,
+  };
 }
 
 let transport: PortTransport | undefined;
@@ -84,6 +101,11 @@ function initialize(data: { port: MessagePort }) {
 
 function createTransport(port: MessagePort) {
   return new PortTransport(port, async (method, params) => {
+    if (method === 'setSingleTSConfig') {
+      setSingleTSConfig(params.tsconfig);
+      return;
+    }
+
     if (method === 'setTransformConfig') {
       setTransformConfig(params.config);
       return;
@@ -110,4 +132,4 @@ function createTransport(port: MessagePort) {
 }
 
 
-module.exports = { resolve, load, globalPreload, initialize };
+module.exports = { globalPreload, initialize, load, resolve };

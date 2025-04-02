@@ -15,29 +15,32 @@
  */
 
 import fs from 'fs';
-import type { StackFrame } from '@protocol/channels';
-import util from 'util';
 import path from 'path';
 import url from 'url';
-import { debug, mime, minimatch, parseStackTraceLine } from 'playwright-core/lib/utilsBundle';
-import { formatCallLog } from 'playwright-core/lib/utils';
-import type { TestInfoError } from './../types/test';
+import util from 'util';
+
+import { parseStackFrame, sanitizeForFilePath, calculateSha1, isRegExp, isString, stringifyStackFrames } from 'playwright-core/lib/utils';
+import { colors, debug, mime, minimatch } from 'playwright-core/lib/utilsBundle';
+
 import type { Location } from './../types/testReporter';
-import { calculateSha1, isRegExp, isString, sanitizeForFilePath, stringifyStackFrames } from 'playwright-core/lib/utils';
+import type { TestInfoErrorImpl } from './common/ipc';
+import type { StackFrame } from '@protocol/channels';
 import type { RawStack } from 'playwright-core/lib/utils';
 
 const PLAYWRIGHT_TEST_PATH = '.';
 const PLAYWRIGHT_CORE_PATH = '.';
 
-export function filterStackTrace(e: Error): { message: string, stack: string } {
+export function filterStackTrace(e: Error): { message: string, stack: string, cause?: ReturnType<typeof filterStackTrace> } {
   const name = e.name ? e.name + ': ' : '';
+  const cause = e.cause instanceof Error ? filterStackTrace(e.cause) : undefined;
   if (process.env.PWDEBUGIMPL)
-    return { message: name + e.message, stack: e.stack || '' };
+    return { message: name + e.message, stack: e.stack || '', cause };
 
   const stackLines = stringifyStackFrames(filteredStackTrace(e.stack?.split('\n') || []));
   return {
     message: name + e.message,
-    stack: `${name}${e.message}${stackLines.map(line => '\n' + line).join('')}`
+    stack: `${name}${e.message}${stackLines.map(line => '\n' + line).join('')}`,
+    cause,
   };
 }
 
@@ -52,7 +55,7 @@ export function filterStackFile(file: string) {
 export function filteredStackTrace(rawStack: RawStack): StackFrame[] {
   const frames: StackFrame[] = [];
   for (const line of rawStack) {
-    const frame = parseStackTraceLine(line);
+    const frame = parseStackFrame(line, path.sep, !!process.env.PWDEBUGIMPL);
     if (!frame || !frame.file)
       continue;
     if (!filterStackFile(frame.file))
@@ -62,7 +65,19 @@ export function filteredStackTrace(rawStack: RawStack): StackFrame[] {
   return frames;
 }
 
-export function serializeError(error: Error | any): TestInfoError {
+export function filteredLocation(rawStack: RawStack): Location | undefined {
+  const frame = filteredStackTrace(rawStack)[0] as StackFrame | undefined;
+  if (!frame)
+    return undefined;
+  return {
+    file: frame.file,
+    line: frame.line,
+    column: frame.column
+  };
+}
+
+
+export function serializeError(error: Error | any): TestInfoErrorImpl {
   if (error instanceof Error)
     return filterStackTrace(error);
   return {
@@ -203,8 +218,8 @@ export function addSuffixToFilePath(filePath: string, suffix: string): string {
   return base + suffix + ext;
 }
 
-export function sanitizeFilePathBeforeExtension(filePath: string): string {
-  const ext = path.extname(filePath);
+export function sanitizeFilePathBeforeExtension(filePath: string, ext?: string): string {
+  ext ??= path.extname(filePath);
   const base = filePath.substring(0, filePath.length - ext.length);
   return sanitizeForFilePath(base) + ext;
 }
@@ -221,7 +236,14 @@ export function getContainedPath(parentPath: string, subPath: string = ''): stri
 
 export const debugTest = debug('pw:test');
 
-export const callLogText = formatCallLog;
+export const callLogText = (log: string[] | undefined) => {
+  if (!log || !log.some(l => !!l))
+    return '';
+  return `
+Call log:
+${colors.dim(log.join('\n'))}
+`;
+};
 
 const folderToPackageJsonPath = new Map<string, string>();
 
@@ -255,7 +277,9 @@ export function resolveReporterOutputPath(defaultValue: string, configDir: strin
   return path.resolve(basePath, defaultValue);
 }
 
-export async function normalizeAndSaveAttachment(outputPath: string, name: string, options: { path?: string, body?: string | Buffer, contentType?: string } = {}): Promise<{ name: string; path?: string | undefined; body?: Buffer | undefined; contentType: string; }> {
+export async function normalizeAndSaveAttachment(outputPath: string, name: string, options: { path?: string, body?: string | Buffer, contentType?: string } = {}): Promise<{ name: string; path?: string; body?: Buffer; contentType: string; }> {
+  if (options.path === undefined && options.body === undefined)
+    return { name, contentType: 'text/plain' };
   if ((options.path !== undefined ? 1 : 0) + (options.body !== undefined ? 1 : 0) !== 1)
     throw new Error(`Exactly one of "path" and "body" must be specified`);
   if (options.path !== undefined) {
@@ -293,8 +317,23 @@ function folderIsModule(folder: string): boolean {
   return require(packageJsonPath).type === 'module';
 }
 
-// This follows the --moduleResolution=bundler strategy from tsc.
-// https://devblogs.microsoft.com/typescript/announcing-typescript-5-0-beta/#moduleresolution-bundler
+const packageJsonMainFieldCache = new Map<string, string | undefined>();
+
+function getMainFieldFromPackageJson(packageJsonPath: string) {
+  if (!packageJsonMainFieldCache.has(packageJsonPath)) {
+    let mainField: string | undefined;
+    try {
+      mainField = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')).main;
+    } catch {
+    }
+    packageJsonMainFieldCache.set(packageJsonPath, mainField);
+  }
+  return packageJsonMainFieldCache.get(packageJsonPath);
+}
+
+// This method performs "file extension subsitution" to find the ts, js or similar source file
+// based on the import specifier, which might or might not have an extension. See TypeScript docs:
+// https://www.typescriptlang.org/docs/handbook/modules/reference.html#file-extension-substitution.
 const kExtLookups = new Map([
   ['.js', ['.jsx', '.ts', '.tsx']],
   ['.jsx', ['.tsx']],
@@ -302,7 +341,7 @@ const kExtLookups = new Map([
   ['.mjs', ['.mts']],
   ['', ['.js', '.ts', '.jsx', '.tsx', '.cjs', '.mjs', '.cts', '.mts']],
 ]);
-export function resolveImportSpecifierExtension(resolved: string): string | undefined {
+function resolveImportSpecifierExtension(resolved: string): string | undefined {
   if (fileExists(resolved))
     return resolved;
 
@@ -316,13 +355,45 @@ export function resolveImportSpecifierExtension(resolved: string): string | unde
     }
     break;  // Do not try '' when a more specific extension like '.jsx' matched.
   }
+}
+
+// This method resolves directory imports and performs "file extension subsitution".
+// It is intended to be called after the path mapping resolution.
+//
+// Directory imports follow the --moduleResolution=bundler strategy from tsc.
+// https://www.typescriptlang.org/docs/handbook/modules/reference.html#directory-modules-index-file-resolution
+// https://www.typescriptlang.org/docs/handbook/modules/reference.html#bundler
+//
+// See also Node.js "folder as module" behavior:
+// https://nodejs.org/dist/latest-v20.x/docs/api/modules.html#folders-as-modules.
+export function resolveImportSpecifierAfterMapping(resolved: string, afterPathMapping: boolean): string | undefined {
+  const resolvedFile = resolveImportSpecifierExtension(resolved);
+  if (resolvedFile)
+    return resolvedFile;
 
   if (dirExists(resolved)) {
+    const packageJsonPath = path.join(resolved, 'package.json');
+
+    if (afterPathMapping) {
+      // Most notably, the module resolution algorithm is not performed after the path mapping.
+      // This means no node_modules lookup or package.json#exports.
+      //
+      // Only the "folder as module" Node.js behavior is respected:
+      //  - consult `package.json#main`;
+      //  - look for `index.js` or similar.
+      const mainField = getMainFieldFromPackageJson(packageJsonPath);
+      const mainFieldResolved = mainField ? resolveImportSpecifierExtension(path.resolve(resolved, mainField)) : undefined;
+      return mainFieldResolved || resolveImportSpecifierExtension(path.join(resolved, 'index'));
+    }
+
     // If we import a package, let Node.js figure out the correct import based on package.json.
-    if (fileExists(path.join(resolved, 'package.json')))
+    // This also covers the "main" field for "folder as module".
+    if (fileExists(packageJsonPath))
       return resolved;
 
-    // Otherwise, try to find a corresponding index file.
+    // Implement the "folder as module" Node.js behavior.
+    // Note that we do not delegate to Node.js, because we support this for ESM as well,
+    // following the TypeScript "bundler" mode.
     const dirImport = path.join(resolved, 'index');
     return resolveImportSpecifierExtension(dirImport);
   }
@@ -332,6 +403,31 @@ function fileExists(resolved: string) {
   return fs.statSync(resolved, { throwIfNoEntry: false })?.isFile();
 }
 
+export async function fileExistsAsync(resolved: string) {
+  try {
+    const stat = await fs.promises.stat(resolved);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
 function dirExists(resolved: string) {
   return fs.statSync(resolved, { throwIfNoEntry: false })?.isDirectory();
+}
+
+export async function removeDirAndLogToConsole(dir: string) {
+  try {
+    if (!fs.existsSync(dir))
+      return;
+    // eslint-disable-next-line no-console
+    console.log(`Removing ${await fs.promises.realpath(dir)}`);
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  } catch {
+  }
+}
+
+export const ansiRegex = new RegExp('([\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~])))', 'g');
+export function stripAnsiEscapes(str: string): string {
+  return str.replace(ansiRegex, '');
 }

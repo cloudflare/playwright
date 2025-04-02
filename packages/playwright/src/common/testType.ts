@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
+import { errors } from 'playwright-core';
+import { getPackageManagerExecCommand, monotonicTime, raceAgainstDeadline, currentZone } from 'playwright-core/lib/utils';
+
+import { currentTestInfo, currentlyLoadingFileSuite, setCurrentlyLoadingFileSuite } from './globals';
+import { Suite, TestCase } from './test';
 import { expect } from '../matchers/expect';
-import { currentlyLoadingFileSuite, currentTestInfo, setCurrentlyLoadingFileSuite } from './globals';
-import { TestCase, Suite } from './test';
 import { wrapFunctionWithLocation } from '../transform/transform';
+
 import type { FixturesWithLocation } from './config';
-import type { Fixtures, TestType, TestDetails } from '../../types/test';
+import type { Fixtures, TestDetails, TestStepInfo, TestType } from '../../types/test';
 import type { Location } from '../../types/testReporter';
-import { getPackageManagerExecCommand, zones } from 'playwright-core/lib/utils';
+import type { TestInfoImpl } from '../worker/testInfo';
+
 
 const testTypeSymbol = Symbol('testType');
 
@@ -38,7 +43,7 @@ export class TestTypeImpl {
     test.only = wrapFunctionWithLocation(this._createTest.bind(this, 'only'));
     test.describe = wrapFunctionWithLocation(this._describe.bind(this, 'default'));
     test.describe.only = wrapFunctionWithLocation(this._describe.bind(this, 'only'));
-    test.describe.configure = this._configure.bind(this);
+    test.describe.configure = wrapFunctionWithLocation(this._configure.bind(this));
     test.describe.fixme = wrapFunctionWithLocation(this._describe.bind(this, 'fixme'));
     test.describe.parallel = wrapFunctionWithLocation(this._describe.bind(this, 'parallel'));
     test.describe.parallel.only = wrapFunctionWithLocation(this._describe.bind(this, 'parallel.only'));
@@ -52,9 +57,11 @@ export class TestTypeImpl {
     test.skip = wrapFunctionWithLocation(this._modifier.bind(this, 'skip'));
     test.fixme = wrapFunctionWithLocation(this._modifier.bind(this, 'fixme'));
     test.fail = wrapFunctionWithLocation(this._modifier.bind(this, 'fail'));
+    test.fail.only = wrapFunctionWithLocation(this._createTest.bind(this, 'fail.only'));
     test.slow = wrapFunctionWithLocation(this._modifier.bind(this, 'slow'));
-    test.setTimeout = this._setTimeout.bind(this);
-    test.step = this._step.bind(this);
+    test.setTimeout = wrapFunctionWithLocation(this._setTimeout.bind(this));
+    test.step = this._step.bind(this, 'pass');
+    test.step.skip = this._step.bind(this, 'skip');
     test.use = wrapFunctionWithLocation(this._use.bind(this));
     test.extend = wrapFunctionWithLocation(this._extend.bind(this));
     test.info = () => {
@@ -66,7 +73,7 @@ export class TestTypeImpl {
     this.test = test;
   }
 
-  private _currentSuite(title: string): Suite | undefined {
+  private _currentSuite(location: Location, title: string): Suite | undefined {
     const suite = currentlyLoadingFileSuite();
     if (!suite) {
       throw new Error([
@@ -78,18 +85,12 @@ export class TestTypeImpl {
         `  when one of the dependencies in your package.json depends on @playwright/test.`,
       ].join('\n'));
     }
-    if (suite._testTypeImpl && suite._testTypeImpl !== this) {
-      throw new Error([
-        `Can't call ${title} inside a describe() suite of a different test type.`,
-        `Make sure to use the same "test" function (created by the test.extend() call) for all declarations inside a suite.`,
-      ].join('\n'));
-    }
     return suite;
   }
 
-  private _createTest(type: 'default' | 'only' | 'skip' | 'fixme' | 'fail', location: Location, title: string, fnOrDetails: Function | TestDetails, fn?: Function) {
+  private _createTest(type: 'default' | 'only' | 'skip' | 'fixme' | 'fail' | 'fail.only', location: Location, title: string, fnOrDetails: Function | TestDetails, fn?: Function) {
     throwIfRunningInsideJest();
-    const suite = this._currentSuite('test()');
+    const suite = this._currentSuite(location, 'test()');
     if (!suite)
       return;
 
@@ -103,22 +104,24 @@ export class TestTypeImpl {
       details = fnOrDetails;
     }
 
-    const validatedDetails = validateTestDetails(details);
+    const validatedDetails = validateTestDetails(details, location);
     const test = new TestCase(title, body, this, location);
     test._requireFile = suite._requireFile;
-    test._staticAnnotations.push(...validatedDetails.annotations);
+    test.annotations.push(...validatedDetails.annotations);
     test._tags.push(...validatedDetails.tags);
     suite._addTest(test);
 
-    if (type === 'only')
+    if (type === 'only' || type === 'fail.only')
       test._only = true;
     if (type === 'skip' || type === 'fixme' || type === 'fail')
-      test._staticAnnotations.push({ type });
+      test.annotations.push({ type, location });
+    else if (type === 'fail.only')
+      test.annotations.push({ type: 'fail', location });
   }
 
   private _describe(type: 'default' | 'only' | 'serial' | 'serial.only' | 'parallel' | 'parallel.only' | 'skip' | 'fixme', location: Location, titleOrFn: string | Function, fnOrDetails?: TestDetails | Function, fn?: Function) {
     throwIfRunningInsideJest();
-    const suite = this._currentSuite('test.describe()');
+    const suite = this._currentSuite(location, 'test.describe()');
     if (!suite)
       return;
 
@@ -140,8 +143,8 @@ export class TestTypeImpl {
       body = fn!;
     }
 
-    const validatedDetails = validateTestDetails(details);
-    const child = new Suite(title, 'describe', this);
+    const validatedDetails = validateTestDetails(details, location);
+    const child = new Suite(title, 'describe');
     child._requireFile = suite._requireFile;
     child.location = location;
     child._staticAnnotations.push(...validatedDetails.annotations);
@@ -155,7 +158,7 @@ export class TestTypeImpl {
     if (type === 'parallel' || type === 'parallel.only')
       child._parallelMode = 'parallel';
     if (type === 'skip' || type === 'fixme')
-      child._staticAnnotations.push({ type });
+      child._staticAnnotations.push({ type, location });
 
     for (let parent: Suite | undefined = suite; parent; parent = parent.parent) {
       if (parent._parallelMode === 'serial' && child._parallelMode === 'parallel')
@@ -170,7 +173,7 @@ export class TestTypeImpl {
   }
 
   private _hook(name: 'beforeEach' | 'afterEach' | 'beforeAll' | 'afterAll', location: Location, title: string | Function, fn?: Function) {
-    const suite = this._currentSuite(`test.${name}()`);
+    const suite = this._currentSuite(location, `test.${name}()`);
     if (!suite)
       return;
     if (typeof title === 'function') {
@@ -181,9 +184,9 @@ export class TestTypeImpl {
     suite._hooks.push({ type: name, fn: fn!, title, location });
   }
 
-  private _configure(options: { mode?: 'default' | 'parallel' | 'serial', retries?: number, timeout?: number }) {
+  private _configure(location: Location, options: { mode?: 'default' | 'parallel' | 'serial', retries?: number, timeout?: number }) {
     throwIfRunningInsideJest();
-    const suite = this._currentSuite(`test.describe.configure()`);
+    const suite = this._currentSuite(location, `test.describe.configure()`);
     if (!suite)
       return;
 
@@ -226,7 +229,7 @@ export class TestTypeImpl {
         if (modifierArgs.length >= 1 && !modifierArgs[0])
           return;
         const description = modifierArgs[1];
-        suite._staticAnnotations.push({ type, description });
+        suite._staticAnnotations.push({ type, description, location });
       }
       return;
     }
@@ -236,10 +239,10 @@ export class TestTypeImpl {
       throw new Error(`test.${type}() can only be called inside test, describe block or fixture`);
     if (typeof modifierArgs[0] === 'function')
       throw new Error(`test.${type}() with a function can only be called inside describe block`);
-    testInfo[type](...modifierArgs as [any, any]);
+    testInfo._modifier(type, location, modifierArgs as [any, any]);
   }
 
-  private _setTimeout(timeout: number) {
+  private _setTimeout(location: Location, timeout: number) {
     const suite = currentlyLoadingFileSuite();
     if (suite) {
       suite._timeout = timeout;
@@ -253,22 +256,39 @@ export class TestTypeImpl {
   }
 
   private _use(location: Location, fixtures: Fixtures) {
-    const suite = this._currentSuite(`test.use()`);
+    const suite = this._currentSuite(location, `test.use()`);
     if (!suite)
       return;
     suite._use.push({ fixtures, location });
   }
 
-  async _step<T>(title: string, body: () => Promise<T>, options: { box?: boolean } = {}): Promise<T> {
+  _step<T>(expectation: 'pass'|'skip', title: string, body: (step: TestStepInfo) => T | Promise<T>, options: {box?: boolean, location?: Location, timeout?: number } = {}): Promise<T> {
     const testInfo = currentTestInfo();
     if (!testInfo)
       throw new Error(`test.step() can only be called from a test`);
-    const step = testInfo._addStep({ wallTime: Date.now(), category: 'test.step', title, box: options.box });
-    return await zones.run('stepZone', step, async () => {
+    return testInfo._floatingPromiseScope.wrapPromiseAPIResult(this._stepInternal(expectation, testInfo, title, body, options));
+  }
+
+  private async _stepInternal<T>(expectation: 'pass'|'skip', testInfo: TestInfoImpl, title: string, body: (step: TestStepInfo) => T | Promise<T>, options: {box?: boolean, location?: Location, timeout?: number } = {}): Promise<T> {
+    const step = testInfo._addStep({ category: 'test.step', title, location: options.location, box: options.box });
+    return await currentZone().with('stepZone', step).run(async () => {
       try {
-        const result = await body();
+        let result: Awaited<ReturnType<typeof raceAgainstDeadline<T>>> | undefined = undefined;
+        result = await raceAgainstDeadline(async () => {
+          try {
+            return await step.info._runStepBody(expectation === 'skip', body, step.location);
+          } catch (e) {
+            // If the step timed out, the test fixtures will tear down, which in turn
+            // will abort unfinished actions in the step body. Record such errors here.
+            if (result?.timedOut)
+              testInfo._failWithError(e);
+            throw e;
+          }
+        }, options.timeout ? monotonicTime() + options.timeout : 0);
+        if (result.timedOut)
+          throw new errors.TimeoutError(`Step timeout of ${options.timeout}ms exceeded.`);
         step.complete({});
-        return result;
+        return result.result;
       } catch (error) {
         step.complete({ error });
         throw error;
@@ -295,8 +315,9 @@ function throwIfRunningInsideJest() {
   }
 }
 
-function validateTestDetails(details: TestDetails) {
-  const annotations = Array.isArray(details.annotation) ? details.annotation : (details.annotation ? [details.annotation] : []);
+function validateTestDetails(details: TestDetails, location: Location) {
+  const originalAnnotations = Array.isArray(details.annotation) ? details.annotation : (details.annotation ? [details.annotation] : []);
+  const annotations = originalAnnotations.map(annotation => ({ ...annotation, location }));
   const tags = Array.isArray(details.tag) ? details.tag : (details.tag ? [details.tag] : []);
   for (const tag of tags) {
     if (tag[0] !== '@')

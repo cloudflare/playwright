@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { clsx } from '../uiUtils';
 import './tabbedPane.css';
 import { Toolbar } from './toolbar';
 import * as React from 'react';
@@ -31,11 +32,14 @@ export const TabbedPane: React.FunctionComponent<{
   tabs: TabbedPaneTabModel[],
   leftToolbar?: React.ReactElement[],
   rightToolbar?: React.ReactElement[],
-  selectedTab: string,
-  setSelectedTab: (tab: string) => void,
+  selectedTab?: string,
+  setSelectedTab?: (tab: string) => void,
   dataTestId?: string,
   mode?: 'default' | 'select',
 }> = ({ tabs, selectedTab, setSelectedTab, leftToolbar, rightToolbar, dataTestId, mode }) => {
+  const id = React.useId();
+  if (!selectedTab)
+    selectedTab = tabs[0].id;
   if (!mode)
     mode = 'default';
   return <div className='tabbed-pane' data-testid={dataTestId}>
@@ -44,33 +48,31 @@ export const TabbedPane: React.FunctionComponent<{
         { leftToolbar && <div style={{ flex: 'none', display: 'flex', margin: '0 4px', alignItems: 'center' }}>
           {...leftToolbar}
         </div>}
-        {mode === 'default' && <div style={{ flex: 'auto', display: 'flex', height: '100%', overflow: 'hidden' }}>
+        {mode === 'default' && <div style={{ flex: 'auto', display: 'flex', height: '100%', overflow: 'hidden' }} role='tablist'>
           {[...tabs.map(tab => (
             <TabbedPaneTab
+              key={tab.id}
               id={tab.id}
+              ariaControls={`${id}-${tab.id}`}
               title={tab.title}
               count={tab.count}
               errorCount={tab.errorCount}
               selected={selectedTab === tab.id}
               onSelect={setSelectedTab}
-            ></TabbedPaneTab>)),
+            />)),
           ]}
         </div>}
-        {mode === 'select' && <div style={{ flex: 'auto', display: 'flex', height: '100%', overflow: 'hidden' }}>
-          <select style={{ width: '100%', background: 'none', cursor: 'pointer' }} onChange={e => {
-            setSelectedTab(tabs[e.currentTarget.selectedIndex].id);
+        {mode === 'select' && <div style={{ flex: 'auto', display: 'flex', height: '100%', overflow: 'hidden' }} role='tablist'>
+          <select style={{ width: '100%', background: 'none', cursor: 'pointer' }} value={selectedTab} onChange={e => {
+            setSelectedTab?.(tabs[e.currentTarget.selectedIndex].id);
           }}>
             {tabs.map(tab => {
               let suffix = '';
-              if (tab.count === 1)
-                suffix = ' 🔵';
-              else if (tab.count)
-                suffix = ` 🔵✖️${tab.count}`;
-              if (tab.errorCount === 1)
-                suffix = ` 🔴`;
-              else if (tab.errorCount)
-                suffix = ` 🔴✖️${tab.errorCount}`;
-              return <option value={tab.id} selected={tab.id === selectedTab}>{tab.title}{suffix}</option>;
+              if (tab.count)
+                suffix = ` (${tab.count})`;
+              if (tab.errorCount)
+                suffix = ` (${tab.errorCount})`;
+              return <option key={tab.id} value={tab.id} role='tab' aria-controls={`${id}-${tab.id}`}>{tab.title}{suffix}</option>;
             })}
           </select>
         </div>}
@@ -82,9 +84,9 @@ export const TabbedPane: React.FunctionComponent<{
         tabs.map(tab => {
           const className = 'tab-content tab-' + tab.id;
           if (tab.component)
-            return <div key={tab.id} className={className} style={{ display: selectedTab === tab.id ? 'inherit' : 'none' }}>{tab.component}</div>;
+            return <div key={tab.id} id={`${id}-${tab.id}`} role='tabpanel' aria-label={tab.title} className={className} style={{ display: selectedTab === tab.id ? 'inherit' : 'none' }}>{tab.component}</div>;
           if (selectedTab === tab.id)
-            return <div key={tab.id} className={className}>{tab.render!()}</div>;
+            return <div key={tab.id} id={`${id}-${tab.id}`} role='tabpanel' aria-label={tab.title} className={className}>{tab.render!()}</div>;
         })
       }
     </div>
@@ -97,12 +99,14 @@ export const TabbedPaneTab: React.FunctionComponent<{
   count?: number,
   errorCount?: number,
   selected?: boolean,
-  onSelect: (id: string) => void
-}> = ({ id, title, count, errorCount, selected, onSelect }) => {
-  return <div className={'tabbed-pane-tab ' + (selected ? 'selected' : '')}
-    onClick={() => onSelect(id)}
+  onSelect?: (id: string) => void,
+  ariaControls?: string,
+}> = ({ id, title, count, errorCount, selected, onSelect, ariaControls }) => {
+  return <div className={clsx('tabbed-pane-tab', selected && 'selected')}
+    onClick={() => onSelect?.(id)}
+    role='tab'
     title={title}
-    key={id}>
+    aria-controls={ariaControls}>
     <div className='tabbed-pane-tab-label'>{title}</div>
     {!!count && <div className='tabbed-pane-tab-counter'>{count}</div>}
     {!!errorCount && <div className='tabbed-pane-tab-counter error'>{errorCount}</div>}

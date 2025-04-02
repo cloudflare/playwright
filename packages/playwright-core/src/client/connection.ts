@@ -14,37 +14,40 @@
  * limitations under the License.
  */
 
+import { EventEmitter } from './eventEmitter';
+import { Android, AndroidDevice, AndroidSocket } from './android';
+import { Artifact } from './artifact';
 import { Browser } from './browser';
 import { BrowserContext } from './browserContext';
 import { BrowserType } from './browserType';
+import { CDPSession } from './cdpSession';
 import { ChannelOwner } from './channelOwner';
+import { createInstrumentation } from './clientInstrumentation';
+import { Dialog } from './dialog';
+import { Electron, ElectronApplication } from './electron';
 import { ElementHandle } from './elementHandle';
+import { TargetClosedError, parseError } from './errors';
+import { APIRequestContext } from './fetch';
 import { Frame } from './frame';
 import { JSHandle } from './jsHandle';
-import { Request, Response, Route, WebSocket } from './network';
-import { Page, BindingCall } from './page';
-import { Worker } from './worker';
-import { Dialog } from './dialog';
-import { parseError, TargetClosedError } from './errors';
-import { CDPSession } from './cdpSession';
-import { Playwright } from './playwright';
-import { Electron, ElectronApplication } from './electron';
-import type * as channels from '@protocol/channels';
-import { Stream } from './stream';
-import { WritableStream } from './writableStream';
-import { debugLogger } from '../utils/debugLogger';
-import { SelectorsOwner } from './selectors';
-import { Android, AndroidSocket, AndroidDevice } from './android';
-import { Artifact } from './artifact';
-import { EventEmitter } from 'events';
 import { JsonPipe } from './jsonPipe';
-import { APIRequestContext } from './fetch';
 import { LocalUtils } from './localUtils';
+import { Request, Response, Route, WebSocket, WebSocketRoute } from './network';
+import { BindingCall, Page } from './page';
+import { Playwright } from './playwright';
+import { SelectorsOwner } from './selectors';
+import { Stream } from './stream';
 import { Tracing } from './tracing';
-import { findValidator, ValidationError, type ValidatorContext } from '../protocol/validator';
-import { createInstrumentation } from './clientInstrumentation';
+import { Worker } from './worker';
+import { WritableStream } from './writableStream';
+import { ValidationError, findValidator  } from '../protocol/validator';
+import { rewriteErrorMessage } from '../utils/isomorphic/stackTrace';
+
 import type { ClientInstrumentation } from './clientInstrumentation';
-import { formatCallLog, rewriteErrorMessage } from '../utils';
+import type { HeadersArray } from './types';
+import type { ValidatorContext } from '../protocol/validator';
+import type { Platform } from './platform';
+import type * as channels from '@protocol/channels';
 
 class Root extends ChannelOwner<channels.RootChannel> {
   constructor(connection: Connection) {
@@ -75,12 +78,15 @@ export class Connection extends EventEmitter {
   toImpl: ((client: ChannelOwner) => any) | undefined;
   private _tracingCount = 0;
   readonly _instrumentation: ClientInstrumentation;
+  // Used from @playwright/test fixtures -> TODO remove?
+  readonly headers: HeadersArray;
 
-  constructor(localUtils: LocalUtils | undefined, instrumentation: ClientInstrumentation | undefined) {
-    super();
-    this._rootObject = new Root(this);
-    this._localUtils = localUtils;
+  constructor(platform: Platform, localUtils?: LocalUtils, instrumentation?: ClientInstrumentation, headers: HeadersArray = []) {
+    super(platform);
     this._instrumentation = instrumentation || createInstrumentation();
+    this._localUtils = localUtils;
+    this._rootObject = new Root(this);
+    this.headers = headers;
   }
 
   markAsRemote() {
@@ -99,8 +105,8 @@ export class Connection extends EventEmitter {
     return this._rawBuffers;
   }
 
-  localUtils(): LocalUtils {
-    return this._localUtils!;
+  localUtils(): LocalUtils | undefined {
+    return this._localUtils;
   }
 
   async initializePlaywright(): Promise<Playwright> {
@@ -118,7 +124,7 @@ export class Connection extends EventEmitter {
       this._tracingCount--;
   }
 
-  async sendMessageToServer(object: ChannelOwner, method: string, params: any, apiName: string | undefined, frames: channels.StackFrame[], wallTime: number | undefined): Promise<any> {
+  async sendMessageToServer(object: ChannelOwner, method: string, params: any, apiName: string | undefined, frames: channels.StackFrame[], stepId?: string): Promise<any> {
     if (this._closedError)
       throw this._closedError;
     if (object._wasCollected)
@@ -128,16 +134,26 @@ export class Connection extends EventEmitter {
     const type = object._type;
     const id = ++this._lastId;
     const message = { id, guid, method, params };
-    if (debugLogger.isEnabled('channel')) {
+    if (this._platform.isLogEnabled('channel')) {
       // Do not include metadata in debug logs to avoid noise.
-      debugLogger.log('channel', 'SEND> ' + JSON.stringify(message));
+      this._platform.log('channel', 'SEND> ' + JSON.stringify(message));
     }
     const location = frames[0] ? { file: frames[0].file, line: frames[0].line, column: frames[0].column } : undefined;
-    const metadata: channels.Metadata = { wallTime, apiName, location, internal: !apiName };
+    const metadata: channels.Metadata = { apiName, location, internal: !apiName, stepId };
     if (this._tracingCount && frames && type !== 'LocalUtils')
-      this._localUtils?._channel.addStackToTracingNoReply({ callData: { stack: frames, id } }).catch(() => {});
-    this.onmessage({ ...message, metadata });
+      this._localUtils?.addStackToTracingNoReply({ callData: { stack: frames, id } }).catch(() => {});
+    // We need to exit zones before calling into the server, otherwise
+    // when we receive events from the server, we would be in an API zone.
+    this._platform.zones.empty.run(() => this.onmessage({ ...message, metadata }));
     return await new Promise((resolve, reject) => this._callbacks.set(id, { resolve, reject, apiName, type, method }));
+  }
+
+  private _validatorFromWireContext(): ValidatorContext {
+    return {
+      tChannelImpl: this._tChannelImplFromWire.bind(this),
+      binary: this._rawBuffers ? 'buffer' : 'fromBase64',
+      isUnderTest: () => this._platform.isUnderTest(),
+    };
   }
 
   dispatch(message: object) {
@@ -146,25 +162,25 @@ export class Connection extends EventEmitter {
 
     const { id, guid, method, params, result, error, log } = message as any;
     if (id) {
-      if (debugLogger.isEnabled('channel'))
-        debugLogger.log('channel', '<RECV ' + JSON.stringify(message));
+      if (this._platform.isLogEnabled('channel'))
+        this._platform.log('channel', '<RECV ' + JSON.stringify(message));
       const callback = this._callbacks.get(id);
       if (!callback)
         throw new Error(`Cannot find command to respond: ${id}`);
       this._callbacks.delete(id);
       if (error && !result) {
         const parsedError = parseError(error);
-        rewriteErrorMessage(parsedError, parsedError.message + formatCallLog(log));
+        rewriteErrorMessage(parsedError, parsedError.message + formatCallLog(this._platform, log));
         callback.reject(parsedError);
       } else {
         const validator = findValidator(callback.type, callback.method, 'Result');
-        callback.resolve(validator(result, '', { tChannelImpl: this._tChannelImplFromWire.bind(this), binary: this._rawBuffers ? 'buffer' : 'fromBase64' }));
+        callback.resolve(validator(result, '', this._validatorFromWireContext()));
       }
       return;
     }
 
-    if (debugLogger.isEnabled('channel'))
-      debugLogger.log('channel', '<EVENT ' + JSON.stringify(message));
+    if (this._platform.isLogEnabled('channel'))
+      this._platform.log('channel', '<EVENT ' + JSON.stringify(message));
     if (method === '__create__') {
       this._createRemoteObject(guid, params.type, params.guid, params.initializer);
       return;
@@ -188,11 +204,13 @@ export class Connection extends EventEmitter {
     }
 
     const validator = findValidator(object._type, method, 'Event');
-    (object._channel as any).emit(method, validator(params, '', { tChannelImpl: this._tChannelImplFromWire.bind(this), binary: this._rawBuffers ? 'buffer' : 'fromBase64' }));
+    (object._channel as any).emit(method, validator(params, '', this._validatorFromWireContext()));
   }
 
-  close(cause?: Error) {
-    this._closedError = new TargetClosedError(cause?.toString());
+  close(cause?: string) {
+    if (this._closedError)
+      return;
+    this._closedError = new TargetClosedError(cause);
     for (const callback of this._callbacks.values())
       callback.reject(this._closedError);
     this._callbacks.clear();
@@ -217,7 +235,7 @@ export class Connection extends EventEmitter {
       throw new Error(`Cannot find parent object ${parentGuid} to create ${guid}`);
     let result: ChannelOwner<any>;
     const validator = findValidator(type, '', 'Initializer');
-    initializer = validator(initializer, '', { tChannelImpl: this._tChannelImplFromWire.bind(this), binary: this._rawBuffers ? 'buffer' : 'fromBase64' });
+    initializer = validator(initializer, '', this._validatorFromWireContext());
     switch (type) {
       case 'Android':
         result = new Android(parent, type, guid, initializer);
@@ -305,6 +323,9 @@ export class Connection extends EventEmitter {
       case 'WebSocket':
         result = new WebSocket(parent, type, guid, initializer);
         break;
+      case 'WebSocketRoute':
+        result = new WebSocketRoute(parent, type, guid, initializer);
+        break;
       case 'Worker':
         result = new Worker(parent, type, guid, initializer);
         break;
@@ -316,4 +337,13 @@ export class Connection extends EventEmitter {
     }
     return result;
   }
+}
+
+function formatCallLog(platform: Platform, log: string[] | undefined): string {
+  if (!log || !log.some(l => !!l))
+    return '';
+  return `
+Call log:
+${platform.colors.dim(log.join('\n'))}
+`;
 }

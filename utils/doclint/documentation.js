@@ -45,8 +45,8 @@ const md = require('../markdown');
  * @typedef {function({
  *   clazz?: Class,
  *   member?: Member,
- *   param?: string,
- *   option?: string,
+ *   param?: { name: string, alias: string },
+ *   option?: { name: string, alias: string },
  *   href?: string,
  * }): string|undefined} Renderer
  */
@@ -57,7 +57,6 @@ const md = require('../markdown');
  *   since: string,
  *   deprecated?: string | undefined,
  *   discouraged?: string | undefined,
- *   experimental: boolean
  * }} Metainfo
  */
 
@@ -99,7 +98,7 @@ class Documentation {
     for (const [name, clazz] of this.classes.entries()) {
       clazz.sortMembers();
 
-      if (!clazz.extends || ['EventEmitter', 'Error', 'Exception', 'RuntimeException'].includes(clazz.extends))
+      if (!clazz.extends || ['Error', 'Exception', 'RuntimeException'].includes(clazz.extends))
         continue;
       const superClass = this.classes.get(clazz.extends);
       if (!superClass) {
@@ -126,18 +125,6 @@ class Documentation {
       if (clazz.langs.only && !clazz.langs.only.includes(lang))
         continue;
       clazz.filterForLanguage(lang, options);
-      classesArray.push(clazz);
-    }
-    this.classesArray = classesArray;
-    this.index();
-  }
-
-  filterOutExperimental() {
-    const classesArray = [];
-    for (const clazz of this.classesArray) {
-      if (clazz.experimental)
-        continue;
-      clazz.filterOutExperimental();
       classesArray.push(clazz);
     }
     this.classesArray = classesArray;
@@ -180,7 +167,7 @@ class Documentation {
   renderLinksInNodes(nodes, classOrMember) {
     if (classOrMember instanceof Member) {
       classOrMember.discouraged = classOrMember.discouraged ? this.renderLinksInText(classOrMember.discouraged, classOrMember) : undefined;
-      classOrMember.deprecated = classOrMember.deprecated ? this.renderLinksInText(classOrMember.deprecated, classOrMember) : undefined
+      classOrMember.deprecated = classOrMember.deprecated ? this.renderLinksInText(classOrMember.deprecated, classOrMember) : undefined;
     }
     md.visitAll(nodes, node => {
       if (!node.text)
@@ -221,7 +208,7 @@ class Documentation {
   }
 }
 
- class Class {
+class Class {
   /**
    * @param {Metainfo} metainfo
    * @param {string} name
@@ -231,7 +218,6 @@ class Documentation {
    */
   constructor(metainfo, name, membersArray, extendsName = null, spec = undefined) {
     this.langs = metainfo.langs;
-    this.experimental = metainfo.experimental;
     this.since = metainfo.since;
     this.deprecated = metainfo.deprecated;
     this.discouraged = metainfo.discouraged;
@@ -286,7 +272,7 @@ class Documentation {
   }
 
   clone() {
-    const cls = new Class({ langs: this.langs, experimental: this.experimental, since: this.since, deprecated: this.deprecated, discouraged: this.discouraged }, this.name, this.membersArray.map(m => m.clone()), this.extends, this.spec);
+    const cls = new Class({ langs: this.langs, since: this.since, deprecated: this.deprecated, discouraged: this.discouraged }, this.name, this.membersArray.map(m => m.clone()), this.extends, this.spec);
     cls.comment = this.comment;
     return cls;
   }
@@ -301,17 +287,6 @@ class Documentation {
       if (member.langs.only && !member.langs.only.includes(lang))
         continue;
       member.filterForLanguage(lang, options);
-      membersArray.push(member);
-    }
-    this.membersArray = membersArray;
-  }
-
-  filterOutExperimental()  {
-    const membersArray = [];
-    for (const member of this.membersArray) {
-      if (member.experimental)
-        continue;
-      member.filterOutExperimental();
       membersArray.push(member);
     }
     this.membersArray = membersArray;
@@ -347,7 +322,7 @@ class Documentation {
     for (const e of this.eventsArray)
       e.visit(visitor);
   }
-};
+}
 
 class Member {
   /**
@@ -362,7 +337,6 @@ class Member {
   constructor(kind, metainfo, name, type, argsArray, spec = undefined, required = true) {
     this.kind = kind;
     this.langs = metainfo.langs;
-    this.experimental = metainfo.experimental;
     this.since = metainfo.since;
     this.deprecated = metainfo.deprecated;
     this.discouraged = metainfo.discouraged;
@@ -371,7 +345,7 @@ class Member {
     this.spec = spec;
     this.argsArray = argsArray;
     this.required = required;
-    this.comment =  '';
+    this.comment = '';
     /** @type {!Map<string, !Member>} */
     this.args = new Map();
     this.index();
@@ -379,6 +353,8 @@ class Member {
     this.clazz = null;
     /** @type {Member=} */
     this.enclosingMethod = undefined;
+    /** @type {Member=} */
+    this.parent = undefined;
     this.async = false;
     this.alias = name;
     this.overloadIndex = 0;
@@ -387,26 +363,25 @@ class Member {
       this.alias = match[1];
       this.overloadIndex = (+match[2]) - 1;
     }
-    /**
-     * Param is true and option false
-     * @type {Boolean | null}
-     */
-    this.paramOrOption = null;
   }
 
   index() {
     this.args = new Map();
     if (this.kind === 'method')
       this.enclosingMethod = this;
+    const indexArg = (/** @type {Member} */ arg) => {
+      arg.type?.deepProperties().forEach(p => {
+        p.enclosingMethod = this;
+        p.parent = arg;
+        indexArg(p);
+      });
+    }
     for (const arg of this.argsArray) {
       this.args.set(arg.name, arg);
       arg.enclosingMethod = this;
-      if (arg.name === 'options') {
-        // @ts-ignore
-        arg.type.properties.sort((p1, p2) => p1.name.localeCompare(p2.name));
-        // @ts-ignore
-        arg.type.properties.forEach(p => p.enclosingMethod = this);
-      }
+      if (arg.name === 'options')
+        arg.type?.properties?.sort((p1, p2) => p1.name.localeCompare(p2.name));
+      indexArg(arg);
     }
   }
 
@@ -428,11 +403,9 @@ class Member {
         continue;
       const overriddenArg = (arg.langs.overrides && arg.langs.overrides[lang]) || arg;
       overriddenArg.filterForLanguage(lang, options);
-      // @ts-ignore
-      if (overriddenArg.name === 'options' && !overriddenArg.type.properties.length)
+      if (overriddenArg.name === 'options' && !overriddenArg.type?.properties?.length)
         continue;
-      // @ts-ignore
-      overriddenArg.type.filterForLanguage(lang, options);
+      overriddenArg.type?.filterForLanguage(lang, options);
       argsArray.push(overriddenArg);
     }
     this.argsArray = argsArray;
@@ -447,25 +420,10 @@ class Member {
     }
   }
 
-  filterOutExperimental() {
-    if (!this.type)
-      return;
-    this.type.filterOutExperimental();
-    const argsArray = [];
-    for (const arg of this.argsArray) {
-      if (arg.experimental || !arg.type)
-        continue;
-      arg.type.filterOutExperimental();
-      argsArray.push(arg);
-    }
-    this.argsArray = argsArray;
-  }
-
   clone() {
-    const result = new Member(this.kind, { langs: this.langs, experimental: this.experimental, since: this.since, deprecated: this.deprecated, discouraged: this.discouraged }, this.name, this.type?.clone(), this.argsArray.map(arg => arg.clone()), this.spec, this.required);
+    const result = new Member(this.kind, { langs: this.langs, since: this.since, deprecated: this.deprecated, discouraged: this.discouraged }, this.name, this.type?.clone(), this.argsArray.map(arg => arg.clone()), this.spec, this.required);
     result.alias = this.alias;
     result.async = this.async;
-    result.paramOrOption = this.paramOrOption;
     return result;
   }
 
@@ -513,8 +471,10 @@ class Member {
       this.type.visit(visitor);
     for (const arg of this.argsArray)
       arg.visit(visitor);
+    for (const lang in this.langs.overrides || {})
+      this.langs.overrides?.[lang].visit(visitor);
   }
-};
+}
 
 class Type {
   /**
@@ -549,15 +509,14 @@ class Type {
    * @return {Type}
    */
   static fromParsedType(parsedType, inUnion = false) {
-    if (!inUnion && !parsedType.unionName && isStringUnion(parsedType) ) {
+    if (!inUnion && !parsedType.unionName && isStringUnion(parsedType))
       throw new Error('Enum must have a name:\n' + JSON.stringify(parsedType, null, 2));
-    }
+
 
     if (!inUnion && (parsedType.union || parsedType.unionName)) {
       const type = new Type(parsedType.unionName || '');
       type.union = [];
-      // @ts-ignore
-      for (let t = parsedType; t; t = t.union) {
+      for (let /** @type {ParsedType | null} */ t = parsedType; t; t = t.union) {
         const nestedUnion = !!t.unionName && t !== parsedType;
         type.union.push(Type.fromParsedType(t, !nestedUnion));
         if (nestedUnion)
@@ -569,7 +528,6 @@ class Type {
     if (parsedType.args || parsedType.retType) {
       const type = new Type('function');
       type.args = [];
-      // @ts-ignore
       for (let t = parsedType.args; t; t = t.next)
         type.args.push(Type.fromParsedType(t));
       type.returnType = parsedType.retType ? Type.fromParsedType(parsedType.retType) : undefined;
@@ -579,8 +537,7 @@ class Type {
     if (parsedType.template) {
       const type = new Type(parsedType.name);
       type.templates = [];
-      // @ts-ignore
-      for (let t = parsedType.template; t; t = t.next)
+      for (let /** @type {ParsedType | null} */ t = parsedType.template; t; t = t.next)
         type.templates.push(Type.fromParsedType(t));
       return type;
     }
@@ -596,15 +553,15 @@ class Type {
     /** @type {Member[] | undefined} */
     this.properties = this.name === 'Object' ? properties : undefined;
     /** @type {Type[] | undefined} */
-    this.union;
+    this.union = undefined;
     /** @type {Type[] | undefined} */
-    this.args;
+    this.args = undefined;
     /** @type {Type | undefined} */
-    this.returnType;
+    this.returnType = undefined;
     /** @type {Type[] | undefined} */
-    this.templates;
+    this.templates = undefined;
     /** @type {string | undefined} */
-    this.expression;
+    this.expression = undefined;
   }
 
   visit(visitor) {
@@ -644,17 +601,6 @@ class Type {
   }
 
   /**
-    * @returns {Member[] | undefined}
-  */
-  sortedProperties() {
-    if (!this.properties)
-      return this.properties;
-    const sortedProperties = [...this.properties];
-    sortedProperties.sort((p1, p2) => p1.name.localeCompare(p2.name));
-    return sortedProperties;
-  }
-
-  /**
    * @param {string} lang
    * @param {LanguageOptions=} options
    */
@@ -666,19 +612,6 @@ class Type {
       if (prop.langs.only && !prop.langs.only.includes(lang))
         continue;
       prop.filterForLanguage(lang, options);
-      properties.push(prop);
-    }
-    this.properties = properties;
-  }
-
-  filterOutExperimental() {
-    if (!this.properties)
-      return;
-    const properties = [];
-    for (const prop of this.properties) {
-      if (prop.experimental)
-        continue;
-      prop.filterOutExperimental();
       properties.push(prop);
     }
     this.properties = properties;
@@ -698,7 +631,7 @@ class Type {
     if (this.returnType)
       this.returnType._collectAllTypes(result);
   }
-};
+}
 
 /**
  * @param {ParsedType | null} type
@@ -804,24 +737,49 @@ function patchLinksInText(classOrMember, text, classesMap, membersMap, linkRende
       const memberName = p1 + ': ' + p2;
       const member = membersMap.get(memberName);
       if (!member)
-        throw new Error('Undefined member references: ' + match);
+        throw new Error(`Undefined member reference: ${match}\n=========\n${text}`);
       return linkRenderer({ member, href }) || match;
     }
-    if (p1 === 'param') {
-      let alias = p2;
-      if (classOrMember) {
-        // param/option reference can only be in method or same method parameter comments.
-        // @ts-ignore
-        const method = classOrMember.enclosingMethod;
-        const param = method.argsArray.find(a => a.name === p2);
-        if (!param)
-          throw new Error(`Referenced parameter ${match} not found in the parent method ${method.name} `);
-        alias = param.alias;
+    if (p1 === 'param' || p1 === 'option') {
+      let /** @type {string } */ name;
+      let /** @type {Member} */ member;
+      if (p2.includes('.')) {
+        // fully-qualified name
+        const [className, memberName, ...rest] = p2.split('.');
+        const maybeMember = membersMap.get(`method: ${className}.${memberName}`);
+        if (!maybeMember)
+          throw new Error(`Undefined reference: ${match}\n=========\n${text}`);
+        member = maybeMember;
+        name = rest.join('.');
+      } else {
+        // non-fully-qualified param/option reference from the same method.
+        if (!classOrMember || !(classOrMember instanceof Member)) {
+          Error.stackTraceLimit = 100;
+          throw new Error(`No parent method to find referenced ${match}\n=========\n${text}`);
+        }
+        const maybeMember = classOrMember.enclosingMethod;
+        if (!maybeMember)
+          throw new Error(`Undefined reference: ${match}\n=========\n${text}`);
+        member = maybeMember;
+        name = p2;
       }
-      return linkRenderer({ param: alias, href }) || match;
+      if (p1 === 'param') {
+        const param = member.argsArray.find(a => a.name === name);
+        if (!param)
+          throw new Error(`Referenced parameter ${match} not found in the parent method ${member.name}\n=========\n${text}`);
+        return linkRenderer({ member, param: { name, alias: param.alias }, href }) || match;
+      } else {
+        // p1 === 'option'
+        const options = member.argsArray.find(a => a.name === 'options');
+        const parts = name.split('.');
+        const optionName = parts[0];
+        const option = options?.type?.properties?.find(a => a.name === optionName);
+        if (!option)
+          throw new Error(`Referenced option ${match} not found in the parent method ${member.name}\n=========\n${text}`);
+        parts[0] = option.alias;
+        return linkRenderer({ member, option: { name: optionName, alias: parts.join('.') }, href }) || match;
+      }
     }
-    if (p1 === 'option')
-      return linkRenderer({ option: p2, href }) || match;
     throw new Error(`Undefined link prefix, expected event|method|property|param|option, got: ` + match);
   });
   text = text.replace(/\[([\w]+)\](?:\(([^)]*?)\))?/g, (match, p1, href) => {
@@ -843,14 +801,9 @@ function generateSourceCodeComment(spec) {
       node.liType = 'default';
     if (node.type === 'code' && node.codeLang)
       node.codeLang = parseCodeLang(node.codeLang).highlighter;
-    if (node.type === 'note') {
-      // @ts-ignore
-      node.type = 'text';
-      node.text = '**NOTE** ' + node.text;
-    }
   });
   // 5 is a typical member doc offset.
-  return md.render(comments, { maxColumns: 120 - 5, omitLastCR: true, flattenText: true });
+  return md.render(comments, { maxColumns: 120 - 5, omitLastCR: true, flattenText: true, noteMode: 'compact' });
 }
 
 /**
@@ -898,7 +851,8 @@ function patchCSharpOptionOverloads(optionsArg, options = {}) {
     }
     if (options.csharpOptionOverloadsShortNotation) {
       const newProp = prop.clone();
-      newProp.alias = newProp.name = shortNotation.join('|');
+      newProp.name = prop.name;
+      newProp.alias = shortNotation.join('|');
       propsToAdd.push(newProp);
     }
   }
@@ -918,6 +872,9 @@ function csharpOptionOverloadSuffix(option, type) {
     case 'function': return 'Func';
     case 'Buffer': return 'Byte';
     case 'Serializable': return 'Object';
+    case 'int': return 'Int';
+    case 'long': return 'Int64';
+    case 'Date': return 'Date';
   }
   throw new Error(`CSharp option "${option}" has unsupported type overload "${type}"`);
 }
@@ -981,7 +938,7 @@ function processCodeGroups(spec, language, transformer) {
  * @param {string} codeLang
  * @return {{ highlighter: string, language: string|undefined, codeGroup: string|undefined}}
  */
- function parseCodeLang(codeLang) {
+function parseCodeLang(codeLang) {
   if (codeLang === 'python async')
     return { highlighter: 'py', codeGroup: 'python-async', language: 'python' };
   if (codeLang === 'python sync')

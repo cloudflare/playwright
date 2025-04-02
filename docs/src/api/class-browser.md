@@ -1,6 +1,5 @@
 # class: Browser
 * since: v1.8
-* extends: [EventEmitter]
 
 A Browser is created via [`method: BrowserType.launch`]. An example of using a [Browser] to create a [Page]:
 
@@ -19,15 +18,15 @@ const { firefox } = require('playwright');  // Or 'chromium' or 'webkit'.
 import com.microsoft.playwright.*;
 
 public class Example {
-  public static void main(String[] args) {
-    try (Playwright playwright = Playwright.create()) {
-      BrowserType firefox = playwright.firefox()
-      Browser browser = firefox.launch();
-      Page page = browser.newPage();
-      page.navigate('https://example.com');
-      browser.close();
-    }
-  }
+ public static void main(String[] args) {
+   try (Playwright playwright = Playwright.create()) {
+     BrowserType firefox = playwright.firefox();
+     Browser browser = firefox.launch();
+     Page page = browser.newPage();
+     page.navigate("https://example.com");
+     browser.close();
+   }
+ }
 }
 ```
 
@@ -97,7 +96,7 @@ In case this browser is connected to, clears all created contexts belonging to t
 browser server.
 
 :::note
-This is similar to force quitting the browser. Therefore, you should call [`method: BrowserContext.close`] on any [BrowserContext]'s you explicitly created earlier with [`method: Browser.newContext`] **before** calling [`method: Browser.close`].
+This is similar to force-quitting the browser. To close pages gracefully and ensure you receive page close events, call [`method: BrowserContext.close`] on any [BrowserContext] instances you explicitly created earlier using [`method: Browser.newContext`] **before** calling [`method: Browser.close`].
 :::
 
 The [Browser] object itself is considered to be disposed and cannot be used anymore.
@@ -133,16 +132,16 @@ System.out.println(browser.contexts().size()); // prints "1"
 
 ```python async
 browser = await pw.webkit.launch()
-print(len(browser.contexts())) # prints `0`
+print(len(browser.contexts)) # prints `0`
 context = await browser.new_context()
-print(len(browser.contexts())) # prints `1`
+print(len(browser.contexts)) # prints `1`
 ```
 
 ```python sync
 browser = pw.webkit.launch()
-print(len(browser.contexts())) # prints `0`
+print(len(browser.contexts)) # prints `0`
 context = browser.new_context()
-print(len(browser.contexts())) # prints `1`
+print(len(browser.contexts)) # prints `1`
 ```
 
 ```csharp
@@ -203,7 +202,7 @@ Browser browser = playwright.firefox().launch();  // Or 'chromium' or 'webkit'.
 BrowserContext context = browser.newContext();
 // Create a new page in a pristine context.
 Page page = context.newPage();
-page.navigate('https://example.com');
+page.navigate("https://example.com");
 
 // Graceful close up everything
 context.close();
@@ -256,6 +255,9 @@ await browser.CloseAsync();
 ### option: Browser.newContext.proxy = %%-context-option-proxy-%%
 * since: v1.8
 
+### option: Browser.newContext.clientCertificates = %%-context-option-clientCertificates-%%
+* since: 1.46
+
 ### option: Browser.newContext.storageState = %%-js-python-context-option-storage-state-%%
 * since: v1.8
 
@@ -281,6 +283,9 @@ testing frameworks should explicitly create [`method: Browser.newContext`] follo
 ### option: Browser.newPage.proxy = %%-context-option-proxy-%%
 * since: v1.8
 
+### option: Browser.newPage.clientCertificates = %%-context-option-clientCertificates-%%
+* since: 1.46
+
 ### option: Browser.newPage.storageState = %%-js-python-context-option-storage-state-%%
 * since: v1.8
 
@@ -289,6 +294,20 @@ testing frameworks should explicitly create [`method: Browser.newContext`] follo
 
 ### option: Browser.newPage.storageStatePath = %%-csharp-java-context-option-storage-state-path-%%
 * since: v1.9
+
+## async method: Browser.removeAllListeners
+* since: v1.47
+* langs: js
+
+Removes all the listeners of the given type (or all registered listeners if no type given).
+Allows to wait for async listeners to complete or to ignore subsequent errors from these listeners.
+
+### param: Browser.removeAllListeners.type
+* since: v1.47
+- `type` ?<[string]>
+
+### option: Browser.removeAllListeners.behavior = %%-remove-all-listeners-options-behavior-%%
+* since: v1.47
 
 ## async method: Browser.startTracing
 * since: v1.11
@@ -312,7 +331,7 @@ await browser.stopTracing();
 ```java
 browser.startTracing(page, new Browser.StartTracingOptions()
   .setPath(Paths.get("trace.json")));
-page.goto('https://www.google.com');
+page.navigate("https://www.google.com");
 browser.stopTracing();
 ```
 

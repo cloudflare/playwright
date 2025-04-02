@@ -14,20 +14,24 @@
  * limitations under the License.
  */
 
+import { debugLogger  } from '../utils';
 import { Android } from './android/android';
 import { AdbBackend } from './android/backendAdb';
-import type { Browser } from './browser';
+import { BidiChromium } from './bidi/bidiChromium';
+import { BidiFirefox } from './bidi/bidiFirefox';
 import { Chromium } from './chromium/chromium';
+import { DebugController } from './debugController';
 import { Electron } from './electron/electron';
 import { Firefox } from './firefox/firefox';
+import { SdkObject, createInstrumentation } from './instrumentation';
 import { Selectors } from './selectors';
 import { WebKit } from './webkit/webkit';
+
+import type { BrowserType } from './browserType';
+import type { Language } from '../utils';
+import type { Browser } from './browser';
 import type { CallMetadata } from './instrumentation';
-import { createInstrumentation, SdkObject } from './instrumentation';
-import { debugLogger } from '../utils/debugLogger';
 import type { Page } from './page';
-import { DebugController } from './debugController';
-import type { Language } from '../utils/isomorphic/locatorGenerators';
 
 type PlaywrightOptions = {
   socksProxyPort?: number;
@@ -38,11 +42,13 @@ type PlaywrightOptions = {
 
 export class Playwright extends SdkObject {
   readonly selectors: Selectors;
-  readonly chromium: Chromium;
+  readonly chromium: BrowserType;
   readonly android: Android;
   readonly electron: Electron;
-  readonly firefox: Firefox;
-  readonly webkit: WebKit;
+  readonly firefox: BrowserType;
+  readonly webkit: BrowserType;
+  readonly bidiChromium: BrowserType;
+  readonly bidiFirefox: BrowserType;
   readonly options: PlaywrightOptions;
   readonly debugController: DebugController;
   private _allPages = new Set<Page>();
@@ -62,6 +68,8 @@ export class Playwright extends SdkObject {
       }
     }, null);
     this.chromium = new Chromium(this);
+    this.bidiChromium = new BidiChromium(this);
+    this.bidiFirefox = new BidiFirefox(this);
     this.firefox = new Firefox(this);
     this.webkit = new WebKit(this);
     this.electron = new Electron(this);

@@ -16,7 +16,7 @@
  */
 
 import { test as it, expect } from './pageTest';
-import { globToRegex } from '../../packages/playwright-core/lib/utils/glob';
+import { globToRegexPattern, urlMatches } from '../../packages/playwright-core/lib/utils/isomorphic/urlMatch';
 import vm from 'vm';
 
 it('should work with navigation @smoke', async ({ page, server }) => {
@@ -33,9 +33,8 @@ it('should work with navigation @smoke', async ({ page, server }) => {
   expect(requests.get('style.css').isNavigationRequest()).toBe(false);
 });
 
-it('should intercept after a service worker', async ({ page, server, browserName, isAndroid, isElectron }) => {
+it('should intercept after a service worker', async ({ page, server, browserName, isAndroid }) => {
   it.skip(isAndroid);
-  it.skip(isElectron);
 
   await page.goto(server.PREFIX + '/serviceworkers/fetchdummy/sw.html');
   await page.evaluate(() => window['activationPromise']);
@@ -72,12 +71,14 @@ it('should intercept after a service worker', async ({ page, server, browserName
 });
 
 it('should work with glob', async () => {
+  function globToRegex(glob: string): RegExp {
+    return new RegExp(globToRegexPattern(glob));
+  }
   expect(globToRegex('**/*.js').test('https://localhost:8080/foo.js')).toBeTruthy();
   expect(globToRegex('**/*.css').test('https://localhost:8080/foo.js')).toBeFalsy();
   expect(globToRegex('*.js').test('https://localhost:8080/foo.js')).toBeFalsy();
   expect(globToRegex('https://**/*.js').test('https://localhost:8080/foo.js')).toBeTruthy();
   expect(globToRegex('http://localhost:8080/simple/path.js').test('http://localhost:8080/simple/path.js')).toBeTruthy();
-  expect(globToRegex('http://localhost:8080/?imple/path.js').test('http://localhost:8080/Simple/path.js')).toBeTruthy();
   expect(globToRegex('**/{a,b}.js').test('https://localhost:8080/a.js')).toBeTruthy();
   expect(globToRegex('**/{a,b}.js').test('https://localhost:8080/b.js')).toBeTruthy();
   expect(globToRegex('**/{a,b}.js').test('https://localhost:8080/c.js')).toBeFalsy();
@@ -91,18 +92,59 @@ it('should work with glob', async () => {
   expect(globToRegex('http://localhost:3000/signin-oidc*').test('http://localhost:3000/signin-oidc/foo')).toBeFalsy();
   expect(globToRegex('http://localhost:3000/signin-oidc*').test('http://localhost:3000/signin-oidcnice')).toBeTruthy();
 
-  expect(globToRegex('**/three-columns/settings.html?**id=[a-z]**').test('http://mydomain:8080/blah/blah/three-columns/settings.html?id=settings-e3c58efe-02e9-44b0-97ac-dd138100cf7c&blah')).toBeTruthy();
+  // range [] is NOT supported
+  expect(globToRegex('**/api/v[0-9]').test('http://example.com/api/v[0-9]')).toBeTruthy();
+  expect(globToRegex('**/api/v[0-9]').test('http://example.com/api/version')).toBeFalsy();
+
+  // query params
+  expect(globToRegex('**/api\\?param').test('http://example.com/api?param')).toBeTruthy();
+  expect(globToRegex('**/api\\?param').test('http://example.com/api-param')).toBeFalsy();
+  expect(globToRegex('**/three-columns/settings.html\\?**id=settings-**').test('http://mydomain:8080/blah/blah/three-columns/settings.html?id=settings-e3c58efe-02e9-44b0-97ac-dd138100cf7c&blah')).toBeTruthy();
 
   expect(globToRegex('\\?')).toEqual(/^\?$/);
   expect(globToRegex('\\')).toEqual(/^\\$/);
   expect(globToRegex('\\\\')).toEqual(/^\\$/);
   expect(globToRegex('\\[')).toEqual(/^\[$/);
-  expect(globToRegex('[a-z]')).toEqual(/^[a-z]$/);
+  expect(globToRegex('[a-z]')).toEqual(/^\[a-z\]$/);
   expect(globToRegex('$^+.\\*()|\\?\\{\\}\\[\\]')).toEqual(/^\$\^\+\.\*\(\)\|\?\{\}\[\]$/);
+
+  expect(urlMatches(undefined, 'http://playwright.dev/', 'http://playwright.dev')).toBeTruthy();
+  expect(urlMatches(undefined, 'http://playwright.dev/?a=b', 'http://playwright.dev?a=b')).toBeTruthy();
+  expect(urlMatches(undefined, 'http://playwright.dev/', 'h*://playwright.dev')).toBeTruthy();
+  expect(urlMatches(undefined, 'http://api.playwright.dev/?x=y', 'http://*.playwright.dev?x=y')).toBeTruthy();
+  expect(urlMatches(undefined, 'http://playwright.dev/foo/bar', '**/foo/**')).toBeTruthy();
+  expect(urlMatches('http://playwright.dev', 'http://playwright.dev/?x=y', '?x=y')).toBeTruthy();
+  expect(urlMatches('http://playwright.dev/foo/', 'http://playwright.dev/foo/bar?x=y', './bar?x=y')).toBeTruthy();
+
+  // This is not supported, we treat ? as a query separator.
+  expect(globToRegex('http://localhost:8080/?imple/path.js').test('http://localhost:8080/Simple/path.js')).toBeFalsy();
+  expect(urlMatches(undefined, 'http://playwright.dev/', 'http://playwright.?ev')).toBeFalsy();
+  expect(urlMatches(undefined, 'http://playwright./?ev', 'http://playwright.?ev')).toBeTruthy();
+  expect(urlMatches(undefined, 'http://playwright.dev/foo', 'http://playwright.dev/f??')).toBeFalsy();
+  expect(urlMatches(undefined, 'http://playwright.dev/f??', 'http://playwright.dev/f??')).toBeTruthy();
+  expect(urlMatches(undefined, 'http://playwright.dev/?x=y', 'http://playwright.dev\\?x=y')).toBeTruthy();
+  expect(urlMatches(undefined, 'http://playwright.dev/?x=y', 'http://playwright.dev/\\?x=y')).toBeTruthy();
+  expect(urlMatches('http://playwright.dev/foo', 'http://playwright.dev/foo?bar', '?bar')).toBeTruthy();
+  expect(urlMatches('http://playwright.dev/foo', 'http://playwright.dev/foo?bar', '\\\\?bar')).toBeTruthy();
+  expect(urlMatches('http://first.host/', 'http://second.host/foo', '**/foo')).toBeTruthy();
+  expect(urlMatches('http://playwright.dev/', 'http://localhost/', '*//localhost/')).toBeTruthy();
 });
 
-it('should intercept network activity from worker', async function({ page, server, isAndroid, browserName, browserMajorVersion }) {
-  it.skip(browserName === 'firefox' && browserMajorVersion < 114, 'https://github.com/microsoft/playwright/issues/21760');
+it('should intercept by glob', async function({ page, server, isAndroid }) {
+  it.skip(isAndroid);
+
+  await page.goto(server.EMPTY_PAGE);
+  await page.route('http://localhos**?*oo', async route => {
+    await route.fulfill({
+      status: 200,
+      body: 'intercepted',
+    });
+  });
+  const result = await page.evaluate(url => fetch(url).then(r => r.text()), server.PREFIX + '/?foo');
+  expect(result).toBe('intercepted');
+});
+
+it('should intercept network activity from worker', async function({ page, server, isAndroid }) {
   it.skip(isAndroid);
 
   await page.goto(server.EMPTY_PAGE);
@@ -123,7 +165,42 @@ it('should intercept network activity from worker', async function({ page, serve
   expect(msg.text()).toBe('intercepted');
 });
 
-it('should intercept network activity from worker 2', async function({ page, server, isAndroid }) {
+it('should intercept worker requests when enabled after worker creation', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/32355' }
+}, async ({ page, server, isAndroid, browserName, browserMajorVersion }) => {
+  it.skip(isAndroid);
+  it.skip(browserName === 'chromium' && browserMajorVersion < 130, 'fixed in Chromium 130');
+
+  await page.goto(server.EMPTY_PAGE);
+  server.setRoute('/data_for_worker', (req, res) => res.end('failed to intercept'));
+  const url = server.PREFIX + '/data_for_worker';
+  await Promise.all([
+    page.waitForEvent('worker'),
+    page.evaluate(url => {
+      (window as any).w = new Worker(URL.createObjectURL(new Blob([`
+        onmessage = function(e) {
+          fetch("${url}").then(response => response.text()).then(console.log);
+        };
+      `], { type: 'application/javascript' })));
+    }, url),
+  ]);
+  // Install the route **after** the worker has been created.
+  await page.route(url, route => {
+    route.fulfill({
+      status: 200,
+      body: 'intercepted',
+    }).catch(e => null);
+  });
+  const [msg] = await Promise.all([
+    page.waitForEvent('console'),
+    page.evaluate(() => (window as any).w.postMessage(''))
+  ]);
+  expect(msg.text()).toBe('intercepted');
+});
+
+it('should intercept network activity from worker 2', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/31747' }
+}, async ({ page, server, isAndroid }) => {
   it.skip(isAndroid);
 
   const url = server.PREFIX + '/worker/worker.js';
@@ -165,7 +242,7 @@ it('should work with regular expression passed from a different context', async 
   expect(intercepted).toBe(true);
 });
 
-it('should not break remote worker importScripts', async ({ page, server, browserName, browserMajorVersion }) => {
+it('should not break remote worker importScripts', async ({ page, server }) => {
   await page.route('**', async route => {
     await route.continue();
   });
@@ -189,4 +266,21 @@ it('should disable memory cache when intercepting', async ({ page, server }) => 
   await page.goBack();
   await expect(page).toHaveURL(server.PREFIX + '/page.html');
   expect(interceted).toBe(2);
+});
+
+it('should intercept blob url requests', async function({ page, server, browserName }) {
+  it.fixme(browserName !== 'webkit');
+  await page.goto(server.EMPTY_PAGE);
+  await page.route('**/*', route => {
+    route.fulfill({
+      status: 200,
+      body: 'intercepted',
+    }).catch(e => null);
+  });
+  page.on('console', msg => console.log(msg.text()));
+  const response = await page.evaluate(async () => {
+    const blobUrl = URL.createObjectURL(new Blob(['failed to intercept'], { type: 'text/plain' }));
+    return await fetch(blobUrl).then(response => response.text());
+  });
+  expect(response).toBe('intercepted');
 });

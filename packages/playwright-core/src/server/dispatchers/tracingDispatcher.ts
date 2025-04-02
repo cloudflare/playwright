@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-import type * as channels from '@protocol/channels';
-import type { Tracing } from '../trace/recorder/tracing';
 import { ArtifactDispatcher } from './artifactDispatcher';
 import { Dispatcher, existingDispatcher } from './dispatcher';
+
 import type { BrowserContextDispatcher } from './browserContextDispatcher';
 import type { APIRequestContextDispatcher } from './networkDispatchers';
+import type { Tracing } from '../trace/recorder/tracing';
+import type { CallMetadata } from '@protocol/callMetadata';
+import type * as channels from '@protocol/channels';
 
 export class TracingDispatcher extends Dispatcher<Tracing, channels.TracingChannel, BrowserContextDispatcher | APIRequestContextDispatcher> implements channels.TracingChannel {
   _type_Tracing = true;
@@ -39,6 +41,15 @@ export class TracingDispatcher extends Dispatcher<Tracing, channels.TracingChann
 
   async tracingStartChunk(params: channels.TracingTracingStartChunkParams): Promise<channels.TracingTracingStartChunkResult> {
     return await this._object.startChunk(params);
+  }
+
+  async tracingGroup(params: channels.TracingTracingGroupParams, metadata: CallMetadata): Promise<channels.TracingTracingGroupResult> {
+    const { name, location } = params;
+    await this._object.group(name, location, metadata);
+  }
+
+  async tracingGroupEnd(params: channels.TracingTracingGroupEndParams): Promise<channels.TracingTracingGroupEndResult> {
+    await this._object.groupEnd();
   }
 
   async tracingStopChunk(params: channels.TracingTracingStopChunkParams): Promise<channels.TracingTracingStopChunkResult> {

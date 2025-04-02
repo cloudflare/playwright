@@ -50,6 +50,25 @@ Start time of this particular test step.
 
 List of steps inside this step.
 
+## property: TestStep.annotations
+* since: v1.51
+- type: <[Array]<[Object]>>
+  - `type` <[string]> Annotation type, for example `'skip'`.
+  - `description` ?<[string]> Optional description.
+  - `location` ?<[Location]> Optional location in the source where the annotation is added.
+
+The list of annotations applicable to the current test step.
+
+## property: TestStep.attachments
+* since: v1.50
+- type: <[Array]<[Object]>>
+  - `name` <[string]> Attachment name.
+  - `contentType` <[string]> Content type of this attachment to properly present in the report, for example `'application/json'` or `'image/png'`.
+  - `path` ?<[string]> Optional path on the filesystem to the attached file.
+  - `body` ?<[Buffer]> Optional attachment body used instead of a file.
+
+The list of files or buffers attached in the step execution through [`method: TestInfo.attach`].
+
 ## property: TestStep.title
 * since: v1.10
 - type: <[string]>

@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-import type * as channels from '@protocol/channels';
 import { eventsHelper } from '../../utils';
-import type { RegisteredListener } from '../../utils/eventsHelper';
 import { DebugController } from '../debugController';
-import type { DispatcherConnection, RootDispatcher } from './dispatcher';
 import { Dispatcher } from './dispatcher';
+
+import type { DispatcherConnection, RootDispatcher } from './dispatcher';
+import type { RegisteredListener } from '../utils/eventsHelper';
+import type * as channels from '@protocol/channels';
+
 
 export class DebugControllerDispatcher extends Dispatcher<DebugController, channels.DebugControllerChannel, RootDispatcher> implements channels.DebugControllerChannel {
   _type_DebugController;
@@ -32,8 +34,8 @@ export class DebugControllerDispatcher extends Dispatcher<DebugController, chann
       eventsHelper.addEventListener(this._object, DebugController.Events.StateChanged, params => {
         this._dispatchEvent('stateChanged', params);
       }),
-      eventsHelper.addEventListener(this._object, DebugController.Events.InspectRequested, ({ selector, locator }) => {
-        this._dispatchEvent('inspectRequested', { selector, locator });
+      eventsHelper.addEventListener(this._object, DebugController.Events.InspectRequested, ({ selector, locator, ariaSnapshot }) => {
+        this._dispatchEvent('inspectRequested', { selector, locator, ariaSnapshot });
       }),
       eventsHelper.addEventListener(this._object, DebugController.Events.SourceChanged, ({ text, header, footer, actions }) => {
         this._dispatchEvent('sourceChanged', ({ text, header, footer, actions }));
@@ -68,7 +70,7 @@ export class DebugControllerDispatcher extends Dispatcher<DebugController, chann
   }
 
   async highlight(params: channels.DebugControllerHighlightParams) {
-    await this._object.highlight(params.selector);
+    await this._object.highlight(params);
   }
 
   async hideHighlight() {

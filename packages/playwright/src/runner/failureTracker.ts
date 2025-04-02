@@ -31,7 +31,8 @@ export class FailureTracker {
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
-    if (result.status !== 'skipped' && result.status !== test.expectedStatus)
+    // Test is considered failing after the last retry.
+    if (test.outcome() === 'unexpected' && test.results.length > test.retries)
       ++this._failureCount;
   }
 
@@ -40,8 +41,7 @@ export class FailureTracker {
   }
 
   hasReachedMaxFailures() {
-    const maxFailures = this._config.config.maxFailures;
-    return maxFailures > 0 && this._failureCount >= maxFailures;
+    return this.maxFailures() > 0 && this._failureCount >= this.maxFailures();
   }
 
   hasWorkerErrors() {
@@ -49,6 +49,19 @@ export class FailureTracker {
   }
 
   result(): 'failed' | 'passed' {
-    return this._hasWorkerErrors || this.hasReachedMaxFailures() || this._rootSuite?.allTests().some(test => !test.ok()) ? 'failed' : 'passed';
+    return this._hasWorkerErrors || this.hasReachedMaxFailures() || this.hasFailedTests() || (this._config.config.failOnFlakyTests && this.hasFlakyTests()) ? 'failed' : 'passed';
   }
+
+  hasFailedTests() {
+    return this._rootSuite?.allTests().some(test => !test.ok());
+  }
+
+  hasFlakyTests() {
+    return this._rootSuite?.allTests().some(test => (test.outcome() === 'flaky'));
+  }
+
+  maxFailures() {
+    return this._config.config.maxFailures;
+  }
+
 }

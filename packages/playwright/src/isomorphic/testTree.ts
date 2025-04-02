@@ -17,6 +17,8 @@
 export type TestItemStatus = 'none' | 'running' | 'scheduled' | 'passed' | 'failed' | 'skipped';
 import type * as reporterTypes from '../../types/testReporter';
 
+// -- Reuse boundary -- Everything below this line is reused in the vscode extension.
+
 export type TreeItemBase = {
   kind: 'root' | 'group' | 'case' | 'test',
   id: string;
@@ -77,14 +79,19 @@ export class TestTree {
 
     const visitSuite = (project: reporterTypes.FullProject, parentSuite: reporterTypes.Suite, parentGroup: GroupItem) => {
       for (const suite of parentSuite.suites) {
-        const title = suite.title || '<anonymous>';
-        let group = parentGroup.children.find(item => item.kind === 'group' && item.title === title) as GroupItem | undefined;
+        if (!suite.title) {
+          // Flatten anonymous describes.
+          visitSuite(project, suite, parentGroup);
+          continue;
+        }
+
+        let group = parentGroup.children.find(item => item.kind === 'group' && item.title === suite.title) as GroupItem | undefined;
         if (!group) {
           group = {
             kind: 'group',
             subKind: 'describe',
-            id: 'suite:' + parentSuite.titlePath().join('\x1e') + '\x1e' + title,  // account for anonymous suites
-            title,
+            id: 'suite:' + parentSuite.titlePath().join('\x1e') + '\x1e' + suite.title,  // account for anonymous suites
+            title: suite.title,
             location: suite.location!,
             duration: 0,
             parent: parentGroup,

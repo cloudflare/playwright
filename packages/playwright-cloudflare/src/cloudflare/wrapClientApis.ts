@@ -56,8 +56,9 @@ import {
   Playwright,
   WebError,
 } from 'playwright-core/lib/client/api';
+
 import { apiCallZone } from './apiCallZone';
-  
+
 type ApiTypeMap = {
   'accessibility': Accessibility,
   // 'android': Android,
@@ -103,7 +104,7 @@ type ApiTypeMap = {
 
 // obtains all async public methods from a class (excludes the ones prefixed with _)
 type KeysOfAsyncMethods<T> = {
-  [K in keyof T]: T[K] extends (...args: any[]) => Promise<any> ? (K extends `_${string}` ? never : K) : never;
+  [K in keyof T]: T[K] extends (...args: any[]) => Promise<any> ? (K extends `_${string}` | 'removeAllListeners' ? never : K) : never;
 }[Extract<keyof T, string>];
 
 // exhaustive list of async API functions, with explicit flag if they need to be wrapped or not
@@ -136,7 +137,8 @@ const apis: { [ApiK in keyof ApiTypeMap]: [ApiTypeMap[ApiK], { [K in KeysOfAsync
     waitForEvent: true,
     storageState: true,
     newCDPSession: true,
-    close: true
+    close: true,
+    routeWebSocket: true
   }],
   browserType: [BrowserType.prototype, { launch: true, launchServer: true, launchPersistentContext: true, connect: true, connectOverCDP: true }],
   // clock: [Clock.prototype, { install: true, fastForward: true, pauseAt: true, resume: true, runFor: true, setFixedTime: true, setSystemTime: true }],
@@ -191,6 +193,7 @@ const apis: { [ApiK in keyof ApiTypeMap]: [ApiTypeMap[ApiK], { [K in KeysOfAsync
     allInnerTexts: true,
     allTextContents: true,
     waitFor: true,
+    ariaSnapshot: true
   }],
   frameLocator: [FrameLocator.prototype, {}],
   elementHandle: [ElementHandle.prototype, {
@@ -367,9 +370,12 @@ const apis: { [ApiK in keyof ApiTypeMap]: [ApiTypeMap[ApiK], { [K in KeysOfAsync
     waitForFunction: true,
     pause: true,
     pdf: true,
+    removeLocatorHandler: true,
+    requestGC: true,
+    routeWebSocket: true
   }],
   selectors: [Selectors.prototype, { register: true }],
-  tracing: [Tracing.prototype, { start: true, startChunk: true, stop: true, stopChunk: true }],
+  tracing: [Tracing.prototype, { start: true, startChunk: true, stop: true, stopChunk: true, group: false, groupEnd: false }],
   video: [Video.prototype, { delete: true, path: true, saveAs: true }],
   worker: [Worker.prototype, { evaluate: true, evaluateHandle: true }],
   session: [CDPSession.prototype, { send: true, detach: true }],

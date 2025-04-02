@@ -78,7 +78,7 @@ it('should work with cross-process that fails before committing', async ({ page,
   expect(error instanceof Error).toBeTruthy();
 });
 
-it('should work with Cross-Origin-Opener-Policy', async ({ page, server, browserName }) => {
+it('should work with Cross-Origin-Opener-Policy', async ({ page, server }) => {
   server.setRoute('/empty.html', (req, res) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.end();
@@ -109,7 +109,42 @@ it('should work with Cross-Origin-Opener-Policy', async ({ page, server, browser
   expect(response.request().failure()).toBeNull();
 });
 
-it('should work with Cross-Origin-Opener-Policy after redirect', async ({ page, server, browserName }) => {
+it('should work with Cross-Origin-Opener-Policy and interception', async ({ page, server }) => {
+  server.setRoute('/empty.html', (req, res) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.end();
+  });
+  const requests = new Set();
+  const events = [];
+  page.on('request', r => {
+    events.push('request');
+    requests.add(r);
+  });
+  page.on('requestfailed', r => {
+    events.push('requestfailed');
+    requests.add(r);
+  });
+  page.on('requestfinished', r => {
+    events.push('requestfinished');
+    requests.add(r);
+  });
+  page.on('response', r => {
+    events.push('response');
+    requests.add(r.request());
+  });
+  await page.route('**/*', async route => {
+    await new Promise(f => setTimeout(f, 100));
+    await route.continue();
+  });
+  const response = await page.goto(server.EMPTY_PAGE);
+  expect(page.url()).toBe(server.EMPTY_PAGE);
+  await response.finished();
+  expect(events).toEqual(['request', 'response', 'requestfinished']);
+  expect(requests.size).toBe(1);
+  expect(response.request().failure()).toBeNull();
+});
+
+it('should work with Cross-Origin-Opener-Policy after redirect', async ({ page, server }) => {
   server.setRedirect('/redirect', '/empty.html');
   server.setRoute('/empty.html', (req, res) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
@@ -223,7 +258,8 @@ it('should work with subframes return 204 with domcontentloaded', async ({ page,
   await page.goto(server.PREFIX + '/frames/one-frame.html', { waitUntil: 'domcontentloaded' });
 });
 
-it('should fail when server returns 204', async ({ page, server, browserName }) => {
+it('should fail when server returns 204', async ({ page, server, browserName, isLinux }) => {
+  it.fixme(browserName === 'webkit' && isLinux, 'Regressed in https://github.com/microsoft/playwright-browsers/pull/1297');
   // WebKit just loads an empty page.
   server.setRoute('/empty.html', (req, res) => {
     res.statusCode = 204;
@@ -310,7 +346,7 @@ it('should fail when main resources failed to load', async ({ page, browserName,
   } else if (browserName === 'webkit' && isWindows && mode === 'service2') {
     expect(error.message).toContain(`proxy handshake error`);
   } else if (browserName === 'webkit' && isWindows) {
-    expect(error.message).toContain(`Couldn\'t connect to server`);
+    expect(error.message).toContain(`Could not connect to server`);
   } else if (browserName === 'webkit') {
     if (mode === 'service2')
       expect(error.message).toContain('Connection refused');
@@ -481,6 +517,7 @@ it('js redirect overrides url bar navigation ', async ({ page, server, browserNa
 
 it('should succeed on url bar navigation when there is pending navigation', async ({ page, server, browserName }) => {
   it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/21574' });
+  it.skip(process.env.PW_CLOCK === 'frozen');
   server.setRoute('/a', (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(`
@@ -509,7 +546,7 @@ it('should succeed on url bar navigation when there is pending navigation', asyn
     events.push('finished c');
   });
   await page.goto(server.PREFIX + '/a');
-  await new Promise(f => setTimeout(f, 1000));
+  await page.waitForTimeout(1000);
   const error = await page.goto(server.PREFIX + '/b').then(r => null, e => e);
   const expectEvents = ['started c', 'started b', 'finished c', 'finished b'];
   await expect(() => expect(events).toEqual(expectEvents)).toPass({ timeout: 5000 });
@@ -684,8 +721,7 @@ it('should fail when canceled by another navigation', async ({ page, server }) =
   expect(error.message).toBeTruthy();
 });
 
-it('should work with lazy loading iframes', async ({ page, server, isElectron, isAndroid }) => {
-  it.fixme(isElectron);
+it('should work with lazy loading iframes', async ({ page, server, isAndroid }) => {
   it.fixme(isAndroid);
 
   await page.goto(server.PREFIX + '/frames/lazy-frame.html');
@@ -753,6 +789,7 @@ it('should properly wait for load', async ({ page, server, browserName }) => {
 
 it('should not resolve goto upon window.stop()', async ({ browserName, page, server }) => {
   it.fixme(browserName === 'firefox', 'load/domcontentloaded events are flaky');
+  it.skip(process.env.PW_CLOCK === 'frozen');
 
   let response;
   server.setRoute('/module.js', (req, res) => {
@@ -795,6 +832,7 @@ it('should return when navigation is committed if commit is specified', async ({
 });
 
 it('should wait for load when iframe attaches and detaches', async ({ page, server }) => {
+  it.skip(process.env.PW_CLOCK === 'frozen');
   server.setRoute('/empty.html', (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(`

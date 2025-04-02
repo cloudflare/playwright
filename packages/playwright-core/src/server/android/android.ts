@@ -14,29 +14,35 @@
  * limitations under the License.
  */
 
-import { debug } from '../../utilsBundle';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type * as stream from 'stream';
+
+import { TimeoutSettings } from '../timeoutSettings';
+import { PipeTransport } from '../utils/pipeTransport';
+import { createGuid } from '../utils/crypto';
+import { isUnderTest } from '../utils/debug';
+import { getPackageManagerExecCommand } from '../utils/env';
+import { makeWaitForNextTask } from '../utils/task';
+import { RecentLogsCollector } from '../utils/debugLogger';
+import { debug } from '../../utilsBundle';
 import { wsReceiver, wsSender } from '../../utilsBundle';
-import { createGuid, makeWaitForNextTask, isUnderTest, getPackageManagerExecCommand } from '../../utils';
-import { removeFolders } from '../../utils/fileUtils';
+import { validateBrowserContextOptions } from '../browserContext';
+import { chromiumSwitches } from '../chromium/chromiumSwitches';
+import { CRBrowser } from '../chromium/crBrowser';
+import { removeFolders } from '../utils/fileUtils';
+import { helper } from '../helper';
+import { SdkObject, serverSideCallMetadata } from '../instrumentation';
+import { gracefullyCloseSet } from '../utils/processLauncher';
+import { ProgressController } from '../progress';
+import { registry } from '../registry';
+
 import type { BrowserOptions, BrowserProcess } from '../browser';
 import type { BrowserContext } from '../browserContext';
-import { validateBrowserContextOptions } from '../browserContext';
-import { ProgressController } from '../progress';
-import { CRBrowser } from '../chromium/crBrowser';
-import { helper } from '../helper';
-import { PipeTransport } from '../../protocol/transport';
-import { RecentLogsCollector } from '../../utils/debugLogger';
-import { gracefullyCloseSet } from '../../utils/processLauncher';
-import { TimeoutSettings } from '../../common/timeoutSettings';
+import type * as types from '../types';
 import type * as channels from '@protocol/channels';
-import { SdkObject, serverSideCallMetadata } from '../instrumentation';
-import { chromiumSwitches } from '../chromium/chromiumSwitches';
-import { registry } from '../registry';
+import type * as stream from 'stream';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
@@ -309,7 +315,7 @@ export class AndroidDevice extends SdkObject {
     return await this._connectToBrowser(socketName);
   }
 
-  private async _connectToBrowser(socketName: string, options: channels.BrowserNewContextParams = {}): Promise<BrowserContext> {
+  private async _connectToBrowser(socketName: string, options: types.BrowserContextOptions = {}): Promise<BrowserContext> {
     const socket = await this._waitForLocalAbstract(socketName);
     const androidBrowser = new AndroidBrowser(this, socket);
     await androidBrowser._init();
@@ -523,5 +529,3 @@ class ClankBrowserProcess implements BrowserProcess {
     await this._browser.close();
   }
 }
-
-

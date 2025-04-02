@@ -129,7 +129,7 @@ class nsScreencastService::Session : public rtc::VideoSinkInterface<webrtc::Vide
     capability.height = 960;
     capability.maxFPS = ScreencastEncoder::fps;
     capability.videoType = webrtc::VideoType::kI420;
-    int error = mCaptureModule->StartCapture(capability);
+    int error = mCaptureModule->StartCaptureCounted(capability);
     if (error) {
       fprintf(stderr, "StartCapture error %d\n", error);
       return false;
@@ -152,7 +152,7 @@ class nsScreencastService::Session : public rtc::VideoSinkInterface<webrtc::Vide
       mCaptureModule->DeRegisterCaptureDataCallback(this);
     else
       mCaptureModule->DeRegisterRawFrameCallback(this);
-    mCaptureModule->StopCapture();
+    mCaptureModule->StopCaptureCounted();
     if (mEncoder) {
       mEncoder->finish([this, protect = RefPtr{this}] {
         NS_DispatchToMainThread(NS_NewRunnableFunction(
@@ -343,10 +343,17 @@ nsresult nsScreencastService::StartVideoRecording(nsIScreencastServiceClient* aC
     return NS_ERROR_FAILURE;
 
   gfx::IntMargin margin;
-  auto bounds = widget->GetScreenBounds().ToUnknownRect();
+  // Screen bounds is the widget location on screen.
+  auto screenBounds = widget->GetScreenBounds().ToUnknownRect();
+  // Client bounds is the content location, in terms of parent widget.
+  // To use it, we need to translate it to screen coordinates first.
   auto clientBounds = widget->GetClientBounds().ToUnknownRect();
+  for (auto parent = widget->GetParent(); parent != nullptr; parent = parent->GetParent()) {
+    auto pb = parent->GetClientBounds().ToUnknownRect();
+    clientBounds.MoveBy(pb.X(), pb.Y());
+  }
   // Crop the image to exclude frame (if any).
-  margin = bounds - clientBounds;
+  margin = screenBounds - clientBounds;
   // Crop the image to exclude controls.
   margin.top += offsetTop;
 

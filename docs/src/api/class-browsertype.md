@@ -89,13 +89,17 @@ class BrowserTypeExamples
 * since: v1.8
 - returns: <[Browser]>
 
-This method attaches Playwright to an existing browser instance. When connecting to another browser launched via `BrowserType.launchServer` in Node.js, the major and minor version needs to match the client version (1.2.3 → is compatible with 1.2.x).
+This method attaches Playwright to an existing browser instance created via `BrowserType.launchServer` in Node.js.
+
+:::note
+The major and minor version of the Playwright instance that connects needs to match the version of Playwright that launches the browser (1.2.3 → is compatible with 1.2.x).
+:::
 
 ### param: BrowserType.connect.wsEndpoint
 * since: v1.10
 - `wsEndpoint` <[string]>
 
-A browser websocket endpoint to connect to.
+A Playwright browser websocket endpoint to connect to. You obtain this endpoint via `BrowserServer.wsEndpoint`.
 
 ### option: BrowserType.connect.headers
 * since: v1.11
@@ -140,6 +144,16 @@ Some common examples:
 1. `"<loopback>"` to expose localhost network.
 1. `"*.test.internal-domain,*.staging.internal-domain,<loopback>"` to expose test/staging deployments and localhost.
 
+### option: BrowserType.connect.proxy
+* since: v1.52
+- `proxy` <[Object]>
+  - `server` <[string]> Proxy to be used for the remote connection. HTTP and SOCKS proxies are supported, for example `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP proxy.
+  - `bypass` ?<[string]> Optional comma-separated domains to bypass proxy, for example `".com, chromium.org, .domain.com"`.
+  - `username` ?<[string]> Optional username to use if HTTP proxy requires authentication.
+  - `password` ?<[string]> Optional password to use if HTTP proxy requires authentication.
+
+Proxy settings to use for the connection between the client and the remote browser. Note this proxy **is not** used by the browser to load web pages.
+
 ## async method: BrowserType.connectOverCDP
 * since: v1.9
 - returns: <[Browser]>
@@ -150,6 +164,10 @@ The default browser context is accessible via [`method: Browser.contexts`].
 
 :::note
 Connecting over the Chrome DevTools Protocol is only supported for Chromium-based browsers.
+:::
+
+:::note
+This connection is significantly lower fidelity than the Playwright protocol connection via [`method: BrowserType.connect`]. If you are experiencing issues or attempting to use advanced functionality, you probably want to use [`method: BrowserType.connect`].
 :::
 
 **Usage**
@@ -223,6 +241,16 @@ Logger sink for Playwright logging. Optional.
 
 Maximum time in milliseconds to wait for the connection to be established. Defaults to
 `30000` (30 seconds). Pass `0` to disable timeout.
+
+### option: BrowserType.connectOverCDP.proxy
+* since: v1.52
+- `proxy` <[Object]>
+  - `server` <[string]> Proxy to be used for the remote connection. HTTP and SOCKS proxies are supported, for example `http://myproxy.com:3128` or `socks5://myproxy.com:3128`. Short form `myproxy.com:3128` is considered an HTTP proxy.
+  - `bypass` ?<[string]> Optional comma-separated domains to bypass proxy, for example `".com, chromium.org, .domain.com"`.
+  - `username` ?<[string]> Optional username to use if HTTP proxy requires authentication.
+  - `password` ?<[string]> Optional password to use if HTTP proxy requires authentication.
+
+Proxy settings to use for the connection between the client and the remote browser. Note this proxy **is not** used by the browser to load web pages.
 
 ## method: BrowserType.executablePath
 * since: v1.8
@@ -316,11 +344,13 @@ this context will automatically close the browser.
 * since: v1.8
 - `userDataDir` <[path]>
 
-Path to a User Data Directory, which stores browser session data like cookies and local storage. More details for
+Path to a User Data Directory, which stores browser session data like cookies and local storage. Pass an empty string to create a temporary directory.
+
+More details for
 [Chromium](https://chromium.googlesource.com/chromium/src/+/master/docs/user_data_dir.md#introduction) and
-[Firefox](https://developer.mozilla.org/en-US/docs/Mozilla/Command_Line_Options#User_Profile).
-Note that Chromium's user data directory is the **parent** directory of the "Profile Path" seen at `chrome://version`. Pass an empty string to
-use a temporary directory instead.
+[Firefox](https://wiki.mozilla.org/Firefox/CommandLineOptions#User_profile). Chromium's user data directory is the **parent** directory of the "Profile Path" seen at `chrome://version`.
+
+Note that browsers do not allow launching multiple instances with the same User Data Directory.
 
 ### option: BrowserType.launchPersistentContext.-inline- = %%-shared-browser-options-list-v1.8-%%
 * since: v1.8
@@ -342,6 +372,9 @@ use a temporary directory instead.
 
 ### option: BrowserType.launchPersistentContext.firefoxUserPrefs2 = %%-csharp-java-browser-option-firefoxuserprefs-%%
 * since: v1.40
+
+### option: BrowserType.launchPersistentContext.clientCertificates = %%-context-option-clientCertificates-%%
+* since: 1.46
 
 ## async method: BrowserType.launchServer
 * since: v1.8
@@ -379,6 +412,12 @@ const { chromium } = require('playwright');  // Or 'webkit' or 'firefox'.
 
 ### option: BrowserType.launchServer.logger = %%-browser-option-logger-%%
 * since: v1.8
+
+### option: BrowserType.launchServer.host
+* since: v1.45
+- `host` <[string]>
+
+Host to use for the web socket. It is optional and if it is omitted, the server will accept connections on the unspecified IPv6 address (::) when IPv6 is available, or the unspecified IPv4 address (0.0.0.0) otherwise. Consider hardening it with picking a specific interface.
 
 ### option: BrowserType.launchServer.port
 * since: v1.8

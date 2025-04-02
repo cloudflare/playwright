@@ -113,7 +113,7 @@ test('should not have any automatically detectable WCAG A or AA violations', asy
 });
 ```
 
-You can find a complete listing of the rule tags axe-core supports in [the "Axe-core Tags" section of the axe API documentation](https://www.deque.com/axe/core-documentation/api-documentation/#axe-core-tags).
+You can find a complete listing of the rule tags axe-core supports in [the "Axe-core Tags" section of the axe API documentation](https://www.deque.com/axe/core-documentation/api-documentation/#axecore-tags).
 
 ## Handling known issues
 
@@ -147,7 +147,7 @@ If the element in question is used repeatedly in many pages, consider [using a t
 
 ### Disabling individual scan rules
 
-If your application contains many different pre-existing violations of a specific rule, you can use [`AxeBuilder.disableRules()`](https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/README.md#axebuilderdisablerulesrules-stringarray) to temporarily disable individual rules until you're able to fix the issues.
+If your application contains many different preexisting violations of a specific rule, you can use [`AxeBuilder.disableRules()`](https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/README.md#axebuilderdisablerulesrules-stringarray) to temporarily disable individual rules until you're able to fix the issues.
 
 You can find the rule IDs to pass to `disableRules()` in the `id` property of the violations you want to suppress. A [complete list of axe's rules](https://github.com/dequelabs/axe-core/blob/master/doc/rule-descriptions.md) can be found in `axe-core`'s documentation.
 
@@ -167,7 +167,7 @@ test('should not have any accessibility violations outside of rules with known i
 
 ### Using snapshots to allow specific known issues
 
-If you would like to allow for a more granular set of known issues, you can use [Snapshots](./test-snapshots.md) to verify that a set of pre-existing violations has not changed. This approach avoids the downsides of using `AxeBuilder.exclude()` at the cost of slightly more complexity and fragility.
+If you would like to allow for a more granular set of known issues, you can use [Snapshots](./test-snapshots.md) to verify that a set of preexisting violations has not changed. This approach avoids the downsides of using `AxeBuilder.exclude()` at the cost of slightly more complexity and fragility.
 
 Do not use a snapshot of the entire `accessibilityScanResults.violations` array. It contains implementation details of the elements in question, such as a snippet of their rendered HTML; if you include these in your snapshots, it will make your tests prone to breaking every time one of the components in question changes for an unrelated reason:
 
@@ -244,7 +244,7 @@ type AxeFixture = {
 // This new "test" can be used in multiple test files, and each of them will get
 // a consistently configured AxeBuilder instance.
 export const test = base.extend<AxeFixture>({
-  makeAxeBuilder: async ({ page }, use, testInfo) => {
+  makeAxeBuilder: async ({ page }, use) => {
     const makeAxeBuilder = () => new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .exclude('#commonly-reused-element-with-known-issue');
@@ -255,8 +255,7 @@ export const test = base.extend<AxeFixture>({
 export { expect } from '@playwright/test';
 ```
 
-```js tab=js-js
-// axe-test.js
+```js tab=js-js title="axe-test.js"
 const base = require('@playwright/test');
 const AxeBuilder = require('@axe-core/playwright').default;
 
@@ -265,7 +264,7 @@ const AxeBuilder = require('@axe-core/playwright').default;
 // This new "test" can be used in multiple test files, and each of them will get
 // a consistently configured AxeBuilder instance.
 exports.test = base.test.extend({
-  makeAxeBuilder: async ({ page }, use, testInfo) => {
+  makeAxeBuilder: async ({ page }, use) => {
     const makeAxeBuilder = () => new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
         .exclude('#commonly-reused-element-with-known-issue');

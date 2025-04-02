@@ -18,37 +18,39 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type stream from 'stream';
+
+import { chromiumSwitches } from './chromiumSwitches';
 import { CRBrowser } from './crBrowser';
-import type { Env } from '../../utils/processLauncher';
-import { gracefullyCloseSet } from '../../utils/processLauncher';
 import { kBrowserCloseMessageId } from './crConnection';
+import { TimeoutSettings } from '../timeoutSettings';
+import { debugMode, headersArrayToObject, headersObjectToArray, } from '../../utils';
+import { wrapInASCIIBox } from '../utils/ascii';
+import { RecentLogsCollector } from '../utils/debugLogger';
+import { ManualPromise } from '../../utils/isomorphic/manualPromise';
+import { fetchData } from '../utils/network';
+import { getUserAgent } from '../utils/userAgent';
+import { validateBrowserContextOptions } from '../browserContext';
 import { BrowserType, kNoXServerRunningError } from '../browserType';
-import type { ConnectionTransport, ProtocolRequest } from '../transport';
+import { BrowserReadyState } from '../browserType';
+import { helper } from '../helper';
+import { registry } from '../registry';
 import { WebSocketTransport } from '../transport';
 import { CRDevTools } from './crDevTools';
-import type { BrowserOptions, BrowserProcess } from '../browser';
 import { Browser } from '../browser';
-import type * as types from '../types';
-import type * as channels from '@protocol/channels';
-import type { HTTPRequestParams } from '../../utils/network';
-import { fetchData } from '../../utils/network';
-import { getUserAgent } from '../../utils/userAgent';
-import { wrapInASCIIBox } from '../../utils/ascii';
-import { debugMode, headersArrayToObject, headersObjectToArray, } from '../../utils';
-import { removeFolders } from '../../utils/fileUtils';
-import { RecentLogsCollector } from '../../utils/debugLogger';
-import type { Progress } from '../progress';
+import { removeFolders } from '../utils/fileUtils';
+import { gracefullyCloseSet } from '../utils/processLauncher';
 import { ProgressController } from '../progress';
-import { TimeoutSettings } from '../../common/timeoutSettings';
-import { helper } from '../helper';
+
+import type { HTTPRequestParams } from '../utils/network';
+import type { BrowserOptions, BrowserProcess } from '../browser';
 import type { CallMetadata, SdkObject } from '../instrumentation';
-import type http from 'http';
-import { registry } from '../registry';
-import { ManualPromise } from '../../utils/manualPromise';
-import { validateBrowserContextOptions } from '../browserContext';
-import { chromiumSwitches } from './chromiumSwitches';
+import type { Env } from '../utils/processLauncher';
+import type { Progress } from '../progress';
 import type { ProtocolError } from '../protocolError';
+import type { ConnectionTransport, ProtocolRequest } from '../transport';
+import type * as types from '../types';
+import type http from 'http';
+import type stream from 'stream';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
@@ -62,15 +64,15 @@ export class Chromium extends BrowserType {
       this._devtools = this._createDevTools();
   }
 
-  override async connectOverCDP(metadata: CallMetadata, endpointURL: string, options: { slowMo?: number, headers?: types.HeadersArray }, timeout?: number) {
+  override async connectOverCDP(metadata: CallMetadata, endpointURL: string, options: { slowMo?: number, proxy?: types.ProxySettings, timeout?: number, headers?: types.HeadersArray }) {
     const controller = new ProgressController(metadata, this);
     controller.setLogName('browser');
     return controller.run(async progress => {
       return await this._connectOverCDPInternal(progress, endpointURL, options);
-    }, TimeoutSettings.timeout({ timeout }));
+    }, TimeoutSettings.timeout(options));
   }
 
-  async _connectOverCDPInternal(progress: Progress, endpointURL: string, options: types.LaunchOptions & { headers?: types.HeadersArray }, onClose?: () => Promise<void>) {
+  async _connectOverCDPInternal(progress: Progress, endpointURL: string, options: types.LaunchOptions & { headers?: types.HeadersArray, proxy?: types.ProxySettings }, onClose?: () => Promise<void>) {
     let headersMap: { [key: string]: string; } | undefined;
     if (options.headers)
       headersMap = headersArrayToObject(options.headers, false);
@@ -82,10 +84,10 @@ export class Chromium extends BrowserType {
 
     const artifactsDir = await fs.promises.mkdtemp(ARTIFACTS_FOLDER);
 
-    const wsEndpoint = await urlToWSEndpoint(progress, endpointURL, headersMap);
+    const wsEndpoint = await urlToWSEndpoint(progress, endpointURL, headersMap, options.proxy);
     progress.throwIfAborted();
 
-    const chromeTransport = await WebSocketTransport.connect(progress, wsEndpoint, headersMap);
+    const chromeTransport = await WebSocketTransport.connect(progress, wsEndpoint, { headers: headersMap, proxy: options.proxy });
     const cleanedUp = new ManualPromise<void>();
     const doCleanup = async () => {
       await removeFolders([artifactsDir]);
@@ -97,7 +99,7 @@ export class Chromium extends BrowserType {
       await cleanedUp;
     };
     const browserProcess: BrowserProcess = { close: doClose, kill: doClose };
-    const persistent: channels.BrowserNewContextParams = { noDefaultViewport: true };
+    const persistent: types.BrowserContextOptions = { noDefaultViewport: true };
     const browserOptions: BrowserOptions = {
       slowMo: options.slowMo,
       name: 'chromium',
@@ -109,12 +111,6 @@ export class Chromium extends BrowserType {
       artifactsDir,
       downloadsPath: options.downloadsPath || artifactsDir,
       tracesDir: options.tracesDir || artifactsDir,
-      // On Windows context level proxies only work, if there isn't a global proxy
-      // set. This is currently a bug in the CR/Windows networking stack. By
-      // passing an arbitrary value we disable the check in PW land which warns
-      // users in normal (launch/launchServer) mode since otherwise connectOverCDP
-      // does not work at all with proxies on Windows.
-      proxy: { server: 'per-context' },
       originalLaunchOptions: {},
     };
     validateBrowserContextOptions(persistent, browserOptions);
@@ -131,7 +127,7 @@ export class Chromium extends BrowserType {
     return directory ? new CRDevTools(path.join(directory, 'devtools-preferences.json')) : undefined;
   }
 
-  async _connectToTransport(transport: ConnectionTransport, options: BrowserOptions): Promise<CRBrowser> {
+  override async connectToTransport(transport: ConnectionTransport, options: BrowserOptions): Promise<CRBrowser> {
     let devtools = this._devtools;
     if ((options as any).__testHookForDevTools) {
       devtools = this._createDevTools();
@@ -140,7 +136,7 @@ export class Chromium extends BrowserType {
     return CRBrowser.connect(this.attribution.playwright, transport, options, devtools);
   }
 
-  _doRewriteStartupLog(error: ProtocolError): ProtocolError {
+  override doRewriteStartupLog(error: ProtocolError): ProtocolError {
     if (!error.logs)
       return error;
     if (error.logs.includes('Missing X server'))
@@ -152,8 +148,8 @@ export class Chromium extends BrowserType {
     error.logs = [
       `Chromium sandboxing failed!`,
       `================================`,
-      `To workaround sandboxing issues, do either of the following:`,
-      `  - (preferred): Configure environment to support sandboxing: https://playwright.dev/docs/troubleshooting`,
+      `To avoid the sandboxing issue, do either of the following:`,
+      `  - (preferred): Configure your environment to support sandboxing`,
       `  - (alternative): Launch Chromium without sandbox using 'chromiumSandbox: false' option`,
       `================================`,
       ``,
@@ -161,11 +157,11 @@ export class Chromium extends BrowserType {
     return error;
   }
 
-  _amendEnvironment(env: Env, userDataDir: string, executable: string, browserArguments: string[]): Env {
+  override amendEnvironment(env: Env, userDataDir: string, executable: string, browserArguments: string[]): Env {
     return env;
   }
 
-  _attemptToGracefullyCloseBrowser(transport: ConnectionTransport): void {
+  override attemptToGracefullyCloseBrowser(transport: ConnectionTransport): void {
     const message: ProtocolRequest = { method: 'Browser.close', id: kBrowserCloseMessageId, params: {} };
     transport.send(message);
   }
@@ -277,7 +273,7 @@ export class Chromium extends BrowserType {
     }
   }
 
-  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[] {
+  override defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[] {
     const chromeArguments = this._innerDefaultArgs(options);
     chromeArguments.push(`--user-data-dir=${userDataDir}`);
     if (options.useWebSocket)
@@ -292,7 +288,7 @@ export class Chromium extends BrowserType {
   }
 
   private _innerDefaultArgs(options: types.LaunchOptions): string[] {
-    const { args = [], proxy } = options;
+    const { args = [] } = options;
     const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir'));
     if (userDataDirArg)
       throw this._createUserDataDirArgMisuseError('--user-data-dir');
@@ -306,17 +302,14 @@ export class Chromium extends BrowserType {
       // See https://github.com/microsoft/playwright/issues/7362
       chromeArguments.push('--enable-use-zoom-for-dsf=false');
       // See https://bugs.chromium.org/p/chromium/issues/detail?id=1407025.
-      if (options.headless)
+      if (options.headless && (!options.channel || options.channel === 'chromium-headless-shell'))
         chromeArguments.push('--use-angle');
     }
 
     if (options.devtools)
       chromeArguments.push('--auto-open-devtools-for-tabs');
     if (options.headless) {
-      if (process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW)
-        chromeArguments.push('--headless=new');
-      else
-        chromeArguments.push('--headless');
+      chromeArguments.push('--headless');
 
       chromeArguments.push(
           '--hide-scrollbars',
@@ -326,6 +319,7 @@ export class Chromium extends BrowserType {
     }
     if (options.chromiumSandbox !== true)
       chromeArguments.push('--no-sandbox');
+    const proxy = options.proxyOverride || options.proxy;
     if (proxy) {
       const proxyURL = new URL(proxy.server);
       const isSocks = proxyURL.protocol === 'socks5:';
@@ -349,20 +343,57 @@ export class Chromium extends BrowserType {
     chromeArguments.push(...args);
     return chromeArguments;
   }
+
+  override readyState(options: types.LaunchOptions): BrowserReadyState | undefined {
+    if (options.useWebSocket || options.args?.some(a => a.startsWith('--remote-debugging-port')))
+      return new ChromiumReadyState();
+    return undefined;
+  }
+
+  override getExecutableName(options: types.LaunchOptions): string {
+    if (options.channel)
+      return options.channel;
+    return options.headless ? 'chromium-headless-shell' : 'chromium';
+  }
 }
 
-async function urlToWSEndpoint(progress: Progress, endpointURL: string, headers: { [key: string]: string; }) {
+class ChromiumReadyState extends BrowserReadyState {
+  override onBrowserOutput(message: string): void {
+    const match = message.match(/DevTools listening on (.*)/);
+    if (match)
+      this._wsEndpoint.resolve(match[1]);
+  }
+}
+
+async function urlToWSEndpoint(progress: Progress, endpointURL: string, headers: { [key: string]: string; }, proxy?: types.ProxySettings) {
   if (endpointURL.startsWith('ws'))
     return endpointURL;
   progress.log(`<ws preparing> retrieving websocket url from ${endpointURL}`);
   const httpURL = endpointURL.endsWith('/') ? `${endpointURL}json/version/` : `${endpointURL}/json/version/`;
+  // Chromium insists on localhost "Host" header for security reasons, and in the case of proxy
+  // we end up with the remote host instead of localhost.
+  const extraHeaders = proxy ? { Host: `localhost:9222` } : {};
   const json = await fetchData({
     url: httpURL,
-    headers,
+    headers: { ...headers, ...extraHeaders },
+    proxy,
   }, async (_, resp) => new Error(`Unexpected status ${resp.statusCode} when connecting to ${httpURL}.\n` +
     `This does not look like a DevTools server, try connecting via ws://.`)
   );
-  return JSON.parse(json).webSocketDebuggerUrl;
+  const wsUrl = JSON.parse(json).webSocketDebuggerUrl;
+  if (proxy) {
+    // webSocketDebuggerUrl will be a localhost URL, accessible from the browser's computer.
+    // When using a proxy, assume we need to connect through the original endpointURL.
+    // Example:
+    //   connecting to http://example.com/
+    //   making request to http://example.com/json/version/
+    //   webSocketDebuggerUrl ends up as ws://localhost:9222/devtools/page/<guid>
+    //   we construct ws://example.com/devtools/page/<guid> by appending the pathname to the original URL
+    const url = new URL(endpointURL);
+    url.pathname += (url.pathname.endsWith('/') ? '' : '/') + new URL(wsUrl).pathname.substring(1);
+    return url.toString();
+  }
+  return wsUrl;
 }
 
 async function seleniumErrorHandler(params: HTTPRequestParams, response: http.IncomingMessage) {

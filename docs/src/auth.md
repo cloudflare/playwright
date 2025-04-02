@@ -15,7 +15,7 @@ We recommend to create `playwright/.auth` directory and add it to your `.gitigno
 
 ```bash tab=bash-bash
 mkdir -p playwright/.auth
-echo "\nplaywright/.auth" >> .gitignore
+echo $'\nplaywright/.auth' >> .gitignore
 ```
 
 ```batch tab=bash-batch
@@ -47,8 +47,9 @@ Create `tests/auth.setup.ts` that will prepare authenticated browser state for a
 
 ```js title="tests/auth.setup.ts"
 import { test as setup, expect } from '@playwright/test';
+import path from 'path';
 
-const authFile = 'playwright/.auth/user.json';
+const authFile = path.join(__dirname, '../playwright/.auth/user.json');
 
 setup('authenticate', async ({ page }) => {
   // Perform authentication steps. Replace these actions with your own.
@@ -112,6 +113,8 @@ test('test', async ({ page }) => {
   // page is authenticated
 });
 ```
+
+Note that you need to delete the stored state when it expires. If you don't need to keep the state between test runs, write the browser state under [`property: TestProject.outputDir`], which is automatically cleaned up before every test run.
 
 ### Authenticating in UI mode
 * langs: js
@@ -229,7 +232,7 @@ await page.goto('https://github.com/login')
 # Interact with login form
 await page.get_by_label("Username or email address").fill("username")
 await page.get_by_label("Password").fill("password")
-await page.page.get_by_role("button", name="Sign in").click()
+await page.get_by_role("button", name="Sign in").click()
 # Continue with the test
 ```
 
@@ -263,9 +266,9 @@ existing authentication state instead.
 Playwright provides a way to reuse the signed-in state in the tests. That way you can log
 in only once and then skip the log in step for all of the tests.
 
-Web apps use cookie-based or token-based authentication, where authenticated state is stored as [cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies) or in [local storage](https://developer.mozilla.org/en-US/docs/Web/API/Storage). Playwright provides [`method: BrowserContext.storageState`] method that can be used to retrieve storage state from authenticated contexts and then create new contexts with pre-populated state.
+Web apps use cookie-based or token-based authentication, where authenticated state is stored as [cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies), in [local storage](https://developer.mozilla.org/en-US/docs/Web/API/Storage) or in [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API). Playwright provides [`method: BrowserContext.storageState`] method that can be used to retrieve storage state from authenticated contexts and then create new contexts with prepopulated state.
 
-Cookies and local storage state can be used across different browsers. They depend on your application's authentication model: some apps might require both cookies and local storage.
+Cookies, local storage and IndexedDB state can be used across different browsers. They depend on your application's authentication model which may require some combination of cookies, local storage or IndexedDB.
 
 The following code snippet retrieves state from an authenticated context and creates a new context with that state.
 
@@ -296,15 +299,16 @@ context = browser.new_context(storage_state="state.json")
 
 ```csharp
 // Save storage state into the file.
+// Tests are executed in <TestProject>\bin\Debug\netX.0\ therefore relative path is used to reference playwright/.auth created in project root
 await context.StorageStateAsync(new()
 {
-    Path = "state.json"
+    Path = "../../../playwright/.auth/state.json"
 });
 
 // Create a new context with the saved storage state.
 var context = await browser.NewContextAsync(new()
 {
-    StorageStatePath = "state.json"
+    StorageStatePath = "../../../playwright/.auth/state.json"
 });
 ```
 
@@ -579,7 +583,7 @@ test('admin and user', async ({ adminPage, userPage }) => {
 
 ### Session storage
 
-Reusing authenticated state covers [cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies) and [local storage](https://developer.mozilla.org/en-US/docs/Web/API/Storage) based authentication. Rarely, [session storage](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage) is used for storing information associated with the signed-in state. Session storage is specific to a particular domain and is not persisted across page loads. Playwright does not provide API to persist session storage, but the following snippet can be used to save/load session storage.
+Reusing authenticated state covers [cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies), [local storage](https://developer.mozilla.org/en-US/docs/Web/API/Storage) and [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) based authentication. Rarely, [session storage](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage) is used for storing information associated with the signed-in state. Session storage is specific to a particular domain and is not persisted across page loads. Playwright does not provide API to persist session storage, but the following snippet can be used to save/load session storage.
 
 ```js
 // Get session storage and store as env variable

@@ -14,37 +14,43 @@
  * limitations under the License.
  */
 
+import fs from 'fs';
+import path from 'path';
+
 import { BrowserContext } from '../browserContext';
+import { ArtifactDispatcher } from './artifactDispatcher';
+import { CDPSessionDispatcher } from './cdpSessionDispatcher';
+import { DialogDispatcher } from './dialogDispatcher';
 import { Dispatcher, existingDispatcher } from './dispatcher';
+import { ElementHandleDispatcher } from './elementHandlerDispatcher';
+import { APIRequestContextDispatcher, RequestDispatcher, ResponseDispatcher, RouteDispatcher } from './networkDispatchers';
+import { BindingCallDispatcher, PageDispatcher, WorkerDispatcher } from './pageDispatcher';
+import { CRBrowserContext } from '../chromium/crBrowser';
+import { serializeError } from '../errors';
+import { Recorder } from '../recorder';
+import { TracingDispatcher } from './tracingDispatcher';
+import { WebSocketRouteDispatcher } from './webSocketRouteDispatcher';
+import { WritableStreamDispatcher } from './writableStreamDispatcher';
+import { createGuid } from '../utils/crypto';
+import { urlMatches } from '../../utils/isomorphic/urlMatch';
+import { RecorderApp } from '../recorder/recorderApp';
+
+import type { Artifact } from '../artifact';
+import type { ConsoleMessage } from '../console';
+import type { Dialog } from '../dialog';
+import type { CallMetadata } from '../instrumentation';
+import type { Request, Response } from '../network';
+import type { Page } from '../page';
 import type { DispatcherScope } from './dispatcher';
-import { PageDispatcher, BindingCallDispatcher, WorkerDispatcher } from './pageDispatcher';
 import type { FrameDispatcher } from './frameDispatcher';
 import type * as channels from '@protocol/channels';
-import { RouteDispatcher, RequestDispatcher, ResponseDispatcher, APIRequestContextDispatcher } from './networkDispatchers';
-import { CRBrowserContext } from '../chromium/crBrowser';
-import { CDPSessionDispatcher } from './cdpSessionDispatcher';
-import { Recorder } from '../recorder';
-import type { CallMetadata } from '../instrumentation';
-import { ArtifactDispatcher } from './artifactDispatcher';
-import type { Artifact } from '../artifact';
-import type { Request, Response } from '../network';
-import { TracingDispatcher } from './tracingDispatcher';
-import * as fs from 'fs';
-import * as path from 'path';
-import { createGuid, urlMatches } from '../../utils';
-import { WritableStreamDispatcher } from './writableStreamDispatcher';
-import { DialogDispatcher } from './dialogDispatcher';
-import type { Page } from '../page';
-import type { Dialog } from '../dialog';
-import type { ConsoleMessage } from '../console';
-import { serializeError } from '../errors';
-import { ElementHandleDispatcher } from './elementHandlerDispatcher';
 
 export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channels.BrowserContextChannel, DispatcherScope> implements channels.BrowserContextChannel {
   _type_EventTarget = true;
   _type_BrowserContext = true;
   private _context: BrowserContext;
   private _subscriptions = new Set<channels.BrowserContextUpdateSubscriptionParams['event']>();
+  _webSocketInterceptionPatterns: channels.BrowserContextSetWebSocketInterceptionPatternsParams['patterns'] = [];
 
   constructor(parentScope: DispatcherScope, context: BrowserContext) {
     // We will reparent these to the context below.
@@ -178,13 +184,20 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     return false;
   }
 
-  async createTempFile(params: channels.BrowserContextCreateTempFileParams): Promise<channels.BrowserContextCreateTempFileResult> {
+  async createTempFiles(params: channels.BrowserContextCreateTempFilesParams): Promise<channels.BrowserContextCreateTempFilesResult> {
     const dir = this._context._browser.options.artifactsDir;
     const tmpDir = path.join(dir, 'upload-' + createGuid());
-    await fs.promises.mkdir(tmpDir);
+    const tempDirWithRootName = params.rootDirName ? path.join(tmpDir, path.basename(params.rootDirName)) : tmpDir;
+    await fs.promises.mkdir(tempDirWithRootName, { recursive: true });
     this._context._tempDirs.push(tmpDir);
-    const file = fs.createWriteStream(path.join(tmpDir, params.name));
-    return { writableStream: new WritableStreamDispatcher(this, file, params.lastModifiedMs) };
+    return {
+      rootDir: params.rootDirName ? new WritableStreamDispatcher(this, tempDirWithRootName) : undefined,
+      writableStreams: await Promise.all(params.items.map(async item => {
+        await fs.promises.mkdir(path.dirname(path.join(tempDirWithRootName, item.name)), { recursive: true });
+        const file = fs.createWriteStream(path.join(tempDirWithRootName, item.name));
+        return new WritableStreamDispatcher(this, file, item.lastModifiedMs);
+      }))
+    };
   }
 
   async setDefaultNavigationTimeoutNoReply(params: channels.BrowserContextSetDefaultNavigationTimeoutNoReplyParams) {
@@ -274,8 +287,14 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     });
   }
 
+  async setWebSocketInterceptionPatterns(params: channels.PageSetWebSocketInterceptionPatternsParams, metadata: CallMetadata): Promise<void> {
+    this._webSocketInterceptionPatterns = params.patterns;
+    if (params.patterns.length)
+      await WebSocketRouteDispatcher.installIfNeeded(this._context);
+  }
+
   async storageState(params: channels.BrowserContextStorageStateParams, metadata: CallMetadata): Promise<channels.BrowserContextStorageStateResult> {
-    return await this._context.storageState();
+    return await this._context.storageState(params.indexedDB);
   }
 
   async close(params: channels.BrowserContextCloseParams, metadata: CallMetadata): Promise<void> {
@@ -283,8 +302,8 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     await this._context.close(params);
   }
 
-  async recorderSupplementEnable(params: channels.BrowserContextRecorderSupplementEnableParams): Promise<void> {
-    await Recorder.show(this._context, params);
+  async enableRecorder(params: channels.BrowserContextEnableRecorderParams): Promise<void> {
+    await Recorder.show(this._context, RecorderApp.factory(this._context), params);
   }
 
   async pause(params: channels.BrowserContextPauseParams, metadata: CallMetadata) {
@@ -310,6 +329,34 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
     if (!artifact)
       throw new Error('No HAR artifact. Ensure record.harPath is set.');
     return { artifact: ArtifactDispatcher.from(this, artifact) };
+  }
+
+  async clockFastForward(params: channels.BrowserContextClockFastForwardParams, metadata?: CallMetadata | undefined): Promise<channels.BrowserContextClockFastForwardResult> {
+    await this._context.clock.fastForward(params.ticksString ?? params.ticksNumber ?? 0);
+  }
+
+  async clockInstall(params: channels.BrowserContextClockInstallParams, metadata?: CallMetadata | undefined): Promise<channels.BrowserContextClockInstallResult> {
+    await this._context.clock.install(params.timeString ?? params.timeNumber ?? undefined);
+  }
+
+  async clockPauseAt(params: channels.BrowserContextClockPauseAtParams, metadata?: CallMetadata | undefined): Promise<channels.BrowserContextClockPauseAtResult> {
+    await this._context.clock.pauseAt(params.timeString ?? params.timeNumber ?? 0);
+  }
+
+  async clockResume(params: channels.BrowserContextClockResumeParams, metadata?: CallMetadata | undefined): Promise<channels.BrowserContextClockResumeResult> {
+    await this._context.clock.resume();
+  }
+
+  async clockRunFor(params: channels.BrowserContextClockRunForParams, metadata?: CallMetadata | undefined): Promise<channels.BrowserContextClockRunForResult> {
+    await this._context.clock.runFor(params.ticksString ?? params.ticksNumber ?? 0);
+  }
+
+  async clockSetFixedTime(params: channels.BrowserContextClockSetFixedTimeParams, metadata?: CallMetadata | undefined): Promise<channels.BrowserContextClockSetFixedTimeResult> {
+    await this._context.clock.setFixedTime(params.timeString ?? params.timeNumber ?? 0);
+  }
+
+  async clockSetSystemTime(params: channels.BrowserContextClockSetSystemTimeParams, metadata?: CallMetadata | undefined): Promise<channels.BrowserContextClockSetSystemTimeResult> {
+    await this._context.clock.setSystemTime(params.timeString ?? params.timeNumber ?? 0);
   }
 
   async updateSubscription(params: channels.BrowserContextUpdateSubscriptionParams): Promise<void> {

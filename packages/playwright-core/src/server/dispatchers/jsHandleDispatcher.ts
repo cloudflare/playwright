@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-import type * as js from '../javascript';
-import type * as channels from '@protocol/channels';
 import { Dispatcher } from './dispatcher';
 import { ElementHandleDispatcher } from './elementHandlerDispatcher';
 import { parseSerializedValue, serializeValue } from '../../protocol/serializers';
-import type { PageDispatcher, WorkerDispatcher } from './pageDispatcher';
+
+import type * as js from '../javascript';
 import type { ElectronApplicationDispatcher } from './electronDispatcher';
 import type { FrameDispatcher } from './frameDispatcher';
+import type { PageDispatcher, WorkerDispatcher } from './pageDispatcher';
 import type { CallMetadata } from '../instrumentation';
+import type * as channels from '@protocol/channels';
 
 export type JSHandleDispatcherParentScope = PageDispatcher | FrameDispatcher | WorkerDispatcher | ElectronApplicationDispatcher;
 
@@ -63,10 +64,6 @@ export class JSHandleDispatcher extends Dispatcher<js.JSHandle, channels.JSHandl
     return { value: serializeResult(await this._object.jsonValue()) };
   }
 
-  async objectCount(params?: channels.JSHandleObjectCountParams | undefined): Promise<channels.JSHandleObjectCountResult> {
-    return { count: await this._object.objectCount() };
-  }
-
   async dispose(_: any, metadata: CallMetadata) {
     metadata.potentiallyClosesScope = true;
     this._object.dispose();
@@ -75,7 +72,7 @@ export class JSHandleDispatcher extends Dispatcher<js.JSHandle, channels.JSHandl
 }
 
 // Generic channel parser converts guids to JSHandleDispatchers,
-// and this function takes care of coverting them into underlying JSHandles.
+// and this function takes care of converting them into underlying JSHandles.
 export function parseArgument(arg: channels.SerializedArgument): any {
   return parseSerializedValue(arg.value, arg.handles.map(a => (a as JSHandleDispatcher)._object));
 }

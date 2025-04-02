@@ -15,17 +15,18 @@
  */
 
 export { Accessibility } from './accessibility';
-export { Android, AndroidDevice, AndroidWebView, AndroidInput, AndroidSocket } from './android';
+export { Android, AndroidDevice, AndroidInput, AndroidSocket, AndroidWebView } from './android';
 export { Browser } from './browser';
 export { BrowserContext } from './browserContext';
 export type { BrowserServer } from './browserType';
 export { BrowserType } from './browserType';
+export { Clock } from './clock';
 export { ConsoleMessage } from './consoleMessage';
 export { Coverage } from './coverage';
 export { Dialog } from './dialog';
 export { Download } from './download';
 export { Electron, ElectronApplication } from './electron';
-export { Locator, FrameLocator } from './locator';
+export { FrameLocator, Locator } from './locator';
 export { ElementHandle } from './elementHandle';
 export { FileChooser } from './fileChooser';
 export type { Logger } from './types';
@@ -33,7 +34,7 @@ export { TimeoutError } from './errors';
 export { Frame } from './frame';
 export { Keyboard, Mouse, Touchscreen } from './input';
 export { JSHandle } from './jsHandle';
-export { Request, Response, Route, WebSocket } from './network';
+export { Request, Response, Route, WebSocket, WebSocketRoute } from './network';
 export { APIRequest, APIRequestContext, APIResponse } from './fetch';
 export { Page } from './page';
 export { Selectors } from './selectors';

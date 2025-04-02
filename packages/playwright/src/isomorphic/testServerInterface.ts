@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-import type * as reporterTypes from '../../types/testReporter';
 import type { Event } from './events';
 import type { JsonEvent } from './teleReceiver';
+import type * as reporterTypes from '../../types/testReporter';
+
+// -- Reuse boundary -- Everything below this line is reused in the vscode extension.
 
 export type ReportEntry = JsonEvent;
 
@@ -26,6 +28,7 @@ export interface TestServerInterface {
     closeOnDisconnect?: boolean,
     interceptStdio?: boolean,
     watchTestDirs?: boolean,
+    populateDependenciesOnList?: boolean,
   }): Promise<void>;
 
   ping(params: {}): Promise<void>;
@@ -52,6 +55,18 @@ export interface TestServerInterface {
     status: reporterTypes.FullResult['status']
   }>;
 
+  startDevServer(params: {}): Promise<{
+    report: ReportEntry[];
+    status: reporterTypes.FullResult['status']
+  }>;
+
+  stopDevServer(params: {}): Promise<{
+    report: ReportEntry[];
+    status: reporterTypes.FullResult['status']
+  }>;
+
+  clearCache(params: {}): Promise<void>;
+
   listFiles(params: {
     projects?: string[];
   }): Promise<{
@@ -65,6 +80,8 @@ export interface TestServerInterface {
   listTests(params: {
     projects?: string[];
     locations?: string[];
+    grep?: string;
+    grepInvert?: string;
   }): Promise<{
     report: ReportEntry[],
     status: reporterTypes.FullResult['status']
@@ -77,12 +94,15 @@ export interface TestServerInterface {
     testIds?: string[];
     headed?: boolean;
     workers?: number | string;
-    timeout?: number,
+    updateSnapshots?: 'all' | 'changed' | 'missing' | 'none';
+    updateSourceMethod?: 'overwrite' | 'patch' | '3way';
     reporters?: string[],
     trace?: 'on' | 'off';
+    video?: 'on' | 'off';
     projects?: string[];
     reuseContext?: boolean;
     connectWsEndpoint?: string;
+    attachErrorContext?: boolean;
   }): Promise<{
     status: reporterTypes.FullResult['status'];
   }>;
@@ -99,7 +119,6 @@ export interface TestServerInterface {
 export interface TestServerInterfaceEvents {
   onReport: Event<any>;
   onStdio: Event<{ type: 'stdout' | 'stderr', text?: string, buffer?: string }>;
-  onListChanged: Event<void>;
   onTestFilesChanged: Event<{ testFiles: string[] }>;
   onLoadTraceRequested: Event<{ traceUrl: string }>;
 }
@@ -107,7 +126,6 @@ export interface TestServerInterfaceEvents {
 export interface TestServerInterfaceEventEmitters {
   dispatchEvent(event: 'report', params: ReportEntry): void;
   dispatchEvent(event: 'stdio', params: { type: 'stdout' | 'stderr', text?: string, buffer?: string }): void;
-  dispatchEvent(event: 'listChanged', params: {}): void;
   dispatchEvent(event: 'testFilesChanged', params: { testFiles: string[] }): void;
   dispatchEvent(event: 'loadTraceRequested', params: { traceUrl: string }): void;
 }

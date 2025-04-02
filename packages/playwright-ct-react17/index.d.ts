@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-import type { Locator } from 'playwright/test';
-import type { JsonObject } from '@playwright/experimental-ct-core/types/component';
-import type { TestType } from '@playwright/experimental-ct-core';
+import type { TestType, Locator} from '@playwright/experimental-ct-core';
 
-export interface MountOptions<HooksConfig extends JsonObject> {
+export interface MountOptions<HooksConfig> {
   hooksConfig?: HooksConfig;
 }
 
@@ -28,11 +26,10 @@ export interface MountResult extends Locator {
 }
 
 export const test: TestType<{
-  mount<HooksConfig extends JsonObject>(
+  mount<HooksConfig>(
     component: JSX.Element,
     options?: MountOptions<HooksConfig>
   ): Promise<MountResult>;
 }>;
 
-export { defineConfig, PlaywrightTestConfig } from '@playwright/experimental-ct-core';
-export { expect, devices } from 'playwright/test';
+export { defineConfig, PlaywrightTestConfig, expect, devices } from '@playwright/experimental-ct-core';

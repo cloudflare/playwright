@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-import type { Size, Point, TimeoutOptions, HeadersArray } from '../common/types';
-export type { Size, Point, Rect, Quad, URLMatch, TimeoutOptions, HeadersArray } from '../common/types';
+import type { HeadersArray, Point, Size, TimeoutOptions } from '../utils/isomorphic/types';
+export type { HeadersArray, Point, Quad, Rect, Size, TimeoutOptions } from '../utils/isomorphic/types';
 import type * as channels from '@protocol/channels';
 
 export type StrictOptions = {
@@ -36,15 +36,11 @@ export type NavigateOptions = TimeoutOptions & {
   waitUntil?: LifecycleEvent,
 };
 
-export type NavigatingActionWaitOptions = TimeoutOptions & StrictOptions & {
-  noWaitAfter?: boolean,
-};
-
-export type ForceOptions = {
+export type CommonActionOptions = TimeoutOptions & StrictOptions & {
   force?: boolean,
 };
 
-export type PointerActionWaitOptions = TimeoutOptions & ForceOptions & StrictOptions & {
+export type PointerActionWaitOptions = CommonActionOptions & {
   trial?: boolean;
 };
 
@@ -58,6 +54,7 @@ export type Credentials = {
   username: string;
   password: string;
   origin?: string;
+  sendImmediately?: boolean;
 };
 
 export type Geolocation = {
@@ -87,6 +84,8 @@ export type ReducedMotion = 'no-preference' | 'reduce' | 'no-override';
 
 export type ForcedColors = 'active' | 'none' | 'no-override';
 
+export type Contrast = 'no-preference' | 'more' | 'no-override';
+
 export type DeviceDescriptor = {
   userAgent: string,
   viewport: Size,
@@ -105,10 +104,11 @@ export type ProxySettings = {
 };
 
 export type KeyboardModifier = 'Alt' | 'Control' | 'Meta' | 'Shift';
+export type SmartKeyboardModifier = KeyboardModifier |  'ControlOrMeta';
 export type MouseButton = 'left' | 'right' | 'middle';
 
 export type PointerActionOptions = {
-  modifiers?: KeyboardModifier[];
+  modifiers?: SmartKeyboardModifier[];
   position?: Point;
 };
 
@@ -152,7 +152,15 @@ export type NormalizedContinueOverrides = {
 
 export type EmulatedSize = { viewport: Size, screen: Size };
 
-export type LaunchOptions = channels.BrowserTypeLaunchOptions & { useWebSocket?: boolean };
+export type LaunchOptions = channels.BrowserTypeLaunchOptions & {
+  useWebSocket?: boolean,
+  proxyOverride?: ProxySettings,
+};
+
+export type BrowserContextOptions = channels.BrowserNewContextOptions & {
+  proxyOverride?: ProxySettings;
+  internalIgnoreHTTPSErrors?: boolean;
+};
 
 export type ProtocolLogger = (direction: 'send' | 'receive', message: object) => void;
 

@@ -15,12 +15,14 @@
  * limitations under the License.
  */
 
+import { assert } from '../../utils/isomorphic/assert';
+import { rewriteErrorMessage } from '../../utils/isomorphic/stackTrace';
 import * as js from '../javascript';
+import * as dom from '../dom';
+import { isSessionClosedError } from '../protocolError';
+
 import type { FFSession } from './ffConnection';
 import type { Protocol } from './protocol';
-import { rewriteErrorMessage } from '../../utils/stackTrace';
-import { parseEvaluationResultValue } from '../isomorphic/utilityScriptSerializers';
-import { isSessionClosedError } from '../protocolError';
 
 export class FFExecutionContext implements js.ExecutionContextDelegate {
   _session: FFSession;
@@ -41,66 +43,51 @@ export class FFExecutionContext implements js.ExecutionContextDelegate {
     return payload.result!.value;
   }
 
-  async rawEvaluateHandle(expression: string): Promise<js.ObjectId> {
+  async rawEvaluateHandle(context: js.ExecutionContext, expression: string): Promise<js.JSHandle> {
     const payload = await this._session.send('Runtime.evaluate', {
       expression,
       returnByValue: false,
       executionContextId: this._executionContextId,
     }).catch(rewriteError);
     checkException(payload.exceptionDetails);
-    return payload.result!.objectId!;
+    return createHandle(context, payload.result!);
   }
 
-  rawCallFunctionNoReply(func: Function, ...args: any[]) {
-    this._session.send('Runtime.callFunction', {
-      functionDeclaration: func.toString(),
-      args: args.map(a => a instanceof js.JSHandle ? { objectId: a._objectId } : { value: a }) as any,
-      returnByValue: true,
-      executionContextId: this._executionContextId
-    }).catch(() => {});
-  }
-
-  async evaluateWithArguments(expression: string, returnByValue: boolean, utilityScript: js.JSHandle<any>, values: any[], objectIds: string[]): Promise<any> {
+  async evaluateWithArguments(expression: string, returnByValue: boolean, utilityScript: js.JSHandle, values: any[], handles: js.JSHandle[]): Promise<any> {
     const payload = await this._session.send('Runtime.callFunction', {
       functionDeclaration: expression,
       args: [
         { objectId: utilityScript._objectId, value: undefined },
         ...values.map(value => ({ value })),
-        ...objectIds.map(objectId => ({ objectId, value: undefined })),
+        ...handles.map(handle => ({ objectId: handle._objectId!, value: undefined })),
       ],
       returnByValue,
       executionContextId: this._executionContextId
     }).catch(rewriteError);
     checkException(payload.exceptionDetails);
     if (returnByValue)
-      return parseEvaluationResultValue(payload.result!.value);
-    return utilityScript._context.createHandle(payload.result!);
+      return js.parseEvaluationResultValue(payload.result!.value);
+    return createHandle(utilityScript._context, payload.result!);
   }
 
-  async getProperties(context: js.ExecutionContext, objectId: js.ObjectId): Promise<Map<string, js.JSHandle>> {
+  async getProperties(object: js.JSHandle): Promise<Map<string, js.JSHandle>> {
     const response = await this._session.send('Runtime.getObjectProperties', {
       executionContextId: this._executionContextId,
-      objectId,
+      objectId: object._objectId!,
     });
     const result = new Map();
     for (const property of response.properties)
-      result.set(property.name, context.createHandle(property.value));
+      result.set(property.name, createHandle(object._context, property.value));
     return result;
   }
 
-  createHandle(context: js.ExecutionContext, remoteObject: Protocol.Runtime.RemoteObject): js.JSHandle {
-    return new js.JSHandle(context, remoteObject.subtype || remoteObject.type || '', renderPreview(remoteObject), remoteObject.objectId, potentiallyUnserializableValue(remoteObject));
-  }
-
-  async releaseHandle(objectId: js.ObjectId): Promise<void> {
+  async releaseHandle(handle: js.JSHandle): Promise<void> {
+    if (!handle._objectId)
+      return;
     await this._session.send('Runtime.disposeObject', {
       executionContextId: this._executionContextId,
-      objectId
+      objectId: handle._objectId,
     });
-  }
-
-  objectCount(objectId: js.ObjectId): Promise<number> {
-    throw new Error('Method not implemented in Firefox.');
   }
 }
 
@@ -146,4 +133,12 @@ function renderPreview(object: Protocol.Runtime.RemoteObject): string | undefine
     return object.subtype[0].toUpperCase() + object.subtype.slice(1);
   if ('value' in object)
     return String(object.value);
+}
+
+export function createHandle(context: js.ExecutionContext, remoteObject: Protocol.Runtime.RemoteObject): js.JSHandle {
+  if (remoteObject.subtype === 'node') {
+    assert(context instanceof dom.FrameExecutionContext);
+    return new dom.ElementHandle(context, remoteObject.objectId!);
+  }
+  return new js.JSHandle(context, remoteObject.subtype || remoteObject.type || '', renderPreview(remoteObject), remoteObject.objectId, potentiallyUnserializableValue(remoteObject));
 }

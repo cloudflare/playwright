@@ -16,19 +16,24 @@
 
 import { devices, defineConfig } from '@playwright/experimental-ct-react';
 import path from 'path';
+import url from 'url';
 
 export default defineConfig({
   testDir: 'src',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{testFilePath}/{arg}{ext}',
-  reporter: process.env.CI ? 'blob' : 'html',
+  reporter: process.env.CI ? [
+    ['blob', { fileName: `${process.env.PWTEST_BOT_NAME}.zip` }],
+  ] : [
+    ['html']
+  ],
   use: {
     ctPort: 3101,
     ctViteConfig: {
       resolve: {
         alias: {
-          '@web': path.resolve(__dirname, '../web/src'),
+          '@web': path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../web/src'),
         },
       }
     },

@@ -4,6 +4,384 @@ title: "Release notes"
 toc_max_heading_level: 2
 ---
 
+## Version 1.51
+
+### Highlights
+
+* New option [`option: BrowserContext.storageState.indexedDB`] for [`method: BrowserContext.storageState`] allows to save and restore IndexedDB contents. Useful when your application uses [IndexedDB API](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) to store authentication tokens, like Firebase Authentication.
+
+  Here is an example following the [authentication guide](./auth.md#reusing-signed-in-state):
+
+  ```python
+  # Save storage state into the file. Make sure to include IndexedDB.
+  storage = await context.storage_state(path="state.json", indexed_db=True)
+
+  # Create a new context with the saved storage state.
+  context = await browser.new_context(storage_state="state.json")
+  ```
+
+* New option [`option: Locator.filter.visible`] for [`method: Locator.filter`] allows matching only visible elements.
+
+  ```python
+  # Ignore invisible todo items.
+  todo_items = page.get_by_test_id("todo-item").filter(visible=True)
+  # Check there are exactly 3 visible ones.
+  await expect(todo_items).to_have_count(3)
+  ```
+
+* New option `contrast` for methods [`method: Page.emulateMedia`] and [`method: Browser.newContext`] allows to emulate the `prefers-contrast` media feature.
+
+* New option [`option: APIRequest.newContext.failOnStatusCode`] makes all fetch requests made through the [APIRequestContext] throw on response codes other than 2xx and 3xx.
+
+### Browser Versions
+
+* Chromium 134.0.6998.35
+* Mozilla Firefox 135.0
+* WebKit 18.4
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 133
+* Microsoft Edge 133
+
+
+## Version 1.50
+
+### Async Pytest Plugin
+
+* [Playwright's Pytest plugin](./test-runners.md) now has support for [Async Fixtures](https://playwright.dev/python/docs/test-runners#async-fixtures).
+
+### Miscellaneous
+
+* Added method [`method: LocatorAssertions.toHaveAccessibleErrorMessage`] to assert the Locator points to an element with a given [aria errormessage](https://w3c.github.io/aria/#aria-errormessage).
+
+### UI updates
+
+* New button in Codegen for picking elements to produce aria snapshots.
+* Additional details (such as keys pressed) are now displayed alongside action API calls in traces.
+* Display of `canvas` content in traces is error-prone. Display is now disabled by default, and can be enabled via the `Display canvas content` UI setting.
+* `Call` and `Network` panels now display additional time information.
+
+### Breaking
+
+* [`method: LocatorAssertions.toBeEditable`] and [`method: Locator.isEditable`] now throw if the target element is not `<input>`, `<select>`, or a number of other editable elements.
+
+### Browser Versions
+
+* Chromium 133.0.6943.16
+* Mozilla Firefox 134.0
+* WebKit 18.2
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 132
+* Microsoft Edge 132
+
+## Version 1.49
+
+### Aria snapshots
+
+New assertion [`method: LocatorAssertions.toMatchAriaSnapshot`] verifies page structure by comparing to an expected accessibility tree, represented as YAML.
+
+```python
+page.goto("https://playwright.dev")
+expect(page.locator('body')).to_match_aria_snapshot('''
+  - banner:
+    - heading /Playwright enables reliable/ [level=1]
+    - link "Get started"
+    - link "Star microsoft/playwright on GitHub"
+  - main:
+    - img "Browsers (Chromium, Firefox, WebKit)"
+    - heading "Any browser • Any platform • One API"
+''')
+```
+
+You can generate this assertion with [Test Generator](./codegen) or by calling [`method: Locator.ariaSnapshot`].
+
+Learn more in the [aria snapshots guide](./aria-snapshots).
+
+### Tracing groups
+
+New method [`method: Tracing.group`] allows you to visually group actions in the trace viewer.
+
+```python
+# All actions between group and group_end
+# will be shown in the trace viewer as a group.
+page.context.tracing.group("Open Playwright.dev > API")
+page.goto("https://playwright.dev/")
+page.get_by_role("link", name="API").click()
+page.context.tracing.group_end()
+```
+
+### Breaking: `chrome` and `msedge` channels switch to new headless mode
+
+This change affects you if you're using one of the following channels in your `playwright.config.ts`:
+- `chrome`, `chrome-dev`, `chrome-beta`, or `chrome-canary`
+- `msedge`, `msedge-dev`, `msedge-beta`, or `msedge-canary`
+
+After updating to Playwright v1.49, run your test suite. If it still passes, you're good to go. If not, you will probably need to update your snapshots, and adapt some of your test code around PDF viewers and extensions. See [issue #33566](https://github.com/microsoft/playwright/issues/33566) for more details.
+
+### Try new Chromium headless
+
+You can opt into the new headless mode by using `'chromium'` channel. As [official Chrome documentation puts it](https://developer.chrome.com/blog/chrome-headless-shell):
+
+> New Headless on the other hand is the real Chrome browser, and is thus more authentic, reliable, and offers more features. This makes it more suitable for high-accuracy end-to-end web app testing or browser extension testing.
+
+See [issue #33566](https://github.com/microsoft/playwright/issues/33566) for the list of possible breakages you could encounter and more details on Chromium headless. Please file an issue if you see any problems after opting in.
+
+```bash python
+pytest test_login.py --browser-channel chromium
+```
+
+### Miscellaneous
+
+- There will be no more updates for WebKit on Ubuntu 20.04 and Debian 11. We recommend updating your OS to a later version.
+- `<canvas>` elements inside a snapshot now draw a preview.
+- Python 3.8 is not supported anymore.
+
+### Browser Versions
+
+- Chromium 131.0.6778.33
+- Mozilla Firefox 132.0
+- WebKit 18.2
+
+This version was also tested against the following stable channels:
+
+- Google Chrome 130
+- Microsoft Edge 130
+
+
+## Version 1.48
+
+### WebSocket routing
+
+New methods [`method: Page.routeWebSocket`] and [`method: BrowserContext.routeWebSocket`] allow to intercept, modify and mock WebSocket connections initiated in the page. Below is a simple example that mocks WebSocket communication by responding to a `"request"` with a `"response"`.
+
+```python
+def message_handler(ws: WebSocketRoute, message: Union[str, bytes]):
+  if message == "request":
+    ws.send("response")
+
+page.route_web_socket("/ws", lambda ws: ws.on_message(
+    lambda message: message_handler(ws, message)
+))
+```
+
+See [WebSocketRoute] for more details.
+
+### UI updates
+
+- New "copy" buttons for annotations and test location in the HTML report.
+- Route method calls like [`method: Route.fulfill`] are not shown in the report and trace viewer anymore. You can see which network requests were routed in the network tab instead.
+- New "Copy as cURL" and "Copy as fetch" buttons for requests in the network tab.
+
+### Miscellaneous
+
+- New method [`method: Page.requestGC`] may help detect memory leaks.
+- Requests made by [APIRequestContext] now record detailed timing and security information in the HAR.
+
+### Browser Versions
+
+- Chromium 130.0.6723.19
+- Mozilla Firefox 130.0
+- WebKit 18.0
+
+This version was also tested against the following stable channels:
+
+- Google Chrome 129
+- Microsoft Edge 129
+
+
+## Version 1.47
+
+### Network Tab improvements
+
+The Network tab in the trace viewer has several nice improvements:
+
+- filtering by asset type and URL
+- better display of query string parameters
+- preview of font assets
+
+![Network tab now has filters](https://github.com/user-attachments/assets/4bd1b67d-90bd-438b-a227-00b9e86872e2)
+
+### Miscellaneous
+
+- The `mcr.microsoft.com/playwright/python:v1.47.0` now serves a Playwright image based on Ubuntu 24.04 Noble.
+  To use the 22.04 jammy-based image, please use `mcr.microsoft.com/playwright/python:v1.47.0-jammy` instead.
+- The `:latest`/`:focal`/`:jammy` tag for Playwright Docker images is no longer being published. Pin to a specific version for better stability and reproducibility.
+- TLS client certificates can now be passed from memory by passing [`option: Browser.newContext.clientCertificates.cert`] and [`option: Browser.newContext.clientCertificates.key`] as bytes instead of file paths.
+- [`option: Locator.selectOption.noWaitAfter`] in [`method: Locator.selectOption`] was deprecated.
+- We've seen reports of WebGL in Webkit misbehaving on GitHub Actions `macos-13`. We recommend upgrading GitHub Actions to `macos-14`.
+
+### Browser Versions
+
+- Chromium 129.0.6668.29
+- Mozilla Firefox 130.0
+- WebKit 18.0
+
+This version was also tested against the following stable channels:
+
+- Google Chrome 128
+- Microsoft Edge 128
+
+## Version 1.46
+
+### TLS Client Certificates
+
+Playwright now allows to supply client-side certificates, so that server can verify them, as specified by TLS Client Authentication.
+
+You can provide client certificates as a parameter of [`method: Browser.newContext`] and [`method: APIRequest.newContext`]. The following snippet sets up a client certificate for `https://example.com`:
+
+```python
+context = browser.new_context(
+    client_certificates=[
+        {
+            "origin": "https://example.com",
+            "certPath": "client-certificates/cert.pem",
+            "keyPath": "client-certificates/key.pem",
+        }
+    ],
+)
+```
+
+### Trace Viewer Updates
+
+- Content of text attachments is now rendered inline in the attachments pane.
+- New setting to show/hide routing actions like [`method: Route.continue`].
+- Request method and status are shown in the network details tab.
+- New button to copy source file location to clipboard.
+- Metadata pane now displays the `base_url`.
+
+### Miscellaneous
+
+- New `maxRetries` option in [`method: APIRequestContext.fetch`] which retries on the `ECONNRESET` network error.
+
+### Browser Versions
+
+- Chromium 128.0.6613.18
+- Mozilla Firefox 128.0
+- WebKit 18.0
+
+This version was also tested against the following stable channels:
+
+- Google Chrome 127
+- Microsoft Edge 127
+
+
+## Version 1.45
+
+### Clock
+
+Utilizing the new [Clock] API allows to manipulate and control time within tests to verify time-related behavior. This API covers many common scenarios, including:
+* testing with predefined time;
+* keeping consistent time and timers;
+* monitoring inactivity;
+* ticking through time manually.
+
+```python
+# Initialize clock with some time before the test time and let the page load
+# naturally. `Date.now` will progress as the timers fire.
+page.clock.install(time=datetime.datetime(2024, 2, 2, 8, 0, 0))
+page.goto("http://localhost:3333")
+
+# Pretend that the user closed the laptop lid and opened it again at 10am.
+# Pause the time once reached that point.
+page.clock.pause_at(datetime.datetime(2024, 2, 2, 10, 0, 0))
+
+# Assert the page state.
+expect(page.get_by_test_id("current-time")).to_have_text("2/2/2024, 10:00:00 AM")
+
+# Close the laptop lid again and open it at 10:30am.
+page.clock.fast_forward("30:00")
+expect(page.get_by_test_id("current-time")).to_have_text("2/2/2024, 10:30:00 AM")
+```
+
+See [the clock guide](./clock.md) for more details.
+
+### Miscellaneous
+
+- Method [`method: Locator.setInputFiles`] now supports uploading a directory for `<input type=file webkitdirectory>` elements.
+  ```python
+  page.get_by_label("Upload directory").set_input_files('mydir')
+  ```
+
+- Multiple methods like [`method: Locator.click`] or [`method: Locator.press`] now support a `ControlOrMeta` modifier key. This key maps to `Meta` on macOS and maps to `Control` on Windows and Linux.
+  ```python
+  # Press the common keyboard shortcut Control+S or Meta+S to trigger a "Save" operation.
+  page.keyboard.press("ControlOrMeta+S")
+  ```
+
+- New property `httpCredentials.send` in [`method: APIRequest.newContext`] that allows to either always send the `Authorization` header or only send it in response to `401 Unauthorized`.
+
+- Playwright now supports Chromium, Firefox and WebKit on Ubuntu 24.04.
+
+- v1.45 is the last release to receive WebKit update for macOS 12 Monterey. Please update macOS to keep using the latest WebKit.
+
+### Browser Versions
+
+* Chromium 127.0.6533.5
+* Mozilla Firefox 127.0
+* WebKit 17.4
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 126
+* Microsoft Edge 126
+
+## Version 1.44
+
+### New APIs
+
+**Accessibility assertions**
+
+- [`method: LocatorAssertions.toHaveAccessibleName`] checks if the element has the specified accessible name:
+  ```python
+  locator = page.get_by_role("button")
+  expect(locator).to_have_accessible_name("Submit")
+  ```
+
+- [`method: LocatorAssertions.toHaveAccessibleDescription`] checks if the element has the specified accessible description:
+  ```python
+  locator = page.get_by_role("button")
+  expect(locator).to_have_accessible_description("Upload a photo")
+  ```
+
+- [`method: LocatorAssertions.toHaveRole`] checks if the element has the specified ARIA role:
+  ```python
+  locator = page.get_by_test_id("save-button")
+  expect(locator).to_have_role("button")
+  ```
+
+**Locator handler**
+
+- After executing the handler added with [`method: Page.addLocatorHandler`], Playwright will now wait until the overlay that triggered the handler is not visible anymore. You can opt-out of this behavior with the new `no_wait_after` option.
+- You can use new `times` option in [`method: Page.addLocatorHandler`] to specify maximum number of times the handler should be run.
+- The handler in [`method: Page.addLocatorHandler`] now accepts the locator as argument.
+- New [`method: Page.removeLocatorHandler`] method for removing previously added locator handlers.
+
+```python
+locator = page.get_by_text("This interstitial covers the button")
+page.add_locator_handler(locator, lambda overlay: overlay.locator("#close").click(), times=3, no_wait_after=True)
+# Run your tests that can be interrupted by the overlay.
+# ...
+page.remove_locator_handler(locator)
+```
+
+**Miscellaneous options**
+
+- [`method: PageAssertions.toHaveURL`] now supports `ignore_case` [option](./api/class-pageassertions#page-assertions-to-have-url-option-ignore-case).
+
+### Browser Versions
+
+* Chromium 125.0.6422.14
+* Mozilla Firefox 125.0.1
+* WebKit 17.4
+
+This version was also tested against the following stable channels:
+
+* Google Chrome 124
+* Microsoft Edge 124
+
 ## Version 1.43
 
 ### New APIs
@@ -55,7 +433,7 @@ This version was also tested against the following stable channels:
 ### New Locator Handler
 
 New method [`method: Page.addLocatorHandler`] registers a callback that will be invoked when specified element becomes visible and may block Playwright actions. The callback can get rid of the overlay. Here is an example that closes a cookie dialog when it appears.
-  
+
 ```python
 # Setup the handler.
 page.add_locator_handler(
@@ -70,7 +448,7 @@ expect(page.get_by_role("heading", name="Light and easy")).to_be_visible()
 
 ### New APIs
 
-- [`method: Page.pdf`] accepts two new options [`option: tagged`] and [`option: outline`].
+- [`method: Page.pdf`] accepts two new options [`option: Page.pdf.tagged`] and [`option: Page.pdf.outline`].
 
 ### Announcements
 
@@ -93,7 +471,7 @@ This version was also tested against the following stable channels:
 
 - New method [`method: Page.unrouteAll`] removes all routes registered by [`method: Page.route`] and [`method: Page.routeFromHAR`]. Optionally allows to wait for ongoing routes to finish, or ignore any errors from them.
 - New method [`method: BrowserContext.unrouteAll`] removes all routes registered by [`method: BrowserContext.route`] and [`method: BrowserContext.routeFromHAR`]. Optionally allows to wait for ongoing routes to finish, or ignore any errors from them.
-- New option [`option: style`] in [`method: Page.screenshot`] and [`method: Locator.screenshot`] to add custom CSS to the page before taking a screenshot.
+- New options [`option: Page.screenshot.style`] in [`method: Page.screenshot`] and [`option: Locator.screenshot.style`] in [`method: Locator.screenshot`] to add custom CSS to the page before taking a screenshot.
 
 ### Browser Versions
 
@@ -134,8 +512,8 @@ def test_example(page: Page) -> None:
 
 ### New APIs
 
-- Option [`option: reason`] in [`method: Page.close`], [`method: BrowserContext.close`] and [`method: Browser.close`]. Close reason is reported for all operations interrupted by the closure.
-- Option [`option: firefoxUserPrefs`] in [`method: BrowserType.launchPersistentContext`].
+- Options [`option: Page.close.reason`] in [`method: Page.close`], [`option: BrowserContext.close.reason`] in [`method: BrowserContext.close`] and [`option: Browser.close.reason`] in [`method: Browser.close`]. Close reason is reported for all operations interrupted by the closure.
+- Option [`option: BrowserType.launchPersistentContext.firefoxUserPrefs`] in [`method: BrowserType.launchPersistentContext`].
 
 ### Other Changes
 
@@ -314,7 +692,7 @@ This version was also tested against the following stable channels:
     page.get_by_role("button", name="Dismiss").click()
   new_email.click()
   ```
-* Use new options [`option: hasNot`] and [`option: hasNotText`] in [`method: Locator.filter`]
+* Use new options [`option: Locator.filter.hasNot`] and [`option: Locator.filter.hasNotText`] in [`method: Locator.filter`]
   to find elements that **do not match** certain conditions.
 
   ```python
@@ -330,10 +708,10 @@ This version was also tested against the following stable channels:
 ### New APIs
 
 - [`method: Locator.or`]
-- New option [`option: hasNot`] in [`method: Locator.filter`]
-- New option [`option: hasNotText`] in [`method: Locator.filter`]
+- New option [`option: Locator.filter.hasNot`] in [`method: Locator.filter`]
+- New option [`option: Locator.filter.hasNotText`] in [`method: Locator.filter`]
 - [`method: LocatorAssertions.toBeAttached`]
-- New option [`option: timeout`] in [`method: Route.fetch`]
+- New option [`option: Route.fetch.timeout`] in [`method: Route.fetch`]
 
 ### ⚠️ Breaking change
 
@@ -357,9 +735,9 @@ This version was also tested against the following stable channels:
 ### New APIs
 
 - Custom expect message, see [test assertions documentation](./test-assertions.md#custom-expect-message).
-- New options [`option: updateMode`] and [`option: updateContent`] in [`method: Page.routeFromHAR`] and [`method: BrowserContext.routeFromHAR`].
+- New options [`option: Page.routeFromHAR.updateMode`] and [`option: Page.routeFromHAR.updateContent`] in [`method: Page.routeFromHAR`] and [`method: BrowserContext.routeFromHAR`].
 - Chaining existing locator objects, see [locator docs](./locators.md#matching-inside-a-locator) for details.
-- New option [`option: name`] in method [`method: Tracing.startChunk`].
+- New option [`option: Tracing.startChunk.name`] in method [`method: Tracing.startChunk`].
 
 ### Browser Versions
 
@@ -463,9 +841,9 @@ This version was also tested against the following stable channels:
 
   ```html
   <select multiple>
-    <option value="red">Red</div>
-    <option value="green">Green</div>
-    <option value="blue">Blue</div>
+    <option value="red">Red</option>
+    <option value="green">Green</option>
+    <option value="blue">Blue</option>
   </select>
   ```
 
@@ -855,7 +1233,7 @@ This version was also tested against the following stable channels:
 
 - We now ship a designated Python docker image `mcr.microsoft.com/playwright/python`. Please switch over to it if you use
   Python. This is the last release that includes Python inside our javascript `mcr.microsoft.com/playwright` docker image.
-- v1.20 is the last release to receive WebKit update for macOS 10.15 Catalina. Please update MacOS to keep using latest & greatest WebKit!
+- v1.20 is the last release to receive WebKit update for macOS 10.15 Catalina. Please update macOS to keep using latest & greatest WebKit!
 
 ### Browser Versions
 
@@ -1319,7 +1697,7 @@ This version of Playwright was also tested against the following stable channels
 
 #### New APIs
 
-- [`browserType.launch()`](./api/class-browsertype#browsertypelaunchoptions) now accepts the new `'channel'` option. Read more in [our documentation](./browsers).
+- [`method: BrowserType.launch`] now accepts the new `'channel'` option. Read more in [our documentation](./browsers).
 
 
 ## Version 1.9

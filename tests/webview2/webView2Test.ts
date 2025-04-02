@@ -30,7 +30,9 @@ export const webView2Test = baseTest.extend<TraceViewerFixtures>(traceViewerFixt
   browserMajorVersion: [({ browserVersion }, use) => use(Number(browserVersion.split('.')[0])), { scope: 'worker' }],
   isAndroid: [false, { scope: 'worker' }],
   isElectron: [false, { scope: 'worker' }],
+  electronMajorVersion: [0, { scope: 'worker' }],
   isWebView2: [true, { scope: 'worker' }],
+  isHeadlessShell: [false, { scope: 'worker' }],
 
   browser: [async ({ playwright }, use, testInfo) => {
     const cdpPort = 10000 + testInfo.workerIndex;

@@ -230,7 +230,7 @@ it('should not result in unhandled rejection', async ({ page, isAndroid, isWebVi
     await page.close();
   });
   await page.evaluate(() => {
-    setTimeout(() => (window as any).foo(), 0);
+    window.builtins.setTimeout(() => (window as any).foo(), 0);
     return undefined;
   });
   await closedPromise;
@@ -299,4 +299,51 @@ it('should work with busted Array.prototype.map/push', async ({ page, server }) 
   await page.goto(server.PREFIX + '/test');
   await page.exposeFunction('add', (a, b) => a + b);
   expect(await page.evaluate('add(5, 6)')).toBe(11);
+});
+
+it('should fail with busted Array.prototype.toJSON', async ({ page }) => {
+  await page.evaluateHandle(() => (Array.prototype as any).toJSON = () => '"[]"');
+
+  await page.exposeFunction('add', (a, b) => a + b);
+  await expect(() => page.evaluate(`add(5, 6)`)).rejects.toThrowError('serializedArgs is not an array. This can happen when Array.prototype.toJSON is defined incorrectly');
+
+  expect.soft(await page.evaluate(() => ([] as any).toJSON())).toBe('"[]"');
+});
+
+it('should work with overridden eval', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/34628' },
+}, async ({ page, server }) => {
+  await page.exposeFunction('add', (a, b) => a + b);
+
+  server.setRoute('/page', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`
+      <script>
+        window.eval = () => 42;
+      </script>
+    `);
+  });
+  await page.goto(server.PREFIX + '/page');
+  expect(await page.evaluate(async () => {
+    return { value: await (window as any)['add'](5, 6) };
+  })).toEqual({ value: 11 });
+});
+
+it('should work with deleted Map', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/34443' },
+}, async ({ page, server }) => {
+  await page.exposeFunction('add', (a, b) => a + b);
+
+  server.setRoute('/page', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`
+      <script>
+        delete window.Map;
+      </script>
+    `);
+  });
+  await page.goto(server.PREFIX + '/page');
+  expect(await page.evaluate(async () => {
+    return { value: await (window as any)['add'](5, 6) };
+  })).toEqual({ value: 11 });
 });

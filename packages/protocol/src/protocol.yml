@@ -33,8 +33,8 @@ Metadata:
         column: number?
     apiName: string?
     internal: boolean?
-    # The number of milliseconds elapsed since midnight, January 1, 1970 UTC.
-    wallTime: number?
+    # Test runner step id.
+    stepId: string?
 
 ClientSideCallMetadata:
   type: object
@@ -82,6 +82,32 @@ SerializedValue:
     u: string?
     # String representation of BigInt.
     bi: string?
+    # Typed array.
+    ta:
+      type: object?
+      properties:
+        b: binary
+        k:
+          type: enum
+          literals:
+          - i8
+          - ui8
+          - ui8c
+          - i16
+          - ui16
+          - i32
+          - ui32
+          - f32
+          - f64
+          - bi64
+          - bui64
+    # Serialized Error object.
+    e:
+      type: object?
+      properties:
+        m: string
+        n: string
+        s: string
     # Regular expression pattern and flags.
     r:
       type: object?
@@ -215,6 +241,54 @@ NameValue:
     name: string
     value: string
 
+IndexedDBDatabase:
+  type: object
+  properties:
+    name: string
+    version: number
+    stores:
+      type: array
+      items:
+        type: object
+        properties:
+          name: string
+          autoIncrement: boolean
+          keyPath: string?
+          keyPathArray:
+            type: array?
+            items: string
+          records:
+            type: array
+            items:
+              type: object
+              properties:
+                key: json?
+                keyEncoded: json?
+                value: json?
+                valueEncoded: json?
+          indexes:
+            type: array
+            items:
+              type: object
+              properties:
+                name: string
+                keyPath: string?
+                keyPathArray:
+                  type: array?
+                  items: string
+                multiEntry: boolean
+                unique: boolean
+
+SetOriginStorage:
+  type: object
+  properties:
+    origin: string
+    localStorage:
+      type: array
+      items: NameValue
+    indexedDB:
+      type: array?
+      items: IndexedDBDatabase
 
 OriginStorage:
   type: object
@@ -223,7 +297,9 @@ OriginStorage:
     localStorage:
       type: array
       items: NameValue
-
+    indexedDB:
+      type: array?
+      items: IndexedDBDatabase
 
 SerializedError:
   type: object
@@ -280,6 +356,7 @@ APIRequestContext:
     fetch:
       parameters:
         url: string
+        encodedParams: string?
         params:
           type: array?
           items: NameValue
@@ -299,6 +376,7 @@ APIRequestContext:
         failOnStatusCode: boolean?
         ignoreHTTPSErrors: boolean?
         maxRedirects: number?
+        maxRetries: number?
       returns:
         response: APIResponse
 
@@ -317,6 +395,8 @@ APIRequestContext:
           items: string
 
     storageState:
+      parameters:
+        indexedDB: boolean?
       returns:
         cookies:
           type: array
@@ -330,6 +410,8 @@ APIRequestContext:
         fetchUid: string
 
     dispose:
+      parameters:
+        reason: string?
 
 
 APIResponse:
@@ -430,6 +512,16 @@ ContextOptions:
         width: number
         height: number
     ignoreHTTPSErrors: boolean?
+    clientCertificates:
+      type: array?
+      items:
+        type: object
+        properties:
+          origin: string
+          cert: binary?
+          key: binary?
+          passphrase: string?
+          pfx: binary?
     javaScriptEnabled: boolean?
     bypassCSP: boolean?
     userAgent: string?
@@ -454,6 +546,11 @@ ContextOptions:
         username: string
         password: string
         origin: string?
+        send:
+          type: enum?
+          literals:
+          - always
+          - unauthorized
     deviceScaleFactor: number?
     isMobile: boolean?
     hasTouch: boolean?
@@ -482,6 +579,12 @@ ContextOptions:
       - accept
       - deny
       - internal-browser-default
+    contrast:
+      type: enum?
+      literals:
+      - no-preference
+      - more
+      - no-override
     baseURL: string?
     recordVideo:
       type: object?
@@ -599,6 +702,13 @@ LocalUtils:
         exposeNetwork: string?
         slowMo: number?
         timeout: number?
+        proxy:
+          type: object?
+          properties:
+            server: string
+            bypass: string?
+            username: string?
+            password: string?
         socksProxyRedirectPortForTest: number?
       returns:
         pipe: JsonPipe
@@ -620,6 +730,14 @@ LocalUtils:
     traceDiscarded:
       parameters:
         stacksId: string
+
+    globToRegex:
+      parameters:
+        glob: string
+        baseURL: string?
+        webSocketUrl: boolean?
+      returns:
+        regex: string
 
 Root:
   type: interface
@@ -645,6 +763,8 @@ Playwright:
     chromium: BrowserType
     firefox: BrowserType
     webkit: BrowserType
+    bidiChromium: BrowserType
+    bidiFirefox: BrowserType
     android: Android
     electron: Electron
     utils: LocalUtils?
@@ -665,12 +785,29 @@ Playwright:
         extraHTTPHeaders:
           type: array?
           items: NameValue
+        failOnStatusCode: boolean?
+        clientCertificates:
+          type: array?
+          items:
+            type: object
+            properties:
+              origin: string
+              cert: binary?
+              key: binary?
+              passphrase: string?
+              pfx: binary?
+        maxRedirects: number?
         httpCredentials:
           type: object?
           properties:
             username: string
             password: string
             origin: string?
+            send:
+              type: enum?
+              literals:
+              - always
+              - unauthorized
         proxy:
           type: object?
           properties:
@@ -687,7 +824,7 @@ Playwright:
               items: NetworkCookie
             origins:
               type: array?
-              items: OriginStorage
+              items: SetOriginStorage
         tracesDir: string?
 
       returns:
@@ -748,7 +885,8 @@ DebugController:
 
     highlight:
       parameters:
-        selector: string
+        selector: string?
+        ariaTemplate: string?
 
     hideHighlight:
 
@@ -763,6 +901,7 @@ DebugController:
       parameters:
         selector: string
         locator: string
+        ariaSnapshot: string
 
     setModeRequested:
       parameters:
@@ -878,6 +1017,13 @@ BrowserType:
           items: NameValue
         slowMo: number?
         timeout: number?
+        proxy:
+          type: object?
+          properties:
+            server: string
+            bypass: string?
+            username: string?
+            password: string?
       returns:
         browser: Browser
         defaultContext: BrowserContext?
@@ -919,7 +1065,7 @@ Browser:
               items: SetNetworkCookie
             origins:
               type: array?
-              items: OriginStorage
+              items: SetOriginStorage
       returns:
         context: BrowserContext
 
@@ -941,7 +1087,7 @@ Browser:
               items: SetNetworkCookie
             origins:
               type: array?
-              items: OriginStorage
+              items: SetOriginStorage
       returns:
         context: BrowserContext
 
@@ -1117,11 +1263,24 @@ BrowserContext:
               regexSource: string?
               regexFlags: string?
 
+    setWebSocketInterceptionPatterns:
+      parameters:
+        patterns:
+          type: array
+          items:
+            type: object
+            properties:
+              glob: string?
+              regexSource: string?
+              regexFlags: string?
+
     setOffline:
       parameters:
         offline: boolean
 
     storageState:
+      parameters:
+        indexedDB: boolean?
       returns:
         cookies:
           type: array
@@ -1133,7 +1292,7 @@ BrowserContext:
     pause:
       experimental: True
 
-    recorderSupplementEnable:
+    enableRecorder:
       experimental: True
       parameters:
         language: string?
@@ -1172,12 +1331,21 @@ BrowserContext:
       returns:
         artifact: Artifact
 
-    createTempFile:
+    createTempFiles:
       parameters:
-        name: string
-        lastModifiedMs: number?
+        rootDirName: string?
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              name: string
+              lastModifiedMs: number?
       returns:
-        writableStream: WritableStream
+        rootDir: WritableStream?
+        writableStreams:
+          type: array
+          items: WritableStream
 
     updateSubscription:
       parameters:
@@ -1191,6 +1359,38 @@ BrowserContext:
           - requestFinished
           - requestFailed
         enabled: boolean
+
+    clockFastForward:
+      parameters:
+        ticksNumber: number?
+        ticksString: string?
+
+    clockInstall:
+      parameters:
+        timeNumber: number?
+        timeString: string?
+
+    clockPauseAt:
+      parameters:
+        timeNumber: number?
+        timeString: string?
+
+    clockResume:
+
+    clockRunFor:
+      parameters:
+        ticksNumber: number?
+        ticksString: string?
+
+    clockSetFixedTime:
+      parameters:
+        timeNumber: number?
+        timeString: string?
+
+    clockSetSystemTime:
+      parameters:
+        timeNumber: number?
+        timeString: string?
 
   events:
 
@@ -1221,6 +1421,10 @@ BrowserContext:
     route:
       parameters:
         route: Route
+
+    webSocketRoute:
+      parameters:
+        webSocketRoute: WebSocketRoute
 
     video:
       parameters:
@@ -1319,6 +1523,12 @@ Page:
           - active
           - none
           - no-override
+        contrast:
+          type: enum?
+          literals:
+          - no-preference
+          - more
+          - no-override
       flags:
         snapshot: true
 
@@ -1347,13 +1557,21 @@ Page:
         slowMo: true
         snapshot: true
 
+    requestGC:
+
     registerLocatorHandler:
       parameters:
         selector: string
+        noWaitAfter: boolean?
       returns:
         uid: number
 
     resolveLocatorHandlerNoReply:
+      parameters:
+        uid: number
+        remove: boolean?
+
+    unregisterLocatorHandler:
       parameters:
         uid: number
 
@@ -1370,7 +1588,7 @@ Page:
     expectScreenshot:
       parameters:
         expected: binary?
-        timeout: number?
+        timeout: number
         isNot: boolean
         locator:
           type: object?
@@ -1389,6 +1607,7 @@ Page:
         errorMessage: string?
         actual: binary?
         previous: binary?
+        timedOut: boolean?
         log:
           type: array?
           items: string
@@ -1419,6 +1638,17 @@ Page:
           items: NameValue
 
     setNetworkInterceptionPatterns:
+      parameters:
+        patterns:
+          type: array
+          items:
+            type: object
+            properties:
+              glob: string?
+              regexSource: string?
+              regexFlags: string?
+
+    setWebSocketInterceptionPatterns:
       parameters:
         patterns:
           type: array
@@ -1549,6 +1779,8 @@ Page:
         root: ElementHandle?
       returns:
         rootAXNode: AXNode?
+      flags:
+        snapshot: true
 
     pdf:
       parameters:
@@ -1680,6 +1912,10 @@ Page:
       parameters:
         route: Route
 
+    webSocketRoute:
+      parameters:
+        webSocketRoute: WebSocketRoute
+
     video:
       parameters:
         artifact: Artifact
@@ -1749,6 +1985,21 @@ Frame:
       flags:
         snapshot: true
 
+    ariaSnapshot:
+      parameters:
+        selector: string
+        ref: boolean?
+        mode:
+          type: enum?
+          literals:
+          - raw
+          - regex
+        timeout: number?
+      returns:
+        snapshot: string
+      flags:
+        snapshot: true
+
     blur:
       parameters:
         selector: string
@@ -1763,7 +2014,6 @@ Frame:
         selector: string
         strict: boolean?
         force: boolean?
-        noWaitAfter: boolean?
         position: Point?
         timeout: number?
         trial: boolean?
@@ -1785,6 +2035,7 @@ Frame:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
@@ -1806,13 +2057,14 @@ Frame:
     content:
       returns:
         value: string
+      flags:
+        snapshot: true
 
     dragAndDrop:
       parameters:
         source: string
         target: string
         force: boolean?
-        noWaitAfter: boolean?
         timeout: number?
         trial: boolean?
         sourcePosition: Point?
@@ -1828,7 +2080,6 @@ Frame:
         selector: string
         strict: boolean?
         force: boolean?
-        noWaitAfter: boolean?
         modifiers:
           type: array?
           items:
@@ -1836,6 +2087,7 @@ Frame:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
@@ -1868,7 +2120,6 @@ Frame:
       parameters:
         expression: string
         isFunction: boolean?
-        exposeUtilityScript: boolean?
         arg: SerializedArgument
       returns:
         value: SerializedValue
@@ -1892,7 +2143,6 @@ Frame:
         value: string
         force: boolean?
         timeout: number?
-        noWaitAfter: boolean?
       flags:
         slowMo: true
         snapshot: true
@@ -1950,12 +2200,12 @@ Frame:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
         timeout: number?
         trial: boolean?
-        noWaitAfter: boolean?
       flags:
         slowMo: true
         snapshot: true
@@ -2068,6 +2318,8 @@ Frame:
         strict: boolean?
       returns:
         element: ElementHandle?
+      flags:
+        snapshot: true
 
     querySelectorAll:
       parameters:
@@ -2076,12 +2328,16 @@ Frame:
         elements:
           type: array
           items: ElementHandle
+      flags:
+        snapshot: true
 
     queryCount:
       parameters:
         selector: string
       returns:
         value: number
+      flags:
+        snapshot: true
 
     selectOption:
       parameters:
@@ -2101,7 +2357,6 @@ Frame:
               index: number?
         force: boolean?
         timeout: number?
-        noWaitAfter: boolean?
       returns:
         values:
           type: array
@@ -2132,6 +2387,8 @@ Frame:
               name: string
               mimeType: string?
               buffer: binary
+        localDirectory: string?
+        directoryStream: WritableStream?
         localPaths:
           type: array?
           items: string
@@ -2139,7 +2396,6 @@ Frame:
           type: array?
           items: WritableStream
         timeout: number?
-        noWaitAfter: boolean?
       flags:
         slowMo: true
         snapshot: true
@@ -2150,7 +2406,6 @@ Frame:
         selector: string
         strict: boolean?
         force: boolean?
-        noWaitAfter: boolean?
         modifiers:
           type: array?
           items:
@@ -2158,6 +2413,7 @@ Frame:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
@@ -2188,7 +2444,6 @@ Frame:
         strict: boolean?
         text: string
         delay: number?
-        noWaitAfter: boolean?
         timeout: number?
       flags:
         slowMo: true
@@ -2200,7 +2455,6 @@ Frame:
         selector: string
         strict: boolean?
         force: boolean?
-        noWaitAfter: boolean?
         position: Point?
         timeout: number?
         trial: boolean?
@@ -2258,7 +2512,7 @@ Frame:
         expectedValue: SerializedArgument?
         useInnerText: boolean?
         isNot: boolean
-        timeout: number?
+        timeout: number
       returns:
         matches: boolean
         received: SerializedValue?
@@ -2367,10 +2621,6 @@ JSHandle:
       returns:
         value: SerializedValue
 
-    objectCount:
-      returns:
-        count: number
-
   events:
 
     previewUpdated:
@@ -2412,11 +2662,12 @@ ElementHandle:
     boundingBox:
       returns:
         value: Rect?
+      flags:
+        snapshot: true
 
     check:
       parameters:
         force: boolean?
-        noWaitAfter: boolean?
         position: Point?
         timeout: number?
         trial: boolean?
@@ -2436,6 +2687,7 @@ ElementHandle:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
@@ -2457,11 +2709,12 @@ ElementHandle:
     contentFrame:
       returns:
         frame: Frame?
+      flags:
+        snapshot: true
 
     dblclick:
       parameters:
         force: boolean?
-        noWaitAfter: boolean?
         modifiers:
           type: array?
           items:
@@ -2469,6 +2722,7 @@ ElementHandle:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
@@ -2499,7 +2753,6 @@ ElementHandle:
         value: string
         force: boolean?
         timeout: number?
-        noWaitAfter: boolean?
       flags:
         slowMo: true
         snapshot: true
@@ -2509,6 +2762,10 @@ ElementHandle:
       flags:
         slowMo: true
         snapshot: true
+
+    generateLocatorString:
+      returns:
+        value: string?
 
     getAttribute:
       parameters:
@@ -2526,12 +2783,12 @@ ElementHandle:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
         timeout: number?
         trial: boolean?
-        noWaitAfter: boolean?
       flags:
         slowMo: true
         snapshot: true
@@ -2612,6 +2869,8 @@ ElementHandle:
         strict: boolean?
       returns:
         element: ElementHandle?
+      flags:
+        snapshot: true
 
     querySelectorAll:
       parameters:
@@ -2620,6 +2879,8 @@ ElementHandle:
         elements:
           type: array
           items: ElementHandle
+      flags:
+        snapshot: true
 
     screenshot:
       parameters:
@@ -2659,7 +2920,6 @@ ElementHandle:
               index: number?
         force: boolean?
         timeout: number?
-        noWaitAfter: boolean?
       returns:
         values:
           type: array
@@ -2688,6 +2948,8 @@ ElementHandle:
               name: string
               mimeType: string?
               buffer: binary
+        localDirectory: string?
+        directoryStream: WritableStream?
         localPaths:
           type: array?
           items: string
@@ -2695,7 +2957,6 @@ ElementHandle:
           type: array?
           items: WritableStream
         timeout: number?
-        noWaitAfter: boolean?
       flags:
         slowMo: true
         snapshot: true
@@ -2704,7 +2965,6 @@ ElementHandle:
     tap:
       parameters:
         force: boolean?
-        noWaitAfter: boolean?
         modifiers:
           type: array?
           items:
@@ -2712,6 +2972,7 @@ ElementHandle:
             literals:
             - Alt
             - Control
+            - ControlOrMeta
             - Meta
             - Shift
         position: Point?
@@ -2732,7 +2993,6 @@ ElementHandle:
       parameters:
         text: string
         delay: number?
-        noWaitAfter: boolean?
         timeout: number?
       flags:
         slowMo: true
@@ -2742,7 +3002,6 @@ ElementHandle:
     uncheck:
       parameters:
         force: boolean?
-        noWaitAfter: boolean?
         position: Point?
         timeout: number?
         trial: boolean?
@@ -2828,7 +3087,6 @@ Route:
     abort:
       parameters:
         errorCode: string?
-        requestUrl: string
 
     continue:
       parameters:
@@ -2838,7 +3096,6 @@ Route:
           type: array?
           items: NameValue
         postData: binary?
-        requestUrl: string
         isFallback: boolean
 
     fulfill:
@@ -2851,7 +3108,66 @@ Route:
         body: string?
         isBase64: boolean?
         fetchResponseUid: string?
-        requestUrl: string
+
+
+WebSocketRoute:
+  type: interface
+
+  initializer:
+    url: string
+
+  commands:
+
+    connect:
+
+    ensureOpened:
+
+    sendToPage:
+      parameters:
+        message: string
+        isBase64: boolean
+
+    sendToServer:
+      parameters:
+        message: string
+        isBase64: boolean
+
+    closePage:
+      parameters:
+        code: number?
+        reason: string?
+        wasClean: boolean
+
+    closeServer:
+      parameters:
+        code: number?
+        reason: string?
+        wasClean: boolean
+
+  events:
+
+    messageFromPage:
+      parameters:
+        message: string
+        isBase64: boolean
+
+    messageFromServer:
+      parameters:
+        message: string
+        isBase64: boolean
+
+    closePage:
+      parameters:
+        code: number?
+        reason: string?
+        wasClean: boolean
+
+    closeServer:
+      parameters:
+        code: number?
+        reason: string?
+        wasClean: boolean
+
 
 ResourceTiming:
   type: object
@@ -3017,6 +3333,18 @@ Tracing:
         title: string?
       returns:
         traceName: string
+
+    tracingGroup:
+      parameters:
+        name: string
+        location:
+          type: object?
+          properties:
+            file: string
+            line: number?
+            column: number?
+
+    tracingGroupEnd:
 
     tracingStopChunk:
       parameters:
@@ -3226,8 +3554,6 @@ ElectronApplication:
           literals:
           - console
         enabled: boolean
-
-    close:
 
   events:
     close:
@@ -3548,4 +3874,4 @@ JsonPipe:
 
     closed:
       parameters:
-        error: SerializedError?
+        reason: string?

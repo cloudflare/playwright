@@ -281,11 +281,100 @@ test.describe('report location', () => {
         test('pass', ({}, testInfo) => {
         });
       `
-    }, { 'reporter': 'json' }, { 'PW_TEST_HTML_REPORT_OPEN': 'never', 'PLAYWRIGHT_JSON_OUTPUT_NAME': '../my-report.json' }, {
+    }, { 'reporter': 'json' }, { 'PLAYWRIGHT_JSON_OUTPUT_NAME': '../my-report.json' }, {
       cwd: 'foo/bar/baz/tests',
     });
     expect(result.exitCode).toBe(0);
     expect(result.passed).toBe(1);
     expect(fs.existsSync(testInfo.outputPath('foo', 'bar', 'baz', 'my-report.json'))).toBe(true);
+  });
+
+  test('support PLAYWRIGHT_JSON_OUTPUT_FILE', async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'foo/package.json': `{ "name": "foo" }`,
+      // unused config along "search path"
+      'foo/bar/playwright.config.js': `
+        module.exports = { projects: [ {} ] };
+      `,
+      'foo/bar/baz/tests/a.spec.js': `
+        import { test, expect } from '@playwright/test';
+        const fs = require('fs');
+        test('pass', ({}, testInfo) => {
+        });
+      `
+    }, { 'reporter': 'json' }, { 'PLAYWRIGHT_JSON_OUTPUT_FILE': '../my-report.json' }, {
+      cwd: 'foo/bar/baz/tests',
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.passed).toBe(1);
+    expect(fs.existsSync(testInfo.outputPath('foo', 'bar', 'baz', 'my-report.json'))).toBe(true);
+  });
+
+  test('support PLAYWRIGHT_JSON_OUTPUT_DIR and PLAYWRIGHT_JSON_OUTPUT_NAME', async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'playwright.config.js': `
+        module.exports = { projects: [ {} ] };
+      `,
+      'tests/a.spec.js': `
+        import { test, expect } from '@playwright/test';
+        const fs = require('fs');
+        test('pass', ({}, testInfo) => {
+        });
+      `
+    }, { 'reporter': 'json' }, { 'PLAYWRIGHT_JSON_OUTPUT_DIR': 'foo/bar', 'PLAYWRIGHT_JSON_OUTPUT_NAME': 'baz/my-report.json' });
+    expect(result.exitCode).toBe(0);
+    expect(result.passed).toBe(1);
+    expect(fs.existsSync(testInfo.outputPath('foo', 'bar', 'baz', 'my-report.json'))).toBe(true);
+  });
+});
+
+test('should report parallelIndex', async ({ runInlineTest }, testInfo) => {
+  const result = await runInlineTest({
+    'tests/a.spec.js': `
+      import { test, expect } from '@playwright/test';
+      const fs = require('fs');
+      test.describe.configure({ mode: 'parallel' });
+      test('test 1 passes!', async ({}) => {
+        await new Promise(f => setTimeout(f, 1000));
+      });
+      test('test 2 fails!', async ({}) => {
+        expect(1 + 1).toBe(3);
+        await new Promise(f => setTimeout(f, 1000));
+      });
+      test('test 3 passes!', async ({}) => {
+        await new Promise(f => setTimeout(f, 1000));
+      });
+    `
+  }, { 'workers': '2', 'reporter': 'json' });
+  expect(result.passed).toBe(2);
+  expect(result.failed).toBe(1);
+  expect(result.report.suites[0].specs[0].tests[0].results[0].workerIndex).toBe(0);
+  expect(result.report.suites[0].specs[1].tests[0].results[0].workerIndex).toBe(1);
+  expect(result.report.suites[0].specs[2].tests[0].results[0].workerIndex).toBe(2);
+  expect(result.report.suites[0].specs[0].tests[0].results[0].parallelIndex).toBe(0);
+  expect(result.report.suites[0].specs[1].tests[0].results[0].parallelIndex).toBe(1);
+  expect(result.report.suites[0].specs[2].tests[0].results[0].parallelIndex).toBe(1);
+});
+
+test('attaches error context', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'playwright.config.ts': `
+          export default { use: { _optionAttachErrorContext: true } };
+    `,
+    'a.test.js': `
+      const { test, expect } = require('@playwright/test');
+      test('one', async ({ page }, testInfo) => {
+        await page.setContent('<button>Click me</button>');
+        throw new Error('kaboom');
+      });
+    `,
+  }, { reporter: 'json' });
+
+  const errorContext = result.report.suites[0].specs[0].tests[0].results[0].attachments.find(a => a.name === '_error-context');
+  expect(errorContext).toBeDefined();
+  expect(errorContext!.contentType).toBe('application/json');
+  const json = JSON.parse(Buffer.from(errorContext!.body, 'base64').toString('utf-8'));
+  expect(json).toEqual({
+    pageSnapshot: expect.any(String),
   });
 });

@@ -1,5 +1,6 @@
-import { currentlyLoadingFileSuite } from "playwright/lib/common/globals";
-import { playwrightTestConfig } from "../internal";
+import { currentlyLoadingFileSuite } from 'playwright/lib/common/globals';
+
+import { playwrightTestConfig } from '../internal';
 
 type Location = {
   file: string;
@@ -22,6 +23,14 @@ export function transformConfig() {
     babelPlugins: [],
     external: [],
   };
+}
+
+export function setSingleTSConfig() {
+  // do nothing
+}
+
+export function singleTSConfig() {
+  // do nothing
 }
 
 export function wrapFunctionWithLocation<A extends any[], R>(func: (location: Location, ...args: A) => R): (...args: A) => R {

@@ -19,14 +19,15 @@ import * as React from 'react';
 import './consoleTab.css';
 import type * as modelUtil from './modelUtil';
 import { ListView } from '@web/components/listView';
-import type { Boundaries } from '../geometry';
-import { msToString } from '@web/uiUtils';
+import type { Boundaries } from './geometry';
+import { clsx, msToString } from '@web/uiUtils';
 import { ansi2html } from '@web/ansi2html';
 import { PlaceholderPanel } from './placeholderPanel';
 
 export type ConsoleEntry = {
   browserMessage?: {
     body: JSX.Element[];
+    bodyString: string;
     location: string;
   },
   browserError?: channels.SerializedError;
@@ -36,6 +37,7 @@ export type ConsoleEntry = {
   isError: boolean;
   isWarning: boolean;
   timestamp: number;
+  repeat: number;
 };
 
 type ConsoleTabModel = {
@@ -50,16 +52,38 @@ export function useConsoleTabModel(model: modelUtil.MultiTraceModel | undefined,
     if (!model)
       return { entries: [] };
     const entries: ConsoleEntry[] = [];
-    for (const event of model.events) {
+    function addEntry(entry: Omit<ConsoleEntry, 'repeat'>) {
+      const lastEntry = entries[entries.length - 1];
+      const isSameAsLast =
+        lastEntry
+        && entry.browserMessage?.bodyString === lastEntry.browserMessage?.bodyString
+        && entry.browserMessage?.location === lastEntry.browserMessage?.location
+        && entry.browserError === lastEntry.browserError
+        && entry.nodeMessage?.html === lastEntry.nodeMessage?.html
+        && entry.isError === lastEntry.isError
+        && entry.isWarning === lastEntry.isWarning
+        && entry.timestamp - lastEntry.timestamp < 1000;
+      if (isSameAsLast)
+        lastEntry.repeat++;
+      else
+        entries.push({ ...entry, repeat: 1 });
+    }
+    const logEvents = [...model.events, ...model.stdio].sort((a, b) => {
+      const aTimestamp = 'time' in a ? a.time : a.timestamp;
+      const bTimestamp = 'time' in b ? b.time : b.timestamp;
+      return aTimestamp - bTimestamp;
+    });
+    for (const event of logEvents) {
       if (event.type === 'console') {
         const body = event.args && event.args.length ? format(event.args) : formatAnsi(event.text);
         const url = event.location.url;
         const filename = url ? url.substring(url.lastIndexOf('/') + 1) : '<anonymous>';
         const location = `${filename}:${event.location.lineNumber}`;
 
-        entries.push({
+        addEntry({
           browserMessage: {
             body,
+            bodyString: event.text,
             location,
           },
           isError: event.messageType === 'error',
@@ -68,29 +92,28 @@ export function useConsoleTabModel(model: modelUtil.MultiTraceModel | undefined,
         });
       }
       if (event.type === 'event' && event.method === 'pageError') {
-        entries.push({
+        addEntry({
           browserError: event.params.error,
           isError: true,
           isWarning: false,
           timestamp: event.time,
         });
       }
-    }
-    for (const event of model.stdio) {
-      let html = '';
-      if (event.text)
-        html = ansi2html(event.text.trim()) || '';
-      if (event.base64)
-        html = ansi2html(atob(event.base64).trim()) || '';
+      if (event.type === 'stderr' || event.type === 'stdout') {
+        let html = '';
+        if (event.text)
+          html = ansi2html(event.text.trim()) || '';
+        if (event.base64)
+          html = ansi2html(atob(event.base64).trim()) || '';
 
-      entries.push({
-        nodeMessage: { html },
-        isError: event.type === 'stderr',
-        isWarning: false,
-        timestamp: event.timestamp,
-      });
+        addEntry({
+          nodeMessage: { html },
+          isError: event.type === 'stderr',
+          isWarning: false,
+          timestamp: event.timestamp,
+        });
+      }
     }
-    entries.sort((a, b) => a.timestamp - b.timestamp);
     return { entries };
   }, [model]);
 
@@ -106,22 +129,26 @@ export function useConsoleTabModel(model: modelUtil.MultiTraceModel | undefined,
 export const ConsoleTab: React.FunctionComponent<{
   boundaries: Boundaries,
   consoleModel: ConsoleTabModel,
-  selectedTime: Boundaries | undefined,
-}> = ({ consoleModel, boundaries }) => {
+  selectedTime?: Boundaries | undefined,
+  onEntryHovered?: (entry: ConsoleEntry | undefined) => void,
+  onAccepted?: (entry: ConsoleEntry) => void,
+}> = ({ consoleModel, boundaries, onEntryHovered, onAccepted }) => {
   if (!consoleModel.entries.length)
     return <PlaceholderPanel text='No console entries' />;
 
   return <div className='console-tab'>
     <ConsoleListView
       name='console'
+      onAccepted={onAccepted}
+      onHighlighted={onEntryHovered}
       items={consoleModel.entries}
       isError={entry => entry.isError}
       isWarning={entry => entry.isWarning}
       render={entry => {
         const timestamp = msToString(entry.timestamp - boundaries.minimum);
         const timestampElement = <span className='console-time'>{timestamp}</span>;
-        const errorSuffix = entry.isError ? ' status-error' : entry.isWarning ? ' status-warning' : ' status-none';
-        const statusElement = entry.browserMessage || entry.browserError ? <span className={'codicon codicon-browser' + errorSuffix} title='Browser message'></span> : <span className={'codicon codicon-file' + errorSuffix} title='Runner message'></span>;
+        const errorSuffix = entry.isError ? 'status-error' : entry.isWarning ? 'status-warning' : 'status-none';
+        const statusElement = entry.browserMessage || entry.browserError ? <span className={clsx('codicon', 'codicon-browser', errorSuffix)} title='Browser message'></span> : <span className={clsx('codicon', 'codicon-file', errorSuffix)} title='Runner message'></span>;
         let locationText: string | undefined;
         let messageBody: JSX.Element[] | string | undefined;
         let messageInnerHTML: string | undefined;
@@ -150,6 +177,7 @@ export const ConsoleTab: React.FunctionComponent<{
           {timestampElement}
           {statusElement}
           {locationText && <span className='console-location'>{locationText}</span>}
+          {entry.repeat > 1 && <span className='console-repeat'>{entry.repeat}</span>}
           {messageBody && <span className='console-line-message'>{messageBody}</span>}
           {messageInnerHTML && <span className='console-line-message' dangerouslySetInnerHTML={{ __html: messageInnerHTML }}></span>}
           {messageStack && <div className='console-stack'>{messageStack}</div>}
@@ -172,43 +200,44 @@ function format(args: { preview: string, value: any }[]): JSX.Element[] {
   let match;
   const formatted: JSX.Element[] = [];
   let tokens: JSX.Element[] = [];
-  formatted.push(<span>{tokens}</span>);
+  formatted.push(<span key={formatted.length + 1}>{tokens}</span>);
   let formatIndex = 0;
   while ((match = regex.exec(messageFormat)) !== null) {
     const text = messageFormat.substring(formatIndex, match.index);
-    tokens.push(<span>{text}</span>);
+    tokens.push(<span key={tokens.length + 1}>{text}</span>);
     formatIndex = match.index + 2;
     const specifier = match[0][1];
     if (specifier === '%') {
-      tokens.push(<span>%</span>);
+      tokens.push(<span key={tokens.length + 1}>%</span>);
     } else if (specifier === 's' || specifier === 'o' || specifier === 'O' || specifier === 'd' || specifier === 'i' || specifier === 'f') {
       const value = tail[argIndex++];
       const styleObject: any = {};
       if (typeof value?.value !== 'string')
         styleObject['color'] = 'var(--vscode-debugTokenExpression-number)';
-      tokens.push(<span style={styleObject}>{value?.preview || ''}</span>);
+      tokens.push(<span key={tokens.length + 1} style={styleObject}>{value?.preview || ''}</span>);
     } else if (specifier === 'c') {
       tokens = [];
       const format = tail[argIndex++];
       const styleObject = format ? parseCSSStyle(format.preview) : {};
-      formatted.push(<span style={styleObject}>{tokens}</span>);
+      formatted.push(<span key={formatted.length + 1} style={styleObject}>{tokens}</span>);
     }
   }
   if (formatIndex < messageFormat.length)
-    tokens.push(<span>{messageFormat.substring(formatIndex)}</span>);
+    tokens.push(<span key={tokens.length + 1}>{messageFormat.substring(formatIndex)}</span>);
   for (; argIndex < tail.length; argIndex++) {
     const value = tail[argIndex];
     const styleObject: any = {};
     if (tokens.length)
-      tokens.push(<span> </span>);
+      tokens.push(<span key={tokens.length + 1}> </span>);
     if (typeof value?.value !== 'string')
       styleObject['color'] = 'var(--vscode-debugTokenExpression-number)';
-    tokens.push(<span style={styleObject}>{value?.preview || ''}</span>);
+    tokens.push(<span key={tokens.length + 1} style={styleObject}>{value?.preview || ''}</span>);
   }
   return formatted;
 }
 
 function formatAnsi(text: string): JSX.Element[] {
+  // eslint-disable-next-line react/jsx-key
   return [<span dangerouslySetInnerHTML={{ __html: ansi2html(text.trim()) }}></span>];
 }
 

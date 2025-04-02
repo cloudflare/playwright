@@ -1,5 +1,6 @@
-import { test, expect } from '../workerFixtures';
 import { launch, connect, sessions, BrowserWorker, Browser, history, acquire } from '@cloudflare/playwright';
+
+import { test, expect } from '../workerFixtures';
 
 async function launchAndGetSession(endpoint: BrowserWorker): Promise<[Browser, string]> {
   const browser = await launch(endpoint);

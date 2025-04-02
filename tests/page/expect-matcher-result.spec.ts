@@ -73,7 +73,7 @@ test('toBeTruthy-based assertions should have matcher result', async ({ page }) 
     const e = await expect(page.locator('#node2')).toBeVisible({ timeout: 1 }).catch(e => e);
     e.matcherResult.message = stripAnsi(e.matcherResult.message);
     expect.soft(e.matcherResult).toEqual({
-      actual: 'hidden',
+      actual: '<element(s) not found>',
       expected: 'visible',
       message: expect.stringContaining(`Timed out 1ms waiting for expect(locator).toBeVisible()`),
       name: 'toBeVisible',
@@ -86,7 +86,7 @@ test('toBeTruthy-based assertions should have matcher result', async ({ page }) 
 
 Locator: locator('#node2')
 Expected: visible
-Received: hidden
+Received: <element(s) not found>
 Call log`);
 
   }
@@ -161,7 +161,7 @@ Call log`);
   }
 });
 
-test('toBeChecked({ checked: false }) should have expected: false', async ({ page }) => {
+test('toBeChecked({ checked }) should have expected', async ({ page }) => {
   await page.setContent(`
     <input id=checked type=checkbox checked></input>
     <input id=unchecked type=checkbox></input>
@@ -254,6 +254,28 @@ Received: unchecked
 Call log`);
 
   }
+
+  {
+    const e = await expect(page.locator('#unchecked')).toBeChecked({ indeterminate: true, timeout: 1 }).catch(e => e);
+    e.matcherResult.message = stripAnsi(e.matcherResult.message);
+    expect.soft(e.matcherResult).toEqual({
+      actual: 'unchecked',
+      expected: 'indeterminate',
+      message: expect.stringContaining(`Timed out 1ms waiting for expect(locator).toBeChecked({ indeterminate: true })`),
+      name: 'toBeChecked',
+      pass: false,
+      log: expect.any(Array),
+      timeout: 1,
+    });
+
+    expect.soft(stripAnsi(e.toString())).toContain(`Error: Timed out 1ms waiting for expect(locator).toBeChecked({ indeterminate: true })
+
+Locator: locator('#unchecked')
+Expected: indeterminate
+Received: unchecked
+Call log`);
+
+  }
 });
 
 test('toHaveScreenshot should populate matcherResult', async ({ page, server, isAndroid }) => {
@@ -267,13 +289,13 @@ test('toHaveScreenshot should populate matcherResult', async ({ page, server, is
     actual: expect.stringContaining('screenshot-sanity-actual'),
     expected: expect.stringContaining('screenshot-sanity-'),
     diff: expect.stringContaining('screenshot-sanity-diff'),
-    message: expect.stringContaining(`Screenshot comparison failed`),
+    message: expect.stringContaining(`expect(page).toHaveScreenshot(expected)`),
     name: 'toHaveScreenshot',
     pass: false,
     log: expect.any(Array),
   });
 
-  expect.soft(stripAnsi(e.toString())).toContain(`Error: Screenshot comparison failed:
+  expect.soft(stripAnsi(e.toString())).toContain(`Error: expect(page).toHaveScreenshot(expected)
 
   23362 pixels (ratio 0.10 of all image pixels) are different.
 

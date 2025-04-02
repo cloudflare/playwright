@@ -19,23 +19,32 @@ import type { PageTestFixtures, PageWorkerFixtures } from '../page/pageTestApi';
 import type { AndroidDevice, BrowserContext } from 'playwright-core';
 export { expect } from '@playwright/test';
 
-type AndroidWorkerFixtures = PageWorkerFixtures & {
+type AndroidTestFixtures = {
   androidDevice: AndroidDevice;
+};
+
+type AndroidWorkerFixtures = PageWorkerFixtures & {
+  androidDeviceWorker: AndroidDevice;
   androidContext: BrowserContext;
 };
 
-export const androidTest = baseTest.extend<PageTestFixtures, AndroidWorkerFixtures>({
-  androidDevice: [async ({ playwright }, run) => {
+async function closeAllActivities(device: AndroidDevice) {
+  await device.shell('am force-stop com.google.android.googlequicksearchbox');
+  await device.shell('am force-stop org.chromium.webview_shell');
+  await device.shell('am force-stop com.android.chrome');
+}
+
+export const androidTest = baseTest.extend<PageTestFixtures & AndroidTestFixtures, AndroidWorkerFixtures>({
+  androidDeviceWorker: [async ({ playwright }, run) => {
     const device = (await playwright._android.devices())[0];
-    await device.shell('am force-stop org.chromium.webview_shell');
-    await device.shell('am force-stop com.android.chrome');
+    await closeAllActivities(device);
     device.setDefaultTimeout(90000);
     await run(device);
     await device.close();
   }, { scope: 'worker' }],
 
-  browserVersion: [async ({ androidDevice }, run) => {
-    const browserVersion = (await androidDevice.shell('dumpsys package com.android.chrome'))
+  browserVersion: [async ({ androidDeviceWorker }, run) => {
+    const browserVersion = (await androidDeviceWorker.shell('dumpsys package com.android.chrome'))
         .toString('utf8')
         .split('\n')
         .find(line => line.includes('versionName='))!
@@ -50,10 +59,18 @@ export const androidTest = baseTest.extend<PageTestFixtures, AndroidWorkerFixtur
 
   isAndroid: [true, { scope: 'worker' }],
   isElectron: [false, { scope: 'worker' }],
+  electronMajorVersion: [0, { scope: 'worker' }],
   isWebView2: [false, { scope: 'worker' }],
+  isHeadlessShell: [false, { scope: 'worker' }],
 
-  androidContext: [async ({ androidDevice }, run) => {
-    const context = await androidDevice.launchBrowser();
+  androidDevice: async ({ androidDeviceWorker }, use) => {
+    await closeAllActivities(androidDeviceWorker);
+    await use(androidDeviceWorker);
+    await closeAllActivities(androidDeviceWorker);
+  },
+
+  androidContext: [async ({ androidDeviceWorker }, run) => {
+    const context = await androidDeviceWorker.launchBrowser();
     const [page] = context.pages();
     await page.goto('data:text/html,Default page');
     await run(context);
@@ -65,5 +82,6 @@ export const androidTest = baseTest.extend<PageTestFixtures, AndroidWorkerFixtur
       await androidContext.pages()[1].close();
     const page = await androidContext.newPage();
     await run(page);
+    await androidContext.clearCookies();
   },
 });

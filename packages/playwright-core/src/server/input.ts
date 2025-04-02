@@ -16,13 +16,14 @@
 
 import { assert } from '../utils';
 import * as keyboardLayout from './usKeyboardLayout';
-import type * as types from './types';
-import type { Page } from './page';
+
 import type { CallMetadata } from './instrumentation';
+import type { Page } from './page';
+import type * as types from './types';
 
 export const keypadLocation = keyboardLayout.keypadLocation;
 
-type KeyDescription = {
+export type KeyDescription = {
   keyCode: number,
   keyCodeWithoutLocation: number,
   key: string,
@@ -35,8 +36,8 @@ type KeyDescription = {
 const kModifiers: types.KeyboardModifier[] = ['Alt', 'Control', 'Meta', 'Shift'];
 
 export interface RawKeyboard {
-  keydown(modifiers: Set<types.KeyboardModifier>, code: string, keyCode: number, keyCodeWithoutLocation: number, key: string, location: number, autoRepeat: boolean, text: string | undefined): Promise<void>;
-  keyup(modifiers: Set<types.KeyboardModifier>, code: string, keyCode: number, keyCodeWithoutLocation: number, key: string, location: number): Promise<void>;
+  keydown(modifiers: Set<types.KeyboardModifier>, keyName: string, description: KeyDescription, autoRepeat: boolean): Promise<void>;
+  keyup(modifiers: Set<types.KeyboardModifier>, keyName: string, description: KeyDescription): Promise<void>;
   sendText(text: string): Promise<void>;
 }
 
@@ -44,11 +45,9 @@ export class Keyboard {
   private _pressedModifiers = new Set<types.KeyboardModifier>();
   private _pressedKeys = new Set<string>();
   private _raw: RawKeyboard;
-  private _page: Page;
 
-  constructor(raw: RawKeyboard, page: Page) {
+  constructor(raw: RawKeyboard) {
     this._raw = raw;
-    this._page = page;
   }
 
   async down(key: string) {
@@ -57,11 +56,11 @@ export class Keyboard {
     this._pressedKeys.add(description.code);
     if (kModifiers.includes(description.key as types.KeyboardModifier))
       this._pressedModifiers.add(description.key as types.KeyboardModifier);
-    const text = description.text;
-    await this._raw.keydown(this._pressedModifiers, description.code, description.keyCode, description.keyCodeWithoutLocation, description.key, description.location, autoRepeat, text);
+    await this._raw.keydown(this._pressedModifiers, key, description, autoRepeat);
   }
 
-  private _keyDescriptionForString(keyString: string): KeyDescription {
+  private _keyDescriptionForString(str: string): KeyDescription {
+    const keyString = resolveSmartModifierString(str);
     let description = usKeyboardLayout.get(keyString);
     assert(description, `Unknown key: "${keyString}"`);
     const shift = this._pressedModifiers.has('Shift');
@@ -78,7 +77,7 @@ export class Keyboard {
     if (kModifiers.includes(description.key as types.KeyboardModifier))
       this._pressedModifiers.delete(description.key as types.KeyboardModifier);
     this._pressedKeys.delete(description.code);
-    await this._raw.keyup(this._pressedModifiers, description.code, description.keyCode, description.keyCodeWithoutLocation, description.key, description.location);
+    await this._raw.keyup(this._pressedModifiers, key, description);
   }
 
   async insertText(text: string) {
@@ -126,7 +125,8 @@ export class Keyboard {
       await this.up(tokens[i]);
   }
 
-  async _ensureModifiers(modifiers: types.KeyboardModifier[]): Promise<types.KeyboardModifier[]> {
+  async ensureModifiers(mm: types.SmartKeyboardModifier[]): Promise<types.KeyboardModifier[]> {
+    const modifiers = mm.map(resolveSmartModifier);
     for (const modifier of modifiers) {
       if (!kModifiers.includes(modifier))
         throw new Error('Unknown modifier ' + modifier);
@@ -146,6 +146,16 @@ export class Keyboard {
   _modifiers(): Set<types.KeyboardModifier> {
     return this._pressedModifiers;
   }
+}
+
+export function resolveSmartModifierString(key: string): string {
+  if (key === 'ControlOrMeta')
+    return process.platform === 'darwin' ? 'Meta' : 'Control';
+  return key;
+}
+
+export function resolveSmartModifier(m: types.SmartKeyboardModifier): types.KeyboardModifier {
+  return resolveSmartModifierString(m) as types.KeyboardModifier;
 }
 
 export interface RawMouse {
@@ -205,7 +215,7 @@ export class Mouse {
 
   async click(x: number, y: number, options: { delay?: number, button?: types.MouseButton, clickCount?: number } = {}, metadata?: CallMetadata) {
     if (metadata)
-      metadata.point = { x: this._x, y: this._y };
+      metadata.point = { x, y };
     const { delay = null, clickCount = 1 } = options;
     if (delay) {
       this.move(x, y, { forClick: true });
@@ -272,7 +282,7 @@ function buildLayoutClosure(layout: keyboardLayout.KeyboardLayout): Map<string, 
         shiftedDescription.keyCode = definition.shiftKeyCode;
     }
 
-    // Map from code: Digit3 -> { ... descrption, shifted }
+    // Map from code: Digit3 -> { ... description, shifted }
     result.set(code, { ...description, shifted: shiftedDescription });
 
     // Map from aliases: Shift -> non-shiftable definition

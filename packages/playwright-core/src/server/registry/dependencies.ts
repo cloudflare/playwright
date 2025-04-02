@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
+import * as childProcess from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import * as os from 'os';
-import childProcess from 'child_process';
-import * as utils from '../../utils';
-import { spawnAsync } from '../../utils/spawnAsync';
-import { hostPlatform, isOfficiallySupportedPlatform } from '../../utils/hostPlatform';
-import { buildPlaywrightCLICommand } from '.';
+
 import { deps } from './nativeDeps';
-import { getPlaywrightVersion } from '../../utils/userAgent';
+import { wrapInASCIIBox } from '../utils/ascii';
+import { hostPlatform, isOfficiallySupportedPlatform } from '../utils/hostPlatform';
+import { spawnAsync } from '../utils/spawnAsync';
+import { getPlaywrightVersion } from '../utils/userAgent';
+
+import { buildPlaywrightCLICommand, registry } from '.';
 
 const BIN_DIRECTORY = path.join(__dirname, '..', '..', '..', 'bin');
 const languageBindingVersion = process.env.PW_CLI_DISPLAY_VERSION || require('../../../package.json').version;
@@ -95,7 +97,7 @@ export async function installDependenciesLinux(targets: Set<DependencyGroup>, dr
   for (const target of targets) {
     const info = deps[platform];
     if (!info) {
-      console.warn(`Cannot install dependencies for ${platform}!`);  // eslint-disable-line no-console
+      console.warn(`Cannot install dependencies for ${platform} with Playwright ${getPlaywrightVersion()}!`);  // eslint-disable-line no-console
       return;
     }
     libraries.push(...info[target]);
@@ -122,12 +124,12 @@ export async function installDependenciesLinux(targets: Set<DependencyGroup>, dr
   });
 }
 
-export async function validateDependenciesWindows(windowsExeAndDllDirectories: string[]) {
+export async function validateDependenciesWindows(sdkLanguage: string, windowsExeAndDllDirectories: string[]) {
   const directoryPaths = windowsExeAndDllDirectories;
   const lddPaths: string[] = [];
   for (const directoryPath of directoryPaths)
     lddPaths.push(...(await executablesOrSharedLibraries(directoryPath)));
-  const allMissingDeps = await Promise.all(lddPaths.map(lddPath => missingFileDependenciesWindows(lddPath)));
+  const allMissingDeps = await Promise.all(lddPaths.map(lddPath => missingFileDependenciesWindows(sdkLanguage, lddPath)));
   const missingDeps: Set<string> = new Set();
   for (const deps of allMissingDeps) {
     for (const dep of deps)
@@ -269,7 +271,7 @@ export async function validateDependenciesLinux(sdkLanguage: string, linuxLddDir
     ]);
   }
 
-  throw new Error('\n' + utils.wrapInASCIIBox(errorLines.join('\n'), 1));
+  throw new Error('\n' + wrapInASCIIBox(errorLines.join('\n'), 1));
 }
 
 function isSharedLib(basename: string) {
@@ -302,8 +304,8 @@ async function executablesOrSharedLibraries(directoryPath: string): Promise<stri
   return executablersOrLibraries as string[];
 }
 
-async function missingFileDependenciesWindows(filePath: string): Promise<Array<string>> {
-  const executable = path.join(__dirname, '..', '..', '..', 'bin', 'PrintDeps.exe');
+async function missingFileDependenciesWindows(sdkLanguage: string, filePath: string): Promise<Array<string>> {
+  const executable = registry.findExecutable('winldd')!.executablePathOrDie(sdkLanguage);
   const dirname = path.dirname(filePath);
   const { stdout, code } = await spawnAsync(executable, [filePath], {
     cwd: dirname,

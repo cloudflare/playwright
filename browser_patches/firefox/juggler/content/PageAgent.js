@@ -62,7 +62,6 @@ class PageAgent {
 
     const docShell = frameTree.mainFrame().docShell();
     this._docShell = docShell;
-    this._initialDPPX = docShell.contentViewer.overrideDPPX;
 
     // Dispatch frameAttached events for all initial frames
     for (const frame of this._frameTree.frames()) {
@@ -121,7 +120,8 @@ class PageAgent {
           // After the dragStart event is dispatched and handled by Web,
           // it might or might not create a new drag session, depending on its preventing default.
           setTimeout(() => {
-            this._browserPage.emit('pageInputEvent', { type: 'juggler-drag-finalized', dragSessionStarted: !!dragService.getCurrentSession() });
+            const session = this._getCurrentDragSession();
+            this._browserPage.emit('pageInputEvent', { type: 'juggler-drag-finalized', dragSessionStarted: !!session });
           }, 0);
         }
       }),
@@ -153,7 +153,6 @@ class PageAgent {
         getFullAXTree: this._getFullAXTree.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
-        setCacheDisabled: this._setCacheDisabled.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
         evaluate: this._runtime.evaluate.bind(this._runtime),
         callFunction: this._runtime.callFunction.bind(this._runtime),
@@ -161,15 +160,6 @@ class PageAgent {
         disposeObject: this._runtime.disposeObject.bind(this._runtime),
       }),
     ];
-  }
-
-  _setCacheDisabled({cacheDisabled}) {
-    const enable = Ci.nsIRequest.LOAD_NORMAL;
-    const disable = Ci.nsIRequest.LOAD_BYPASS_CACHE |
-                  Ci.nsIRequest.INHIBIT_CACHING;
-
-    const docShell = this._frameTree.mainFrame().docShell();
-    docShell.defaultLoadFlags = cacheDisabled ? disable : enable;
   }
 
   _emitAllEvents(frame) {
@@ -381,8 +371,19 @@ class PageAgent {
     const unsafeObject = frame.unsafeObject(objectId);
     if (!unsafeObject)
       throw new Error('Object is not input!');
-    const nsFiles = await Promise.all(files.map(filePath => File.createFromFileName(filePath)));
+    let nsFiles;
+    if (unsafeObject.webkitdirectory) {
+      nsFiles = await new Directory(files[0]).getFiles(true);
+    } else {
+      nsFiles = await Promise.all(files.map(filePath => File.createFromFileName(filePath)));
+    }
     unsafeObject.mozSetFileArray(nsFiles);
+    const events = [
+      new (frame.domWindow().Event)('input', { bubbles: true, cancelable: true, composed: true }),
+      new (frame.domWindow().Event)('change', { bubbles: true, cancelable: true, composed: true }),
+    ];
+    for (const event of events)
+      unsafeObject.dispatchEvent(event);
   }
 
   _getContentQuads({objectId, frameId}) {
@@ -514,75 +515,26 @@ class PageAgent {
       false /* aIgnoreRootScrollFrame */,
       true /* aFlushLayout */);
 
-    const {defaultPrevented: startPrevented} = await this._dispatchTouchEvent({
+    await this._dispatchTouchEvent({
       type: 'touchstart',
       modifiers,
       touchPoints: [{x, y}]
     });
-    const {defaultPrevented: endPrevented} = await this._dispatchTouchEvent({
+    await this._dispatchTouchEvent({
       type: 'touchend',
       modifiers,
       touchPoints: [{x, y}]
     });
-    if (startPrevented || endPrevented)
-      return;
+  }
 
+  _getCurrentDragSession() {
     const frame = this._frameTree.mainFrame();
-    const winUtils = frame.domWindow().windowUtils;
-    winUtils.jugglerSendMouseEvent(
-      'mousemove',
-      x,
-      y,
-      0 /*button*/,
-      0 /*clickCount*/,
-      modifiers,
-      false /*aIgnoreRootScrollFrame*/,
-      0.0 /*pressure*/,
-      5 /*inputSource*/,
-      true /*isDOMEventSynthesized*/,
-      false /*isWidgetEventSynthesized*/,
-      0 /*buttons*/,
-      winUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
-      true /*disablePointerEvent*/
-    );
-
-    winUtils.jugglerSendMouseEvent(
-      'mousedown',
-      x,
-      y,
-      0 /*button*/,
-      1 /*clickCount*/,
-      modifiers,
-      false /*aIgnoreRootScrollFrame*/,
-      0.0 /*pressure*/,
-      5 /*inputSource*/,
-      true /*isDOMEventSynthesized*/,
-      false /*isWidgetEventSynthesized*/,
-      1 /*buttons*/,
-      winUtils.DEFAULT_MOUSE_POINTER_ID /*pointerIdentifier*/,
-      true /*disablePointerEvent*/,
-    );
-
-    winUtils.jugglerSendMouseEvent(
-      'mouseup',
-      x,
-      y,
-      0 /*button*/,
-      1 /*clickCount*/,
-      modifiers,
-      false /*aIgnoreRootScrollFrame*/,
-      0.0 /*pressure*/,
-      5 /*inputSource*/,
-      true /*isDOMEventSynthesized*/,
-      false /*isWidgetEventSynthesized*/,
-      0 /*buttons*/,
-      winUtils.DEFAULT_MOUSE_POINTER_ID /*pointerIdentifier*/,
-      true /*disablePointerEvent*/,
-    );
+    const domWindow = frame?.domWindow();
+    return domWindow ? dragService.getCurrentSession(domWindow) : undefined;
   }
 
   async _dispatchDragEvent({type, x, y, modifiers}) {
-    const session = dragService.getCurrentSession();
+    const session = this._getCurrentDragSession();
     const dropEffect = session.dataTransfer.dropEffect;
 
     if ((type === 'drop' && dropEffect !== 'none') || type ===  'dragover') {
@@ -606,9 +558,8 @@ class PageAgent {
       return;
     }
     if (type === 'dragend') {
-      const session = dragService.getCurrentSession();
-      if (session)
-        dragService.endDragSession(true);
+      const session = this._getCurrentDragSession();
+      session?.endDragSession(true);
       return;
     }
   }

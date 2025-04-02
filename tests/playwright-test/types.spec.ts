@@ -19,7 +19,7 @@ import { test, expect } from './playwright-test-fixtures';
 test('should check types of fixtures', async ({ runTSC }) => {
   const result = await runTSC({
     'helper.ts': `
-      import { test as base, expect } from '@playwright/test';
+      import { test as base, expect, Page } from '@playwright/test';
       export type MyOptions = { foo: string, bar: number };
       export const test = base.extend<{ foo: string }, { bar: number }>({
         foo: 'foo',
@@ -71,10 +71,10 @@ test('should check types of fixtures', async ({ runTSC }) => {
         // @ts-expect-error
         baz: true,
       });
-      const fail9 = test.extend<{ foo: string }>({
-        // @ts-expect-error
+      const fail9 = test.extend({
         foo: [ async ({}, use) => {
           await use('foo');
+          // @ts-expect-error
         }, { scope: 'test', auto: true } ],
       });
       const fail10 = test.extend<{}, {}>({
@@ -100,7 +100,86 @@ test('should check types of fixtures', async ({ runTSC }) => {
             return y;
           });
         },
-      })
+      });
+
+      const chain1 = base.extend({
+        page: async ({ page }, use) => {
+          await use(page);
+        },
+      });
+      const chain2 = chain1.extend<{ pageAsUser: Page }>({
+        pageAsUser: async ({ page }, use) => {
+          // @ts-expect-error
+          const x: number = page;
+          // @ts-expect-error
+          await use(x);
+        },
+      });
+
+      base.extend({
+        page: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        },
+      });
+
+      base.extend<{ myFixture: (arg: number) => void }>({
+        page: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        },
+      });
+
+      base.extend({
+        // @ts-expect-error
+        myFixture: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        }
+      });
+
+      base.extend<{ myFixture: (arg: number) => void }>({
+        myFixture: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        }
+      });
+
+      base.extend({
+        page: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        },
+        // @ts-expect-error
+        myFixture: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        }
+      });
+
+      base.extend<{ myFixture: (arg: number) => void }>({
+        page: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        },
+        myFixture: async ({ page }) => {
+          type IsPage = (typeof page) extends Page ? true : never;
+          const isPage: IsPage = true;
+        }
+      });
+
+      base.extend<{ myFixture: (arg: number) => void }>({
+        // @ts-expect-error
+        myFixture: (arg: number) => {},
+      });
+
+      base.extend<{ myFixture: (arg: number) => void }>({
+        myFixture: async (_, use) => {
+          use((arg: number) => {});
+          // @ts-expect-error
+          use((arg: string) => {});
+        }
+      });
     `,
     'playwright.config.ts': `
       import { MyOptions } from './helper';

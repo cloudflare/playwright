@@ -22,7 +22,9 @@ import { verifyViewport } from '../config/utils';
 browserTest.describe('page screenshot', () => {
   browserTest.skip(({ browserName, headless }) => browserName === 'firefox' && !headless, 'Firefox headed produces a different image.');
 
-  browserTest('should run in parallel in multiple pages', async ({ server, contextFactory }) => {
+  browserTest('should run in parallel in multiple pages', async ({ server, contextFactory, browserName, isHeadlessShell }) => {
+    browserTest.fixme(browserName === 'chromium' && !isHeadlessShell, 'https://github.com/microsoft/playwright/issues/33330');
+
     const context = await contextFactory();
     const N = 5;
     const pages = await Promise.all(Array(N).fill(0).map(async () => {
@@ -73,7 +75,6 @@ browserTest.describe('page screenshot', () => {
   });
 
   browserTest('should work with device scale factor', async ({ browser, server, isMac, browserName }) => {
-    browserTest.fixme(isMac && browserName === 'webkit');
     const context = await browser.newContext({ viewport: { width: 320, height: 480 }, deviceScaleFactor: 2 });
     const page = await context.newPage();
     await page.goto(server.PREFIX + '/grid.html');
@@ -216,7 +217,6 @@ browserTest.describe('element screenshot', () => {
 
   browserTest('element screenshot should work with device scale factor', async ({ browser, server, browserName, isMac }) => {
     browserTest.skip(browserName === 'firefox');
-    browserTest.fixme(isMac && browserName === 'webkit');
 
     const context = await browser.newContext({ viewport: { width: 320, height: 480 }, deviceScaleFactor: 2 });
     const page = await context.newPage();

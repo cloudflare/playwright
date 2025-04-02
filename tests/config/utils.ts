@@ -15,14 +15,15 @@
  */
 
 import type { Frame, Page } from 'playwright-core';
-import { ZipFile } from '../../packages/playwright-core/lib/utils/zipFile';
-import type { TraceModelBackend } from '../../packages/trace-viewer/src/traceModel';
+import { ZipFile } from '../../packages/playwright-core/lib/server/utils/zipFile';
+import type { TraceModelBackend } from '../../packages/trace-viewer/src/sw/traceModel';
 import type { StackFrame } from '../../packages/protocol/src/channels';
 import { parseClientSideCallMetadata } from '../../packages/playwright-core/lib/utils/isomorphic/traceUtils';
-import { TraceModel } from '../../packages/trace-viewer/src/traceModel';
+import { TraceModel } from '../../packages/trace-viewer/src/sw/traceModel';
 import type { ActionTreeItem } from '../../packages/trace-viewer/src/ui/modelUtil';
 import { buildActionTree, MultiTraceModel } from '../../packages/trace-viewer/src/ui/modelUtil';
 import type { ActionTraceEvent, ConsoleMessageTraceEvent, EventTraceEvent, TraceEvent } from '@trace/trace';
+import style from 'ansi-styles';
 
 export async function attachFrame(page: Page, frameId: string, url: string): Promise<Frame> {
   const handle = await page.evaluateHandle(async ({ frameId, url }) => {
@@ -60,7 +61,7 @@ export function expectedSSLError(browserName: string, platform: string): RegExp 
     else if (platform === 'win32')
       return /SSL peer certificate or SSH remote key was not OK/;
     else
-      return /Unacceptable TLS certificate/;
+      return /Unacceptable TLS certificate|Operation was cancelled/;
   }
   return /SSL_ERROR_UNKNOWN/;
 }
@@ -207,6 +208,40 @@ export function stripAnsi(str: string): string {
   return str.replace(ansiRegex, '');
 }
 
+export function ansi2Markup(text: string): string {
+  return text.replace(ansiRegex, match => {
+    switch (match) {
+      case style.inverse.open:
+        return '<i>';
+      case style.inverse.close:
+        return '</i>';
+
+      case style.bold.open:
+        return '<b>';
+      case style.dim.open:
+        return '<d>';
+      case style.green.open:
+        return '<g>';
+      case style.red.open:
+        return '<r>';
+      case style.yellow.open:
+        return '<y>';
+      case style.bgYellow.open:
+        return '<Y>';
+
+      case style.bold.close:
+      case style.dim.close:
+      case style.green.close:
+      case style.red.close:
+      case style.yellow.close:
+      case style.bgYellow.close:
+        return '</>';
+
+      default:
+        return match; // unexpected escape sequence
+    }
+  });
+}
 
 class TraceBackend implements TraceModelBackend {
   private _fileName: string;

@@ -7,7 +7,6 @@
   "description": "",
   "devDependencies": {
     "@cloudflare/playwright": "file:../..",
-    "@cloudflare/workers-types": "^4.20250303.0",
-    "wrangler": "^3.112.0"
+    "wrangler": "^4.4.0"
   }
 }

@@ -15,15 +15,19 @@
  * limitations under the License.
  */
 
-import { type RegisteredListener, assert, eventsHelper } from '../../utils';
-import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
-import type { Protocol } from './protocol';
 import { EventEmitter } from 'events';
-import type { RecentLogsCollector } from '../../utils/debugLogger';
-import { debugLogger } from '../../utils/debugLogger';
-import type { ProtocolLogger } from '../types';
+
+import {  assert, eventsHelper } from '../../utils';
+import { debugLogger } from '../utils/debugLogger';
 import { helper } from '../helper';
 import { ProtocolError } from '../protocolError';
+
+import type { RegisteredListener } from '../../utils';
+import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
+import type { Protocol } from './protocol';
+import type { RecentLogsCollector } from '../utils/debugLogger';
+import type { ProtocolLogger } from '../types';
+
 
 export const ConnectionEvents = {
   Disconnected: Symbol('ConnectionEvents.Disconnected')
@@ -75,11 +79,11 @@ export class CRConnection extends EventEmitter {
       session._onMessage(message);
   }
 
-  _onClose() {
+  _onClose(reason?: string) {
     this._closed = true;
     this._transport.onmessage = undefined;
     this._transport.onclose = undefined;
-    this._browserDisconnectedLogs = helper.formatBrowserLogs(this._browserLogsCollector.recentLogs());
+    this._browserDisconnectedLogs = helper.formatBrowserLogs(this._browserLogsCollector.recentLogs(), reason);
     this.rootSession.dispose();
     Promise.resolve().then(() => this.emit(ConnectionEvents.Disconnected));
   }

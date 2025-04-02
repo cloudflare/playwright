@@ -14,26 +14,32 @@
  * limitations under the License.
  */
 
+import type { Builtins } from './builtins';
+
+type TypedArrayKind = 'i8' | 'ui8' | 'ui8c' | 'i16' | 'ui16' | 'i32' | 'ui32' | 'f32' | 'f64' | 'bi64' | 'bui64';
+
 export type SerializedValue =
     undefined | boolean | number | string |
     { v: 'null' | 'undefined' | 'NaN' | 'Infinity' | '-Infinity' | '-0' } |
     { d: string } |
     { u: string } |
     { bi: string } |
-    { r: { p: string, f: string} } |
+    { e: { n: string, m: string, s: string } } |
+    { r: { p: string, f: string } } |
     { a: SerializedValue[], id: number } |
     { o: { k: string, v: SerializedValue }[], id: number } |
     { ref: number } |
-    { h: number };
+    { h: number } |
+    { ta: { b: string, k: TypedArrayKind } };
 
-export type HandleOrValue = { h: number } | { fallThrough: any };
+type HandleOrValue = { h: number } | { fallThrough: any };
 
 type VisitorInfo = {
-  visited: Map<object, number>;
+  visited: Builtins.Map<object, number>;
   lastId: number;
 };
 
-export function source() {
+export function source(builtins: Builtins) {
 
   function isRegExp(obj: any): obj is RegExp {
     try {
@@ -43,9 +49,9 @@ export function source() {
     }
   }
 
-  function isDate(obj: any): obj is Date {
+  function isDate(obj: any): obj is Builtins.Date {
     try {
-      return obj instanceof Date || Object.prototype.toString.call(obj) === '[object Date]';
+      return obj instanceof builtins.Date || Object.prototype.toString.call(obj) === '[object Date]';
     } catch (error) {
       return false;
     }
@@ -67,7 +73,49 @@ export function source() {
     }
   }
 
-  function parseEvaluationResultValue(value: SerializedValue, handles: any[] = [], refs: Map<number, object> = new Map()): any {
+  function isTypedArray(obj: any, constructor: Function): boolean {
+    try {
+      return obj instanceof constructor || Object.prototype.toString.call(obj) === `[object ${constructor.name}]`;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  const typedArrayConstructors: Record<TypedArrayKind, Function> = {
+    i8: Int8Array,
+    ui8: Uint8Array,
+    ui8c: Uint8ClampedArray,
+    i16: Int16Array,
+    ui16: Uint16Array,
+    i32: Int32Array,
+    ui32: Uint32Array,
+    // TODO: add Float16Array once it's in baseline
+    f32: Float32Array,
+    f64: Float64Array,
+    bi64: BigInt64Array,
+    bui64: BigUint64Array,
+  };
+
+  function typedArrayToBase64(array: any) {
+    /**
+     * Firefox does not support iterating over typed arrays, so we use `.toBase64`.
+     * Error: 'Accessing TypedArray data over Xrays is slow, and forbidden in order to encourage performant code. To copy TypedArrays across origin boundaries, consider using Components.utils.cloneInto().'
+     */
+    if ('toBase64' in array)
+      return array.toBase64();
+    const binary = Array.from(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)).map(b => String.fromCharCode(b)).join('');
+    return btoa(binary);
+  }
+
+  function base64ToTypedArray(base64: string, TypedArrayConstructor: any) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++)
+      bytes[i] = binary.charCodeAt(i);
+    return new TypedArrayConstructor(bytes.buffer);
+  }
+
+  function parseEvaluationResultValue(value: SerializedValue, handles: any[] = [], refs: Builtins.Map<number, object> = new builtins.Map()): any {
     if (Object.is(value, undefined))
       return undefined;
     if (typeof value === 'object' && value) {
@@ -89,11 +137,17 @@ export function source() {
         return undefined;
       }
       if ('d' in value)
-        return new Date(value.d);
+        return new builtins.Date(value.d);
       if ('u' in value)
         return new URL(value.u);
       if ('bi' in value)
         return BigInt(value.bi);
+      if ('e' in value) {
+        const error = new Error(value.e.m);
+        error.name = value.e.n;
+        error.stack = value.e.s;
+        return error;
+      }
       if ('r' in value)
         return new RegExp(value.r.p, value.r.f);
       if ('a' in value) {
@@ -112,20 +166,25 @@ export function source() {
       }
       if ('h' in value)
         return handles[value.h];
+      if ('ta' in value)
+        return base64ToTypedArray(value.ta.b, typedArrayConstructors[value.ta.k]);
     }
     return value;
   }
 
   function serializeAsCallArgument(value: any, handleSerializer: (value: any) => HandleOrValue): SerializedValue {
-    return serialize(value, handleSerializer, { visited: new Map(), lastId: 0 });
+    return serialize(value, handleSerializer, { visited: new builtins.Map(), lastId: 0 });
   }
 
   function serialize(value: any, handleSerializer: (value: any) => HandleOrValue, visitorInfo: VisitorInfo): SerializedValue {
     if (value && typeof value === 'object') {
+      // eslint-disable-next-line no-restricted-globals
       if (typeof globalThis.Window === 'function' && value instanceof globalThis.Window)
         return 'ref: <Window>';
+      // eslint-disable-next-line no-restricted-globals
       if (typeof globalThis.Document === 'function' && value instanceof globalThis.Document)
         return 'ref: <Document>';
+      // eslint-disable-next-line no-restricted-globals
       if (typeof globalThis.Node === 'function' && value instanceof globalThis.Node)
         return 'ref: <Node>';
     }
@@ -164,12 +223,14 @@ export function source() {
       return { bi: value.toString() };
 
     if (isError(value)) {
-      const error = value;
-      if (error.stack?.startsWith(error.name + ': ' + error.message)) {
+      let stack;
+      if (value.stack?.startsWith(value.name + ': ' + value.message)) {
         // v8
-        return error.stack;
+        stack = value.stack;
+      } else {
+        stack = `${value.name}: ${value.message}\n${value.stack}`;
       }
-      return `${error.name}: ${error.message}\n${error.stack}`;
+      return { e: { n: value.name, m: value.message, s: stack } };
     }
     if (isDate(value))
       return { d: value.toJSON() };
@@ -177,6 +238,10 @@ export function source() {
       return { u: value.toJSON() };
     if (isRegExp(value))
       return { r: { p: value.source, f: value.flags } };
+    for (const [k, ctor] of Object.entries(typedArrayConstructors) as [TypedArrayKind, Function][]) {
+      if (isTypedArray(value, ctor))
+        return { ta: { b: typedArrayToBase64(value), k } };
+    }
 
     const id = visitorInfo.visited.get(value);
     if (id)
@@ -224,7 +289,3 @@ export function source() {
 
   return { parseEvaluationResultValue, serializeAsCallArgument };
 }
-
-const result = source();
-export const parseEvaluationResultValue = result.parseEvaluationResultValue;
-export const serializeAsCallArgument = result.serializeAsCallArgument;

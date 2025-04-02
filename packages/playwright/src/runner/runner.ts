@@ -15,21 +15,19 @@
  * limitations under the License.
  */
 
-import path from 'path';
-import { monotonicTime } from 'playwright-core/lib/utils';
-import type { FullResult, TestError } from '../../types/testReporter';
-import { webServerPluginsForConfig } from '../plugins/webServerPlugin';
+import { LastRunReporter } from './lastRun';
 import { collectFilesForProject, filterProjects } from './projectUtils';
-import { createReporters } from './reporters';
-import { TestRun, createTaskRunner, createTaskRunnerForList } from './tasks';
-import type { FullConfigInternal } from '../common/config';
-import { colors } from 'playwright-core/lib/utilsBundle';
-import { runWatchModeLoop } from './watchMode';
+import { createErrorCollectingReporter, createReporters } from './reporters';
+import { TestRun, createApplyRebaselinesTask, createClearCacheTask, createGlobalSetupTasks, createLoadTask, createPluginSetupTasks, createReportBeginTask, createRunTestsTasks, createStartDevServerTask, runTasks } from './tasks';
+import { addGitCommitInfoPlugin } from '../plugins/gitCommitInfoPlugin';
+import { webServerPluginsForConfig } from '../plugins/webServerPlugin';
+import { terminalScreen } from '../reporters/base';
 import { InternalReporter } from '../reporters/internalReporter';
-import { Multiplexer } from '../reporters/multiplexer';
-import type { Suite } from '../common/test';
-import { wrapReporterAsV2 } from '../reporters/reporterV2';
 import { affectedTestFiles } from '../transform/compilationCache';
+
+import type { FullResult, TestError } from '../../types/testReporter';
+import type { FullConfigInternal } from '../common/config';
+
 
 type ProjectConfigWithFiles = {
   name: string;
@@ -74,36 +72,28 @@ export class Runner {
   async runAllTests(): Promise<FullResult['status']> {
     const config = this._config;
     const listOnly = config.cliListOnly;
-    const deadline = config.config.globalTimeout ? monotonicTime() + config.config.globalTimeout : 0;
+
+    addGitCommitInfoPlugin(config);
 
     // Legacy webServer support.
     webServerPluginsForConfig(config).forEach(p => config.plugins.push({ factory: p }));
 
-    const reporter = new InternalReporter(new Multiplexer(await createReporters(config, listOnly ? 'list' : 'test', false)));
-    const taskRunner = listOnly ? createTaskRunnerForList(config, reporter, 'in-process', { failOnLoadErrors: true })
-      : createTaskRunner(config, reporter);
+    const reporters = await createReporters(config, listOnly ? 'list' : 'test', false);
+    const lastRun = new LastRunReporter(config);
+    if (config.cliLastFailed)
+      await lastRun.filterLastFailed();
 
-    const testRun = new TestRun(config, reporter);
-    reporter.onConfigure(config.config);
-
-    if (!listOnly && config.ignoreSnapshots) {
-      reporter.onStdOut(colors.dim([
-        'NOTE: running with "ignoreSnapshots" option. All of the following asserts are silently ignored:',
-        '- expect().toMatchSnapshot()',
-        '- expect().toHaveScreenshot()',
-        '',
-      ].join('\n')));
-    }
-
-    const taskStatus = await taskRunner.run(testRun, deadline);
-    let status: FullResult['status'] = testRun.failureTracker.result();
-    if (status === 'passed' && taskStatus !== 'passed')
-      status = taskStatus;
-    const modifiedResult = await reporter.onEnd({ status });
-    if (modifiedResult && modifiedResult.status)
-      status = modifiedResult.status;
-
-    await reporter.onExit();
+    const reporter = new InternalReporter([...reporters, lastRun]);
+    const tasks = listOnly ? [
+      createLoadTask('in-process', { failOnLoadErrors: true, filterOnly: false }),
+      createReportBeginTask(),
+    ] : [
+      createApplyRebaselinesTask(),
+      ...createGlobalSetupTasks(config),
+      createLoadTask('in-process', { filterOnly: true, failOnLoadErrors: true }),
+      ...createRunTestsTasks(config),
+    ];
+    const status = await runTasks(new TestRun(config, reporter), tasks, config.config.globalTimeout);
 
     // Calling process.exit() might truncate large stdout/stderr output.
     // See https://github.com/nodejs/node/issues/6456.
@@ -113,44 +103,35 @@ export class Runner {
     return status;
   }
 
-  async loadAllTests(mode: 'in-process' | 'out-of-process' = 'in-process'): Promise<{ status: FullResult['status'], suite?: Suite, errors: TestError[] }> {
-    const config = this._config;
-    const errors: TestError[] = [];
-    const reporter = new InternalReporter(new Multiplexer([wrapReporterAsV2({
-      onError(error: TestError) {
-        errors.push(error);
-      }
-    })]));
-    const taskRunner = createTaskRunnerForList(config, reporter, mode, { failOnLoadErrors: true });
-    const testRun = new TestRun(config, reporter);
-    reporter.onConfigure(config.config);
-
-    const taskStatus = await taskRunner.run(testRun, 0);
-    let status: FullResult['status'] = testRun.failureTracker.result();
-    if (status === 'passed' && taskStatus !== 'passed')
-      status = taskStatus;
-    const modifiedResult = await reporter.onEnd({ status });
-    if (modifiedResult && modifiedResult.status)
-      status = modifiedResult.status;
-    await reporter.onExit();
-    return { status, suite: testRun.rootSuite, errors };
+  async findRelatedTestFiles(files: string[]): Promise<FindRelatedTestFilesReport>  {
+    const errorReporter = createErrorCollectingReporter(terminalScreen);
+    const reporter = new InternalReporter([errorReporter]);
+    const status = await runTasks(new TestRun(this._config, reporter), [
+      ...createPluginSetupTasks(this._config),
+      createLoadTask('in-process', { failOnLoadErrors: true, filterOnly: false, populateDependencies: true }),
+    ]);
+    if (status !== 'passed')
+      return { errors: errorReporter.errors(), testFiles: [] };
+    return { testFiles: affectedTestFiles(files) };
   }
 
-  async watchAllTests(): Promise<FullResult['status']> {
-    const config = this._config;
-    webServerPluginsForConfig(config).forEach(p => config.plugins.push({ factory: p }));
-    return await runWatchModeLoop(config);
+  async runDevServer() {
+    const reporter = new InternalReporter([createErrorCollectingReporter(terminalScreen, true)]);
+    const status = await runTasks(new TestRun(this._config, reporter), [
+      ...createPluginSetupTasks(this._config),
+      createLoadTask('in-process', { failOnLoadErrors: true, filterOnly: false }),
+      createStartDevServerTask(),
+      { title: 'wait until interrupted', setup: async () => new Promise(() => {}) },
+    ]);
+    return { status };
   }
 
-  async findRelatedTestFiles(mode: 'in-process' | 'out-of-process', files: string[]): Promise<FindRelatedTestFilesReport>  {
-    const result = await this.loadAllTests(mode);
-    if (result.status !== 'passed' || !result.suite)
-      return { errors: result.errors, testFiles: [] };
-
-    const resolvedFiles = (files as string[]).map(file => path.resolve(process.cwd(), file));
-    const override = (this._config.config as any)['@playwright/test']?.['cli']?.['find-related-test-files'];
-    if (override)
-      return await override(resolvedFiles, this._config.config, this._config.configDir, result.suite);
-    return { testFiles: affectedTestFiles(resolvedFiles) };
+  async clearCache() {
+    const reporter = new InternalReporter([createErrorCollectingReporter(terminalScreen, true)]);
+    const status = await runTasks(new TestRun(this._config, reporter), [
+      ...createPluginSetupTasks(this._config),
+      createClearCacheTask(this._config),
+    ]);
+    return { status };
   }
 }

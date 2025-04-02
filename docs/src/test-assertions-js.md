@@ -40,12 +40,15 @@ Note that retrying assertions are async, so you must `await` them.
 | [await expect(locator).toBeInViewport()](./api/class-locatorassertions.md#locator-assertions-to-be-in-viewport) | Element intersects viewport |
 | [await expect(locator).toBeVisible()](./api/class-locatorassertions.md#locator-assertions-to-be-visible) | Element is visible |
 | [await expect(locator).toContainText()](./api/class-locatorassertions.md#locator-assertions-to-contain-text) | Element contains text |
+| [await expect(locator).toHaveAccessibleDescription()](./api/class-locatorassertions.md#locator-assertions-to-have-accessible-description) | Element has a matching [accessible description](https://w3c.github.io/accname/#dfn-accessible-description) |
+| [await expect(locator).toHaveAccessibleName()](./api/class-locatorassertions.md#locator-assertions-to-have-accessible-name) | Element has a matching [accessible name](https://w3c.github.io/accname/#dfn-accessible-name) |
 | [await expect(locator).toHaveAttribute()](./api/class-locatorassertions.md#locator-assertions-to-have-attribute) | Element has a DOM attribute |
 | [await expect(locator).toHaveClass()](./api/class-locatorassertions.md#locator-assertions-to-have-class) | Element has a class property |
 | [await expect(locator).toHaveCount()](./api/class-locatorassertions.md#locator-assertions-to-have-count) | List has exact number of children |
 | [await expect(locator).toHaveCSS()](./api/class-locatorassertions.md#locator-assertions-to-have-css) | Element has CSS property |
 | [await expect(locator).toHaveId()](./api/class-locatorassertions.md#locator-assertions-to-have-id) | Element has an ID |
 | [await expect(locator).toHaveJSProperty()](./api/class-locatorassertions.md#locator-assertions-to-have-js-property) | Element has a JavaScript property |
+| [await expect(locator).toHaveRole()](./api/class-locatorassertions.md#locator-assertions-to-have-role) | Element has a specific [ARIA role](https://www.w3.org/TR/wai-aria-1.2/#roles) |
 | [await expect(locator).toHaveScreenshot()](./api/class-locatorassertions.md#locator-assertions-to-have-screenshot-1) | Element has a screenshot |
 | [await expect(locator).toHaveText()](./api/class-locatorassertions.md#locator-assertions-to-have-text) | Element matches text |
 | [await expect(locator).toHaveValue()](./api/class-locatorassertions.md#locator-assertions-to-have-value) | Input has a value |
@@ -251,7 +254,7 @@ Note that by default `toPass` has timeout 0 and does not respect custom [expect 
 
 You can extend Playwright assertions by providing custom matchers. These matchers will be available on the `expect` object.
 
-In this example we add a custom `toHaveAmount` function. Custom matcher should return a `message` callback and a `pass` flag indicating whether the assertion passed.
+In this example we add a custom `toHaveAmount` function. Custom matcher should return a `pass` flag indicating whether the assertion passed, and a `message` callback that's used when the assertion fails.
 
 ```js title="fixtures.ts"
 import { expect as baseExpect } from '@playwright/test';
@@ -276,7 +279,7 @@ export const expect = baseExpect.extend({
       ? () => this.utils.matcherHint(assertionName, undefined, undefined, { isNot: this.isNot }) +
           '\n\n' +
           `Locator: ${locator}\n` +
-          `Expected: ${this.isNot ? 'not' : ''}${this.utils.printExpected(expected)}\n` +
+          `Expected: not ${this.utils.printExpected(expected)}\n` +
           (matcherResult ? `Received: ${this.utils.printReceived(matcherResult.actual)}` : '')
       : () =>  this.utils.matcherHint(assertionName, undefined, undefined, { isNot: this.isNot }) +
           '\n\n' +
@@ -304,6 +307,8 @@ test('amount', async () => {
   await expect(page.locator('.cart')).toHaveAmount(4);
 });
 ```
+
+### Compatibility with expect library
 
 :::note
 Do not confuse Playwright's `expect` with the [`expect` library](https://jestjs.io/docs/expect). The latter is not fully integrated with Playwright test runner, so make sure to use Playwright's own `expect`.

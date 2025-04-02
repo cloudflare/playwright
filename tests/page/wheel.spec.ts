@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import type { Page } from 'playwright-core';
-import { test as it, expect } from './pageTest';
+import { test as it, expect, rafraf } from './pageTest';
 
 it.skip(({ isAndroid }) => {
   return isAndroid;
@@ -22,8 +22,8 @@ it.skip(({ isAndroid }) => {
 
 let ignoreDelta = false;
 
-it.beforeAll(async ({ browserMajorVersion, browserName, isElectron, platform }) => {
-  if (((browserName === 'chromium' && browserMajorVersion >= 102) || isElectron) && platform === 'darwin') {
+it.beforeAll(async ({ browserName, isElectron, platform }) => {
+  if (((browserName === 'chromium') || isElectron) && platform === 'darwin') {
     // Chromium reports deltaX/deltaY scaled by host device scale factor.
     // https://bugs.chromium.org/p/chromium/issues/detail?id=1324819
     // https://github.com/microsoft/playwright/issues/7362
@@ -209,8 +209,7 @@ it('should work when the event is canceled', async ({ page }) => {
     document.querySelector('div').addEventListener('wheel', e => e.preventDefault());
   });
   // Give wheel listener a chance to propagate through all the layers in Firefox.
-  for (let i = 0; i < 10; i++)
-    await page.evaluate(() => new Promise(x => requestAnimationFrame(() => requestAnimationFrame(x))));
+  await rafraf(page, 10);
   await page.mouse.wheel(0, 100);
   await expectEvent(page, {
     deltaX: 0,

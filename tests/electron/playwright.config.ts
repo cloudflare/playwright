@@ -19,13 +19,12 @@ loadEnv({ path: path.join(__dirname, '..', '..', '.env') });
 
 import type { Config, PlaywrightTestOptions, PlaywrightWorkerOptions } from '@playwright/test';
 import * as path from 'path';
-import type { CoverageWorkerOptions } from '../config/coverageFixtures';
 
 process.env.PWPAGE_IMPL = 'electron';
 
 const outputDir = path.join(__dirname, '..', '..', 'test-results');
 const testDir = path.join(__dirname, '..');
-const config: Config<CoverageWorkerOptions & PlaywrightWorkerOptions & PlaywrightTestOptions> = {
+const config: Config<PlaywrightWorkerOptions & PlaywrightTestOptions> = {
   testDir,
   outputDir,
   timeout: 30000,
@@ -36,6 +35,8 @@ const config: Config<CoverageWorkerOptions & PlaywrightWorkerOptions & Playwrigh
   reporter: process.env.CI ? [
     ['dot'],
     ['json', { outputFile: path.join(outputDir, 'report.json') }],
+    // Needed since tests/electron/package.json exists which would otherwise be picked up as tests/electron/ (outputDir)
+    ['blob', { fileName: path.join(__dirname, '../../blob-report/', `${process.env.PWTEST_BOT_NAME}.zip`) }],
   ] : 'line',
   projects: [],
   globalSetup: './globalSetup.ts'
@@ -43,7 +44,7 @@ const config: Config<CoverageWorkerOptions & PlaywrightWorkerOptions & Playwrigh
 
 const metadata = {
   platform: process.platform,
-  headful: true,
+  headless: 'headed',
   browserName: 'electron',
   channel: undefined,
   mode: 'default',
@@ -54,7 +55,7 @@ config.projects.push({
   name: 'electron-api',
   use: {
     browserName: 'chromium',
-    coverageName: 'electron',
+    headless: false,
   },
   testDir: path.join(testDir, 'electron'),
   metadata,
@@ -66,7 +67,7 @@ config.projects.push({
   snapshotPathTemplate: '{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}-chromium{ext}',
   use: {
     browserName: 'chromium',
-    coverageName: 'electron',
+    headless: false,
   },
   testDir: path.join(testDir, 'page'),
   metadata,

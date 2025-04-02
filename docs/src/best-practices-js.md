@@ -43,7 +43,7 @@ You can also reuse the signed-in state in the tests with [setup project](./auth.
 
 ### Avoid testing third-party dependencies
 
-Only test what you control. Don't try to test links to external sites or third party servers that you do not control. Not only is it time consuming and can slow down your tests but also you can not control the content of the page you are linking to, or if there are cookie banners or overlay pages or anything else that might cause your test to fail.
+Only test what you control. Don't try to test links to external sites or third party servers that you do not control. Not only is it time consuming and can slow down your tests but also you cannot control the content of the page you are linking to, or if there are cookie banners or overlay pages or anything else that might cause your test to fail.
 
 Instead, use the [Playwright Network API](/network.md#handle-requests) and guarantee the response needed.
 
@@ -90,7 +90,7 @@ await page
 
 #### Prefer user-facing attributes to XPath or CSS selectors
 
-Your DOM can easily change so having your tests depend on your DOM structure can lead to failing tests. For example consider selecting this button by its CSS classes. Should the designer change something then the class might change breaking your test.
+Your DOM can easily change so having your tests depend on your DOM structure can lead to failing tests. For example consider selecting this button by its CSS classes. Should the designer change something then the class might change, thus breaking your test.
 
 
 ```js
@@ -112,9 +112,40 @@ Playwright has a [test generator](./codegen.md) that can generate tests and pick
 
 To pick a locator run the `codegen` command followed by the URL that you would like to pick a locator from.
 
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
 ```bash
 npx playwright codegen playwright.dev
 ```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright codegen playwright.dev
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright codegen playwright.dev
+```
+
+</TabItem>
+
+</Tabs>
 
 This will open a new browser window as well as the Playwright inspector. To pick a locator first click on the 'Record' button to stop the recording. By default when you run the `codegen` command it will start a new recording. Once you stop the recording the 'Pick Locator' button will be available to click.
 
@@ -170,9 +201,40 @@ You can live debug your test by clicking or editing the locators in your test in
 
 You can also debug your tests with the Playwright inspector by running your tests with the `--debug` flag.
 
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
 ```bash
 npx playwright test --debug
 ```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright test --debug
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright test --debug
+```
+
+</TabItem>
+
+</Tabs>
 
 You can then step through your test, view actionability logs and edit the locator live and see it highlighted in the browser window. This will show you which locators match, how many of them there are.
 
@@ -182,9 +244,40 @@ You can then step through your test, view actionability logs and edit the locato
 
 To debug a specific test add the name of the test file and the line number of the test followed by the `--debug` flag.
 
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
 ```bash
 npx playwright test example.spec.ts:9 --debug
 ```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright test example.spec.ts:9 --debug
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright test example.spec.ts:9 --debug
+```
+
+</TabItem>
+
+</Tabs>
 #### Debugging on CI
 
 For CI failures, use the Playwright [trace viewer](./trace-viewer.md) instead of videos and screenshots. The trace viewer gives you a full trace of your tests as a local Progressive Web App (PWA) that can easily be shared. With the trace viewer you can view the timeline, inspect DOM snapshots for each action using dev tools, view network requests and more.
@@ -193,18 +286,81 @@ For CI failures, use the Playwright [trace viewer](./trace-viewer.md) instead of
 
 Traces are configured in the Playwright config file and are set to run on CI on the first retry of a failed test. We don't recommend setting this to `on` so that traces are run on every test as it's very performance heavy. However you can run a trace locally when developing with the `--trace` flag.
 
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
 ```bash
 npx playwright test --trace on
 ```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright test --trace on
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright test --trace on
+```
+
+</TabItem>
+
+</Tabs>
+
 Once you run this command your traces will be recorded for each test and can be viewed directly from the HTML report.
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
 
 ```bash
 npx playwright show-report
-````
+```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright show-report
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright show-report
+```
+
+</TabItem>
+
+</Tabs>
 
 <img width="1516" alt="Playwrights HTML report" loading="lazy" src="https://user-images.githubusercontent.com/13063165/212279022-d929d4c0-2271-486a-a75f-166ac231d25f.png" />
 
-Traces can be opened by clicking on the icon next to the test or by opening each of the test reports and scrolling down to the traces section.
+Traces can be opened by clicking on the icon next to the test file name or by opening each of the test reports and scrolling down to the traces section.
 
 <img width="1516" alt="Screenshot 2023-01-13 at 09 58 34" loading="lazy" src="https://user-images.githubusercontent.com/13063165/212279699-c9eb134f-4f4e-4f19-805c-37596d3272a6.png" />
 
@@ -214,8 +370,8 @@ Playwright comes with a range of tooling to help you write tests.
 - The [VS Code extension](./getting-started-vscode.md) gives you a great developer experience when writing, running, and debugging tests.
 - The [test generator](./codegen.md) can generate tests and pick locators for you.
 - The [trace viewer](./trace-viewer.md) gives you a full trace of your tests as a local PWA that can easily be shared. With the trace viewer you can view the timeline, inspect DOM snapshots for each action, view network requests and more.
-- The [UI Mode](./test-ui-mode) let's you explore, run and debug tests with a time travel experience complete with watch mode. All test files are loaded into the testing sidebar where you can expand each file and describe block to individually run, view, watch and debug each test.
-- [Typescript](./test-typescript) in Playwright works out of the box and gives you better IDE integrations. Your IDE will show you everything you can do and highlight when you do something wrong. No TypeScript experience is needed and it is not necessary for your code to be in TypeScript, all you need to do is create your tests with a `.ts` extension.
+- The [UI Mode](./test-ui-mode) lets you explore, run and debug tests with a time travel experience complete with watch mode. All test files are loaded into the testing sidebar where you can expand each file and describe block to individually run, view, watch and debug each test.
+- [TypeScript](./test-typescript) in Playwright works out of the box and gives you better IDE integrations. Your IDE will show you everything you can do and highlight when you do something wrong. No TypeScript experience is needed and it is not necessary for your code to be in TypeScript, all you need to do is create your tests with a `.ts` extension.
 
 ### Test across all browsers
 
@@ -246,26 +402,104 @@ export default defineConfig({
 
 By keeping your Playwright version up to date you will be able to test your app on the latest browser versions and catch failures before the latest browser version is released to the public.
 
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
 ```bash
 npm install -D @playwright/test@latest
 ```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn add --dev @playwright/test@latest
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm install --save-dev @playwright/test@latest
+```
+
+</TabItem>
+
+</Tabs>
+
 Check the [release notes](./release-notes.md) to see what the latest version is and what changes have been released.
 
 You can see what version of Playwright you have by running the following command.
+
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
 
 ```bash
 npx playwright --version
 ```
 
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright --version
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright --version
+```
+
+</TabItem>
+
+</Tabs>
+
 ### Run tests on CI
 
 Setup CI/CD and run your tests frequently. The more often you run your tests the better. Ideally you should run your tests on each commit and pull request. Playwright comes with a [GitHub actions workflow](/ci-intro.md) so that tests will run on CI for you with no setup required. Playwright can also be setup on the [CI environment](/ci.md) of your choice.
 
-Use Linux when running your tests on CI as it is cheaper. Developers can use whatever environment when running locally but use linux on CI.
+Use Linux when running your tests on CI as it is cheaper. Developers can use whatever environment when running locally but use linux on CI. Consider setting up [Sharding](./test-sharding.md) to make CI faster.
+
+
+#### Optimize browser downloads on CI
+
+Only install the browsers that you actually need, especially on CI. For example, if you're only testing with Chromium, install just Chromium.
+
+```bash title=".github/workflows/playwright.yml"
+# Instead of installing all browsers
+npx playwright install --with-deps
+
+# Install only Chromium
+npx playwright install chromium --with-deps
+```
+
+This saves both download time and disk space on your CI machines.
 
 ### Lint your tests
 
-Linting the tests helps catching errors early. Use [`@typescript-eslint/no-floating-promises`](https://typescript-eslint.io/rules/no-floating-promises/) [ESLint](https://eslint.org) rule to make sure there are no missing awaits before the asynchronous calls to the Playwright API.
+We recommend TypeScript and linting with ESLint for your tests to catch errors early. Use [`@typescript-eslint/no-floating-promises`](https://typescript-eslint.io/rules/no-floating-promises/) [ESLint](https://eslint.org) rule to make sure there are no missing awaits before the asynchronous calls to the Playwright API. On your CI you can run `tsc --noEmit` to ensure that functions are called with the right signature.
 
 ### Use parallelism and sharding
 
@@ -282,9 +516,40 @@ test('runs in parallel 2', async ({ page }) => { /* ... */ });
 
 Playwright can [shard](./test-parallel.md#shard-tests-between-multiple-machines) a test suite, so that it can be executed on multiple machines.
 
+<Tabs
+  groupId="js-package-manager"
+  defaultValue="npm"
+  values={[
+    {label: 'npm', value: 'npm'},
+    {label: 'yarn', value: 'yarn'},
+    {label: 'pnpm', value: 'pnpm'}
+  ]
+}>
+<TabItem value="npm">
+
 ```bash
 npx playwright test --shard=1/3
 ```
+
+</TabItem>
+
+<TabItem value="yarn">
+
+```bash
+yarn playwright test --shard=1/3
+```
+
+</TabItem>
+
+<TabItem value="pnpm">
+
+```bash
+pnpm exec playwright test --shard=1/3
+```
+
+</TabItem>
+
+</Tabs>
 
 ## Productivity tips
 

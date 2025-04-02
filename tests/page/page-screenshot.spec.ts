@@ -16,7 +16,7 @@
  */
 
 import os from 'os';
-import { test as it, expect } from './pageTest';
+import { test as it, expect, rafraf } from './pageTest';
 import { verifyViewport, attachFrame } from '../config/utils';
 import type { Route } from 'playwright-core';
 import path from 'path';
@@ -221,6 +221,17 @@ it.describe('page screenshot', () => {
     expect(screenshot).toMatchSnapshot('screenshot-grid-fullpage.png');
   });
 
+  it('should take fullPage screenshots and mask elements outside of it', async ({ page, server }) => {
+    it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/30770' });
+    await page.setViewportSize({ width: 500, height: 500 });
+    await page.goto(server.PREFIX + '/grid.html');
+    const screenshot = await page.screenshot({
+      fullPage: true,
+      mask: [page.locator('.box').nth(144)],
+    });
+    expect(screenshot).toMatchSnapshot('screenshot-grid-fullpage-mask-outside-viewport.png');
+  });
+
   it('should restore viewport after fullPage screenshot', async ({ page, server }) => {
     await page.setViewportSize({ width: 500, height: 500 });
     await page.goto(server.PREFIX + '/grid.html');
@@ -269,18 +280,22 @@ it.describe('page screenshot', () => {
     expect(screenshot).toMatchSnapshot('screenshot-clip-odd-size.png');
   });
 
-  it('should work for canvas', async ({ page, server, isElectron, isMac }) => {
+  it('should work for canvas', async ({ page, server, isElectron, isMac, isLinux, macVersion, browserName, isHeadlessShell, headless }) => {
     it.fixme(isElectron && isMac, 'Fails on the bots');
+    it.fixme(browserName === 'webkit' && isLinux && !headless, 'WebKit has slightly different corners on gtk4.');
     await page.setViewportSize({ width: 500, height: 500 });
     await page.goto(server.PREFIX + '/screenshots/canvas.html');
     const screenshot = await page.screenshot();
-    expect(screenshot).toMatchSnapshot('screenshot-canvas.png');
+    if ((!isHeadlessShell && browserName === 'chromium' && isMac && os.arch() === 'arm64' && macVersion >= 14) ||
+        (browserName === 'webkit' && isLinux && os.arch() === 'x64'))
+      expect(screenshot).toMatchSnapshot('screenshot-canvas-with-accurate-corners.png');
+    else
+      expect(screenshot).toMatchSnapshot('screenshot-canvas.png');
   });
 
-  it('should capture canvas changes', async ({ page, isElectron, browserName, isMac, isWebView2 }) => {
+  it('should capture canvas changes', async ({ page, isElectron, browserName, isMac }) => {
     it.fixme(browserName === 'webkit' && isMac, 'https://github.com/microsoft/playwright/issues/8796,https://github.com/microsoft/playwright/issues/16180');
     it.skip(isElectron);
-    it.skip(isWebView2);
     await page.goto('data:text/html,<canvas></canvas>');
     await page.evaluate(() => {
       const canvas = document.querySelector('canvas');
@@ -312,6 +327,7 @@ it.describe('page screenshot', () => {
   it('should work for webgl', async ({ page, server, browserName, platform }) => {
     it.fixme(browserName === 'firefox');
     it.fixme(browserName === 'chromium' && platform === 'darwin' && os.arch() === 'arm64', 'SwiftShader is not available on macOS-arm64 - https://github.com/microsoft/playwright/issues/28216');
+    it.skip(browserName === 'webkit' && platform === 'darwin' && os.arch() === 'x64', 'Modernizr uses WebGL which is not available on Intel macOS - https://bugs.webkit.org/show_bug.cgi?id=278277');
 
     await page.setViewportSize({ width: 640, height: 480 });
     await page.goto(server.PREFIX + '/screenshots/webgl.html');
@@ -578,14 +594,6 @@ it.describe('page screenshot', () => {
   });
 });
 
-async function rafraf(page) {
-  // Do a double raf since single raf does not
-  // actually guarantee a new animation frame.
-  await page.evaluate(() => new Promise(x => {
-    requestAnimationFrame(() => requestAnimationFrame(x));
-  }));
-}
-
 declare global {
   interface Window {
     animation?: Animation;
@@ -721,9 +729,9 @@ it.describe('page screenshot animations', () => {
     const div = page.locator('div');
     await div.evaluate(el => {
       el.addEventListener('transitionend', () => {
-        const time = Date.now();
+        const time = window.builtins.Date.now();
         // Block main thread for 200ms, emulating heavy layout.
-        while (Date.now() - time < 200) {}
+        while (window.builtins.Date.now() - time < 200) {}
         const h1 = document.createElement('h1');
         h1.textContent = 'woof-woof';
         document.body.append(h1);

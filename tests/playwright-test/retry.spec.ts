@@ -216,7 +216,7 @@ test('should retry beforeAll failure', async ({ runInlineTest }) => {
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(0);
   expect(result.failed).toBe(1);
-  expect(result.skipped).toBe(1);
+  expect(result.didNotRun).toBe(1);
   expect(result.output.split('\n')[2]).toBe('×°×°F°');
   expect(result.output).toContain('BeforeAll is bugged!');
 });
@@ -260,5 +260,5 @@ test('failed and skipped on retry should be marked as flaky', async ({ runInline
   expect(result.failed).toBe(0);
   expect(result.flaky).toBe(1);
   expect(result.output).toContain('Failed on first run');
-  expect(result.report.suites[0].specs[0].tests[0].annotations).toEqual([{ type: 'skip', description: 'Skipped on first retry' }]);
+  expect(result.report.suites[0].specs[0].tests[0].results[1].annotations).toEqual([{ type: 'skip', description: 'Skipped on first retry', location: expect.anything() }]);
 });

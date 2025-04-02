@@ -101,11 +101,11 @@ it('should change document.activeElement', async ({ page, server }) => {
   expect(active).toEqual(['INPUT', 'TEXTAREA']);
 });
 
-it('should not affect screenshots', async ({ page, server, browserName, headless, isWindows }) => {
+it('should not affect screenshots', async ({ page, server, browserName, headless, isWindows, isLinux, isHeadlessShell }) => {
   it.skip(browserName === 'webkit' && isWindows && !headless, 'WebKit/Windows/headed has a larger minimal viewport. See https://github.com/microsoft/playwright/issues/22616');
+  it.skip(browserName === 'webkit' && isLinux && !headless, 'WebKit headed has a larger minimal viewport on gtk4.');
   it.skip(browserName === 'firefox' && !headless, 'Firefox headed produces a different image');
-  const isChromiumHeadlessNew = browserName === 'chromium' && !!headless && !!process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW;
-  it.fixme(isChromiumHeadlessNew, 'Times out with --headless=new');
+  it.fixme(browserName === 'chromium' && !isHeadlessShell, 'https://github.com/microsoft/playwright/issues/33330');
 
   const page2 = await page.context().newPage();
   await Promise.all([
@@ -187,8 +187,21 @@ browserTest('should focus with more than one page/context', async ({ contextFact
   expect(await page2.evaluate(() => !!window['gotFocus'])).toBe(true);
 });
 
-browserTest('should trigger hover state concurrently', async ({ browserType, browserName }) => {
+browserTest('should not fire blur events when interacting with more than one page/context', async ({ contextFactory, browserName }) => {
+  browserTest.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/30399' });
+  const page1 = await (await contextFactory()).newPage();
+  const page2 = await (await contextFactory()).newPage();
+  await page1.setContent(`<button id="foo" onblur="window.gotBlur=true">foo</button>`);
+  await page2.setContent(`<button id="foo" onblur="window.gotBlur=true">foo</button>`);
+  await page1.click('#foo');
+  await page2.click('#foo');
+  expect(await page1.evaluate(() => !!window['gotBlur'])).toBe(false);
+  expect(await page2.evaluate(() => !!window['gotBlur'])).toBe(false);
+});
+
+browserTest('should trigger hover state concurrently', async ({ browserType, browserName, headless }) => {
   browserTest.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/27969' });
+  browserTest.skip(!headless, 'headed messes up with hover');
   browserTest.fixme(browserName === 'firefox');
 
   const browser1 = await browserType.launch();

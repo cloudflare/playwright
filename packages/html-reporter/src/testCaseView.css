@@ -16,7 +16,7 @@
 
 .test-case-column {
   border-radius: 6px;
-  margin: 24px 0;
+  margin: 12px 0 24px 0;
 }
 
 .test-case-column .tab-element.selected {
@@ -47,6 +47,12 @@
   flex: none;
   align-items: center;
   padding: 0 8px 8px;
+  line-height: 24px;
+}
+
+.test-case-run-duration {
+  color: var(--color-fg-subtle);
+  padding-left: 8px;
 }
 
 .test-case-path {
@@ -60,6 +66,7 @@
   align-items: center;
   padding: 0 8px;
   line-height: 24px;
+  white-space: pre-wrap;
 }
 
 @media only screen and (max-width: 600px) {

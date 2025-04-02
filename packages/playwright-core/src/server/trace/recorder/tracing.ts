@@ -14,38 +14,40 @@
  * limitations under the License.
  */
 
-import type { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type { NameValue } from '../../../common/types';
-import type { TracingTracingStopChunkParams } from '@protocol/channels';
+
+import { Snapshotter } from './snapshotter';
 import { commandsWithTracingSnapshots } from '../../../protocol/debug';
-import { ManualPromise } from '../../../utils/manualPromise';
-import type { RegisteredListener } from '../../../utils/eventsHelper';
-import { eventsHelper } from '../../../utils/eventsHelper';
-import { assert, createGuid, monotonicTime } from '../../../utils';
-import { removeFolders } from '../../../utils/fileUtils';
+import { assert } from '../../../utils/isomorphic/assert';
+import { monotonicTime } from '../../../utils/isomorphic/time';
+import { eventsHelper  } from '../../utils/eventsHelper';
+import { createGuid  } from '../../utils/crypto';
 import { Artifact } from '../../artifact';
 import { BrowserContext } from '../../browserContext';
-import type { ElementHandle } from '../../dom';
-import type { APIRequestContext } from '../../fetch';
-import type { CallMetadata, InstrumentationListener } from '../../instrumentation';
-import { SdkObject } from '../../instrumentation';
-import { Page } from '../../page';
-import type * as har from '@trace/har';
-import type { HarTracerDelegate } from '../../har/harTracer';
-import { HarTracer } from '../../har/harTracer';
-import type { FrameSnapshot } from '@trace/snapshot';
-import type * as trace from '@trace/trace';
-import type { SnapshotterBlob, SnapshotterDelegate } from './snapshotter';
-import { Snapshotter } from './snapshotter';
-import { yazl } from '../../../zipBundle';
-import type { ConsoleMessage } from '../../console';
 import { Dispatcher } from '../../dispatchers/dispatcher';
 import { serializeError } from '../../errors';
+import { SerializedFS, removeFolders  } from '../../utils/fileUtils';
+import { HarTracer } from '../../har/harTracer';
+import { SdkObject } from '../../instrumentation';
+import { Page } from '../../page';
 
-const version: trace.VERSION = 6;
+import type { SnapshotterBlob, SnapshotterDelegate } from './snapshotter';
+import type { NameValue } from '../../../utils/isomorphic/types';
+import type { RegisteredListener } from '../../../utils';
+import type { ConsoleMessage } from '../../console';
+import type { Dialog } from '../../dialog';
+import type { Download } from '../../download';
+import type { APIRequestContext } from '../../fetch';
+import type { HarTracerDelegate } from '../../har/harTracer';
+import type { CallMetadata, InstrumentationListener } from '../../instrumentation';
+import type { StackFrame, TracingTracingStopChunkParams } from '@protocol/channels';
+import type * as har from '@trace/har';
+import type { FrameSnapshot } from '@trace/snapshot';
+import type * as trace from '@trace/trace';
+
+const version: trace.VERSION = 7;
 
 export type TracerOptions = {
   name?: string;
@@ -66,6 +68,7 @@ type RecordingState = {
   traceSha1s: Set<string>,
   recording: boolean;
   callIds: Set<string>;
+  groupStack: string[];
 };
 
 const kScreencastOptions = { width: 800, height: 600, quality: 90 };
@@ -100,12 +103,15 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     this._contextCreatedEvent = {
       version,
       type: 'context-options',
+      origin: 'library',
       browserName: '',
       options: {},
       platform: process.platform,
       wallTime: 0,
+      monotonicTime: 0,
       sdkLanguage: context.attribution.playwright.options.sdkLanguage,
-      testIdAttributeName
+      testIdAttributeName,
+      contextId: context.guid,
     };
     if (context instanceof BrowserContext) {
       this._snapshotter = new Snapshotter(context, this);
@@ -151,6 +157,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
       networkSha1s: new Set(),
       recording: false,
       callIds: new Set(),
+      groupStack: [],
     };
     this._fs.mkdir(this._state.resourcesDir);
     this._fs.writeFile(this._state.networkFile, '');
@@ -171,14 +178,25 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     this._state.recording = true;
     this._state.callIds.clear();
 
+    // - Browser context network trace is shared across chunks as it contains resources
+    // used to serve page snapshots, so make a copy with the new name.
+    // - APIRequestContext network traces are chunk-specific, always start from scratch.
+    const preserveNetworkResources = this._context instanceof BrowserContext;
     if (options.name && options.name !== this._state.traceName)
-      this._changeTraceName(this._state, options.name);
+      this._changeTraceName(this._state, options.name, preserveNetworkResources);
     else
       this._allocateNewTraceFile(this._state);
+    if (!preserveNetworkResources)
+      this._fs.writeFile(this._state.networkFile, '');
 
     this._fs.mkdir(path.dirname(this._state.traceFile));
-    const event: trace.TraceEvent = { ...this._contextCreatedEvent, title: options.title, wallTime: Date.now() };
-    this._fs.appendFile(this._state.traceFile, JSON.stringify(event) + '\n');
+    const event: trace.TraceEvent = {
+      ...this._contextCreatedEvent,
+      title: options.title,
+      wallTime: Date.now(),
+      monotonicTime: monotonicTime()
+    };
+    this._appendTraceEvent(event);
 
     this._context.instrumentation.addListener(this, this._context);
     this._eventListeners.push(
@@ -190,6 +208,53 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     if (this._state.options.snapshots)
       await this._snapshotter?.start();
     return { traceName: this._state.traceName };
+  }
+
+  private _currentGroupId(): string | undefined {
+    return this._state?.groupStack.length ? this._state.groupStack[this._state.groupStack.length - 1] : undefined;
+  }
+
+  async group(name: string, location: { file: string, line?: number, column?: number } | undefined, metadata: CallMetadata): Promise<void> {
+    if (!this._state)
+      return;
+    const stackFrames: StackFrame[] = [];
+    const { file, line, column } = location ?? metadata.location ?? {};
+    if (file) {
+      stackFrames.push({
+        file,
+        line: line ?? 0,
+        column: column ?? 0,
+      });
+    }
+    const event: trace.BeforeActionTraceEvent = {
+      type: 'before',
+      callId: metadata.id,
+      startTime: metadata.startTime,
+      apiName: name,
+      class: 'Tracing',
+      method: 'tracingGroup',
+      params: { },
+      stepId: metadata.stepId,
+      stack: stackFrames,
+    };
+    if (this._currentGroupId())
+      event.parentId = this._currentGroupId();
+    this._state.groupStack.push(event.callId);
+    this._appendTraceEvent(event);
+  }
+
+  groupEnd() {
+    if (!this._state)
+      return;
+    const callId = this._state.groupStack.pop();
+    if (!callId)
+      return;
+    const event: trace.AfterActionTraceEvent = {
+      type: 'after',
+      callId,
+      endTime: monotonicTime(),
+    };
+    this._appendTraceEvent(event);
   }
 
   private _startScreencast() {
@@ -216,14 +281,14 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     state.traceFile = path.join(state.tracesDir, `${state.traceName}${suffix}.trace`);
   }
 
-  private _changeTraceName(state: RecordingState, name: string) {
+  private _changeTraceName(state: RecordingState, name: string, preserveNetworkResources: boolean) {
     state.traceName = name;
     state.chunkOrdinal = 0;  // Reset ordinal for the new name.
     this._allocateNewTraceFile(state);
 
-    // Network file survives across chunks, so make a copy with the new name.
     const newNetworkFile = path.join(state.tracesDir, name + '.network');
-    this._fs.copyFile(state.networkFile, newNetworkFile);
+    if (preserveNetworkResources)
+      this._fs.copyFile(state.networkFile, newNetworkFile);
     state.networkFile = newNetworkFile;
   }
 
@@ -234,6 +299,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
       throw new Error(`Tracing is already stopping`);
     if (this._state.recording)
       throw new Error(`Must stop trace file before stopping tracing`);
+    this._closeAllGroups();
     this._harTracer.stop();
     this.flushHarEntries();
     await this._fs.syncAndGetError();
@@ -262,6 +328,11 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     await this._fs.syncAndGetError();
   }
 
+  private _closeAllGroups() {
+    while (this._currentGroupId())
+      this.groupEnd();
+  }
+
   async stopChunk(params: TracingTracingStopChunkParams): Promise<{ artifact?: Artifact, entries?: NameValue[] }> {
     if (this._isStopping)
       throw new Error(`Tracing is already stopping`);
@@ -273,6 +344,8 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
         throw new Error(`Must start tracing before stopping`);
       return {};
     }
+
+    this._closeAllGroups();
 
     this._context.instrumentation.removeListener(this);
     eventsHelper.removeEventListeners(this._eventListeners);
@@ -338,7 +411,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     return { artifact };
   }
 
-  async _captureSnapshot(snapshotName: string, sdkObject: SdkObject, metadata: CallMetadata, element?: ElementHandle): Promise<void> {
+  async _captureSnapshot(snapshotName: string, sdkObject: SdkObject, metadata: CallMetadata): Promise<void> {
     if (!this._snapshotter)
       return;
     if (!sdkObject.attribution.page)
@@ -347,12 +420,12 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
       return;
     if (!shouldCaptureSnapshot(metadata))
       return;
-    await this._snapshotter.captureSnapshot(sdkObject.attribution.page, metadata.id, snapshotName, element).catch(() => {});
+    await this._snapshotter.captureSnapshot(sdkObject.attribution.page, metadata.id, snapshotName).catch(() => {});
   }
 
   onBeforeCall(sdkObject: SdkObject, metadata: CallMetadata) {
     // IMPORTANT: no awaits before this._appendTraceEvent in this method.
-    const event = createBeforeActionTraceEvent(metadata);
+    const event = createBeforeActionTraceEvent(metadata, this._currentGroupId());
     if (!event)
       return Promise.resolve();
     sdkObject.attribution.page?.temporarilyDisableTracingScreencastThrottling();
@@ -362,7 +435,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     return this._captureSnapshot(event.beforeSnapshot, sdkObject, metadata);
   }
 
-  onBeforeInputAction(sdkObject: SdkObject, metadata: CallMetadata, element: ElementHandle) {
+  onBeforeInputAction(sdkObject: SdkObject, metadata: CallMetadata) {
     if (!this._state?.callIds.has(metadata.id))
       return Promise.resolve();
     // IMPORTANT: no awaits before this._appendTraceEvent in this method.
@@ -372,7 +445,7 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     sdkObject.attribution.page?.temporarilyDisableTracingScreencastThrottling();
     event.inputSnapshot = `input@${metadata.id}`;
     this._appendTraceEvent(event);
-    return this._captureSnapshot(event.inputSnapshot, sdkObject, metadata, element);
+    return this._captureSnapshot(event.inputSnapshot, sdkObject, metadata);
   }
 
   onCallLog(sdkObject: SdkObject, metadata: CallMetadata, logName: string, message: string) {
@@ -446,6 +519,50 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
     this._appendTraceEvent(event);
   }
 
+  onDialog(dialog: Dialog) {
+    const event: trace.EventTraceEvent = {
+      type: 'event',
+      time: monotonicTime(),
+      class: 'BrowserContext',
+      method: 'dialog',
+      params: { pageId: dialog.page().guid, type: dialog.type(), message: dialog.message(), defaultValue: dialog.defaultValue() },
+    };
+    this._appendTraceEvent(event);
+  }
+
+  onDownload(page: Page, download: Download) {
+    const event: trace.EventTraceEvent = {
+      type: 'event',
+      time: monotonicTime(),
+      class: 'BrowserContext',
+      method: 'download',
+      params: { pageId: page.guid, url: download.url, suggestedFilename: download.suggestedFilename() },
+    };
+    this._appendTraceEvent(event);
+  }
+
+  onPageOpen(page: Page) {
+    const event: trace.EventTraceEvent = {
+      type: 'event',
+      time: monotonicTime(),
+      class: 'BrowserContext',
+      method: 'page',
+      params: { pageId: page.guid, openerPageId: page.opener()?.guid },
+    };
+    this._appendTraceEvent(event);
+  }
+
+  onPageClose(page: Page) {
+    const event: trace.EventTraceEvent = {
+      type: 'event',
+      time: monotonicTime(),
+      class: 'BrowserContext',
+      method: 'pageClosed',
+      params: { pageId: page.guid },
+    };
+    this._appendTraceEvent(event);
+  }
+
   private _onPageError(error: Error, page: Page) {
     const event: trace.EventTraceEvent = {
       type: 'event',
@@ -471,7 +588,8 @@ export class Tracing extends SdkObject implements InstrumentationListener, Snaps
             sha1,
             width: params.width,
             height: params.height,
-            timestamp: monotonicTime()
+            timestamp: monotonicTime(),
+            frameSwapWallTime: params.frameSwapWallTime,
           };
           // Make sure to write the screencast frame before adding a reference to it.
           this._appendResource(sha1, params.buffer);
@@ -524,10 +642,10 @@ export function shouldCaptureSnapshot(metadata: CallMetadata): boolean {
   return commandsWithTracingSnapshots.has(metadata.type + '.' + metadata.method);
 }
 
-function createBeforeActionTraceEvent(metadata: CallMetadata): trace.BeforeActionTraceEvent | null {
+function createBeforeActionTraceEvent(metadata: CallMetadata, parentId?: string): trace.BeforeActionTraceEvent | null {
   if (metadata.internal || metadata.method.startsWith('tracing'))
     return null;
-  return {
+  const event: trace.BeforeActionTraceEvent = {
     type: 'before',
     callId: metadata.id,
     startTime: metadata.startTime,
@@ -535,9 +653,12 @@ function createBeforeActionTraceEvent(metadata: CallMetadata): trace.BeforeActio
     class: metadata.type,
     method: metadata.method,
     params: metadata.params,
-    wallTime: metadata.wallTime,
+    stepId: metadata.stepId,
     pageId: metadata.pageId,
   };
+  if (parentId)
+    event.parentId = parentId;
+  return event;
 }
 
 function createInputActionTraceEvent(metadata: CallMetadata): trace.InputActionTraceEvent | null {
@@ -572,93 +693,4 @@ function createAfterActionTraceEvent(metadata: CallMetadata): trace.AfterActionT
     result: metadata.result,
     point: metadata.point,
   };
-}
-
-class SerializedFS {
-  private _writeChain = Promise.resolve();
-  private _buffers = new Map<string, string[]>(); // Should never be accessed from within appendOperation.
-  private _error: Error | undefined;
-
-  mkdir(dir: string) {
-    this._appendOperation(() => fs.promises.mkdir(dir, { recursive: true }));
-  }
-
-  writeFile(file: string, content: string | Buffer, skipIfExists?: boolean) {
-    this._buffers.delete(file); // No need to flush the buffer since we'll overwrite anyway.
-
-    // Note: 'wx' flag only writes when the file does not exist.
-    // See https://nodejs.org/api/fs.html#file-system-flags.
-    // This way tracing never have to write the same resource twice.
-    this._appendOperation(async () => {
-      if (skipIfExists)
-        await fs.promises.writeFile(file, content, { flag: 'wx' }).catch(() => {});
-      else
-        await fs.promises.writeFile(file, content);
-    });
-  }
-
-  appendFile(file: string, text: string, flush?: boolean) {
-    if (!this._buffers.has(file))
-      this._buffers.set(file, []);
-    this._buffers.get(file)!.push(text);
-    if (flush)
-      this._flushFile(file);
-  }
-
-  private _flushFile(file: string) {
-    const buffer = this._buffers.get(file);
-    if (buffer === undefined)
-      return;
-    const text = buffer.join('');
-    this._buffers.delete(file);
-    this._appendOperation(() => fs.promises.appendFile(file, text));
-  }
-
-  copyFile(from: string, to: string) {
-    this._flushFile(from);
-    this._buffers.delete(to); // No need to flush the buffer since we'll overwrite anyway.
-    this._appendOperation(() => fs.promises.copyFile(from, to));
-  }
-
-  async syncAndGetError() {
-    for (const file of this._buffers.keys())
-      this._flushFile(file);
-    await this._writeChain;
-    return this._error;
-  }
-
-  zip(entries: NameValue[], zipFileName: string) {
-    for (const file of this._buffers.keys())
-      this._flushFile(file);
-
-    // Chain the export operation against write operations,
-    // so that files do not change during the export.
-    this._appendOperation(async () => {
-      const zipFile = new yazl.ZipFile();
-      const result = new ManualPromise<void>();
-      (zipFile as any as EventEmitter).on('error', error => result.reject(error));
-      for (const entry of entries)
-        zipFile.addFile(entry.value, entry.name);
-      zipFile.end();
-      zipFile.outputStream
-          .pipe(fs.createWriteStream(zipFileName))
-          .on('close', () => result.resolve())
-          .on('error', error => result.reject(error));
-      await result;
-    });
-  }
-
-  private _appendOperation(cb: () => Promise<unknown>): void {
-    // This method serializes all writes to the trace.
-    this._writeChain = this._writeChain.then(async () => {
-      // Ignore all operations after the first error.
-      if (this._error)
-        return;
-      try {
-        await cb();
-      } catch (e) {
-        this._error = e;
-      }
-    });
-  }
 }

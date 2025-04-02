@@ -16,17 +16,21 @@
 
 import type { Entry } from '@trace/har';
 import * as React from 'react';
-import type { Boundaries } from '../geometry';
+import type { Boundaries } from './geometry';
 import './networkTab.css';
 import { NetworkResourceDetails } from './networkResourceDetails';
 import { bytesToString, msToString } from '@web/uiUtils';
 import { PlaceholderPanel } from './placeholderPanel';
-import type { MultiTraceModel } from './modelUtil';
+import { context, type MultiTraceModel } from './modelUtil';
 import { GridView, type RenderedGridCell } from '@web/components/gridView';
 import { SplitView } from '@web/components/splitView';
+import type { ContextEntry } from '../types/entries';
+import { NetworkFilters, defaultFilterState, type FilterState, type ResourceType } from './networkFilters';
+import type { Language } from '@isomorphic/locatorGenerators';
 
 type NetworkTabModel = {
   resources: Entry[],
+  contextIdMap: ContextIdMap,
 };
 
 type RenderedEntry = {
@@ -39,6 +43,7 @@ type RenderedEntry = {
   start: number,
   route: string,
   resource: Entry,
+  contextId: string,
 };
 type ColumnName = keyof RenderedEntry;
 type Sorting = { by: ColumnName, negate: boolean};
@@ -54,23 +59,35 @@ export function useNetworkTabModel(model: MultiTraceModel | undefined, selectedT
     });
     return filtered;
   }, [model, selectedTime]);
-  return { resources };
+  const contextIdMap = React.useMemo(() => new ContextIdMap(model), [model]);
+  return { resources, contextIdMap };
 }
 
 export const NetworkTab: React.FunctionComponent<{
   boundaries: Boundaries,
   networkModel: NetworkTabModel,
-  onEntryHovered: (entry: Entry | undefined) => void,
-}> = ({ boundaries, networkModel, onEntryHovered }) => {
+  onEntryHovered?: (entry: Entry | undefined) => void,
+  sdkLanguage: Language,
+}> = ({ boundaries, networkModel, onEntryHovered, sdkLanguage }) => {
   const [sorting, setSorting] = React.useState<Sorting | undefined>(undefined);
   const [selectedEntry, setSelectedEntry] = React.useState<RenderedEntry | undefined>(undefined);
+  const [filterState, setFilterState] = React.useState(defaultFilterState);
 
   const { renderedEntries } = React.useMemo(() => {
-    const renderedEntries = networkModel.resources.map(entry => renderEntry(entry, boundaries));
+    const renderedEntries = networkModel.resources.map(entry => renderEntry(entry, boundaries, networkModel.contextIdMap)).filter(filterEntry(filterState));
     if (sorting)
       sort(renderedEntries, sorting);
     return { renderedEntries };
-  }, [networkModel.resources, sorting, boundaries]);
+  }, [networkModel.resources, networkModel.contextIdMap, filterState, sorting, boundaries]);
+
+  const [columnWidths, setColumnWidths] = React.useState<Map<ColumnName, number>>(() => {
+    return new Map(allColumns().map(column => [column, columnWidth(column)]));
+  });
+
+  const onFilterStateChange = React.useCallback((newFilterState: FilterState) => {
+    setFilterState(newFilterState);
+    setSelectedEntry(undefined);
+  }, []);
 
   if (!networkModel.resources.length)
     return <PlaceholderPanel text='No network calls' />;
@@ -80,26 +97,35 @@ export const NetworkTab: React.FunctionComponent<{
     items={renderedEntries}
     selectedItem={selectedEntry}
     onSelected={item => setSelectedEntry(item)}
-    onHighlighted={item => onEntryHovered(item?.resource)}
-    columns={selectedEntry ? ['name'] : ['name', 'method', 'status', 'contentType', 'duration', 'size', 'start', 'route']}
+    onHighlighted={item => onEntryHovered?.(item?.resource)}
+    columns={visibleColumns(!!selectedEntry, renderedEntries)}
     columnTitle={columnTitle}
-    columnWidth={columnWidth}
-    isError={item => item.status.code >= 400}
+    columnWidths={columnWidths}
+    setColumnWidths={setColumnWidths}
+    isError={item => item.status.code >= 400 || item.status.code === -1}
     isInfo={item => !!item.route}
     render={(item, column) => renderCell(item, column)}
     sorting={sorting}
     setSorting={setSorting}
   />;
   return <>
+    <NetworkFilters filterState={filterState} onFilterStateChange={onFilterStateChange} />
     {!selectedEntry && grid}
-    {selectedEntry && <SplitView sidebarSize={200} sidebarIsFirst={true} orientation='horizontal'>
-      <NetworkResourceDetails resource={selectedEntry.resource} onClose={() => setSelectedEntry(undefined)} />
-      {grid}
-    </SplitView>}
+    {selectedEntry &&
+      <SplitView
+        sidebarSize={columnWidths.get('name')!}
+        sidebarIsFirst={true}
+        orientation='horizontal'
+        settingName='networkResourceDetails'
+        main={<NetworkResourceDetails resource={selectedEntry.resource} sdkLanguage={sdkLanguage} startTimeOffset={selectedEntry.start} onClose={() => setSelectedEntry(undefined)} />}
+        sidebar={grid}
+      />}
   </>;
 };
 
 const columnTitle = (column: ColumnName) => {
+  if (column === 'contextId')
+    return 'Source';
   if (column === 'name')
     return 'Name';
   if (column === 'method')
@@ -128,10 +154,35 @@ const columnWidth = (column: ColumnName) => {
     return 60;
   if (column === 'contentType')
     return 200;
+  if (column === 'contextId')
+    return 60;
   return 100;
 };
 
+function visibleColumns(entrySelected: boolean, renderedEntries: RenderedEntry[]): (keyof RenderedEntry)[] {
+  if (entrySelected) {
+    const columns: (keyof RenderedEntry)[] = ['name'];
+    if (hasMultipleContexts(renderedEntries))
+      columns.unshift('contextId');
+    return columns;
+  }
+  let columns: (keyof RenderedEntry)[] = allColumns();
+  if (!hasMultipleContexts(renderedEntries))
+    columns = columns.filter(name => name !== 'contextId');
+  return columns;
+}
+
+function allColumns(): (keyof RenderedEntry)[] {
+  return ['contextId', 'name', 'method', 'status', 'contentType', 'duration', 'size', 'start', 'route'];
+}
+
 const renderCell = (entry: RenderedEntry, column: ColumnName): RenderedGridCell => {
+  if (column === 'contextId') {
+    return {
+      body: entry.contextId,
+      title: entry.name.url,
+    };
+  }
   if (column === 'name') {
     return {
       body: entry.name.name,
@@ -159,7 +210,57 @@ const renderCell = (entry: RenderedEntry, column: ColumnName): RenderedGridCell 
   return { body: '' };
 };
 
-const renderEntry = (resource: Entry, boundaries: Boundaries): RenderedEntry => {
+class ContextIdMap {
+  private _pagerefToShortId = new Map<string, string>();
+  private _contextToId = new Map<ContextEntry, string>();
+  private _lastPageId = 0;
+  private _lastApiRequestContextId = 0;
+
+  constructor(model: MultiTraceModel | undefined) {}
+
+  contextId(resource: Entry): string {
+    if (resource.pageref)
+      return this._pageId(resource.pageref);
+    else if (resource._apiRequest)
+      return this._apiRequestContextId(resource);
+    return '';
+  }
+
+  private _pageId(pageref: string): string {
+    let shortId = this._pagerefToShortId.get(pageref);
+    if (!shortId) {
+      ++this._lastPageId;
+      shortId = 'page#' + this._lastPageId;
+      this._pagerefToShortId.set(pageref, shortId);
+    }
+    return shortId;
+  }
+
+  private _apiRequestContextId(resource: Entry): string {
+    const contextEntry = context(resource);
+    if (!contextEntry)
+      return '';
+    let contextId = this._contextToId.get(contextEntry);
+    if (!contextId) {
+      ++this._lastApiRequestContextId;
+      contextId = 'api#' + this._lastApiRequestContextId;
+      this._contextToId.set(contextEntry, contextId);
+    }
+    return contextId;
+  }
+}
+
+function hasMultipleContexts(renderedEntries: RenderedEntry[]): boolean {
+  const contextIds = new Set<string>();
+  for (const entry of renderedEntries) {
+    contextIds.add(entry.contextId);
+    if (contextIds.size > 1)
+      return true;
+  }
+  return false;
+}
+
+const renderEntry = (resource: Entry, boundaries: Boundaries, contextIdGenerator: ContextIdMap): RenderedEntry => {
   const routeStatus = formatRouteStatus(resource);
   let resourceName: string;
   try {
@@ -167,6 +268,8 @@ const renderEntry = (resource: Entry, boundaries: Boundaries): RenderedEntry => 
     resourceName = url.pathname.substring(url.pathname.lastIndexOf('/') + 1);
     if (!resourceName)
       resourceName = url.host;
+    if (url.search)
+      resourceName += url.search;
   } catch {
     resourceName = resource.request.url;
   }
@@ -184,7 +287,8 @@ const renderEntry = (resource: Entry, boundaries: Boundaries): RenderedEntry => 
     size: resource.response._transferSize! > 0 ? resource.response._transferSize! : resource.response.bodySize,
     start: resource._monotonicTime! - boundaries.minimum,
     route: routeStatus,
-    resource
+    resource,
+    contextId: contextIdGenerator.contextId(resource),
   };
 };
 
@@ -249,4 +353,25 @@ function comparator(sortBy: ColumnName) {
       return a.route.localeCompare(b.route);
     };
   }
+
+  if (sortBy === 'contextId')
+    return (a: RenderedEntry, b: RenderedEntry) => a.contextId.localeCompare(b.contextId);
+}
+
+const resourceTypePredicates: Record<ResourceType, (contentType: string) => boolean> = {
+  'All': () => true,
+  'Fetch': contentType => contentType === 'application/json',
+  'HTML': contentType => contentType === 'text/html',
+  'CSS': contentType => contentType === 'text/css',
+  'JS': contentType => contentType.includes('javascript'),
+  'Font': contentType => contentType.includes('font'),
+  'Image': contentType => contentType.includes('image'),
+};
+
+function filterEntry({ searchValue, resourceType }: FilterState) {
+  return (entry: RenderedEntry) => {
+    const typePredicate = resourceTypePredicates[resourceType];
+
+    return typePredicate(entry.contentType) && entry.name.url.toLowerCase().includes(searchValue.toLowerCase());
+  };
 }

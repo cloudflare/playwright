@@ -84,7 +84,7 @@ it('should traverse only form elements', async function({ page, browserName, pla
 
   await page.setContent(`
     <input id="input-1">
-    <button id="button">buttton</button>
+    <button id="button">button</button>
     <a href id="link">link</a>
     <input id="input-2">
   `);
@@ -115,6 +115,71 @@ it('clicking checkbox should activate it', async ({ page, browserName, headless,
   await page.click('input');
   const nodeName = await page.evaluate(() => document.activeElement.nodeName);
   expect(nodeName).toBe('INPUT');
+});
+
+it('tab should cycle between single input and browser', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/32339' }
+}, async ({ page, browserName, headless, channel }) => {
+  const isHeadlessShell = channel === 'chromium-headless-shell' || (!channel && headless);
+  it.fixme(browserName === 'chromium' && !isHeadlessShell, 'Chromium keeps input focused.');
+  it.fixme(browserName !== 'chromium');
+  await page.setContent(`<label for="input1">input1</label>
+    <input id="input1">
+    <script>
+    {
+      window.focusEvents = [];
+      const input = document.getElementById('input1');
+      input.addEventListener('blur', () => focusEvents.push('blur'));
+      input.addEventListener('focus', () => focusEvents.push('focus'));
+    }
+    </script>`);
+  expect(await page.evaluate(() => document.activeElement.tagName)).toBe('BODY');
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.id)).toBe('input1');
+  expect(await page.evaluate(() => (window as any).focusEvents)).toEqual(['focus']);
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.tagName)).toBe('BODY');
+  expect(await page.evaluate(() => (window as any).focusEvents)).toEqual(['focus', 'blur']);
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.id)).toBe('input1');
+  expect(await page.evaluate(() => (window as any).focusEvents)).toEqual(['focus', 'blur', 'focus']);
+});
+
+it('tab should cycle between document elements and browser', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/32339' }
+}, async ({ page, browserName, headless, channel }) => {
+  const isHeadlessShell = channel === 'chromium-headless-shell' || (!channel && headless);
+  it.fixme(browserName === 'chromium' && !isHeadlessShell, 'Chromium keeps last input focused.');
+  it.fixme(browserName !== 'chromium');
+  await page.setContent(`
+    <input id="input1">
+    <input id="input2">
+    <script>
+      window.focusEvents = [];
+      {
+        const input = document.getElementById('input1');
+        input.addEventListener('blur', () => focusEvents.push('blur1'));
+        input.addEventListener('focus', () => focusEvents.push('focus1'));
+      }
+      {
+        const input = document.getElementById('input2');
+        input.addEventListener('blur', () => focusEvents.push('blur2'));
+        input.addEventListener('focus', () => focusEvents.push('focus2'));
+      }
+    </script>`);
+  expect(await page.evaluate(() => document.activeElement.tagName)).toBe('BODY');
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.id)).toBe('input1');
+  expect(await page.evaluate(() => (window as any).focusEvents)).toEqual(['focus1']);
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.id)).toBe('input2');
+  expect(await page.evaluate(() => (window as any).focusEvents)).toEqual(['focus1', 'blur1', 'focus2']);
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.tagName)).toBe('BODY');
+  expect(await page.evaluate(() => (window as any).focusEvents)).toEqual(['focus1', 'blur1', 'focus2', 'blur2']);
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => document.activeElement.id)).toBe('input1');
+  expect(await page.evaluate(() => (window as any).focusEvents)).toEqual(['focus1', 'blur1', 'focus2', 'blur2', 'focus1']);
 });
 
 it('keeps focus on element when attempting to focus a non-focusable element', async ({ page }) => {

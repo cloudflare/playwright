@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-import type { Locator } from 'playwright/test';
-import type { JsonObject } from '@playwright/experimental-ct-core/types/component';
-import type { TestType } from '@playwright/experimental-ct-core';
+import type { TestType, Locator } from '@playwright/experimental-ct-core';
 
 type ComponentSlot = string | string[];
 type ComponentSlots = Record<string, ComponentSlot> & { default?: ComponentSlot };
@@ -25,18 +23,18 @@ type ComponentEvents = Record<string, Function>;
 
 // Copied from: https://github.com/vuejs/language-tools/blob/master/packages/vue-component-type-helpers/index.d.ts#L10-L13
 type ComponentProps<T> =
-	T extends new () => { $props: infer P; } ? NonNullable<P> :
+	T extends new (...angs: any) => { $props: infer P; } ? NonNullable<P> :
 	T extends (props: infer P, ...args: any) => any ? P :
 	{};
 
-export interface MountOptions<HooksConfig extends JsonObject, Component> {
+export interface MountOptions<HooksConfig, Component> {
   props?: ComponentProps<Component>;
   slots?: ComponentSlots;
   on?: ComponentEvents;
   hooksConfig?: HooksConfig;
 }
 
-export interface MountOptionsJsx<HooksConfig extends JsonObject> {
+export interface MountOptionsJsx<HooksConfig> {
   hooksConfig?: HooksConfig;
 }
 
@@ -55,15 +53,14 @@ export interface MountResultJsx extends Locator {
 }
 
 export const test: TestType<{
-  mount<HooksConfig extends JsonObject>(
+  mount<HooksConfig>(
     component: JSX.Element,
-    options: MountOptionsJsx<HooksConfig>
+    options?: MountOptionsJsx<HooksConfig>
   ): Promise<MountResultJsx>;
-  mount<HooksConfig extends JsonObject, Component = unknown>(
+  mount<HooksConfig, Component = unknown>(
     component: Component,
     options?: MountOptions<HooksConfig, Component>
   ): Promise<MountResult<Component>>;
 }>;
 
-export { defineConfig, PlaywrightTestConfig } from '@playwright/experimental-ct-core';
-export { expect, devices } from 'playwright/test';
+export { defineConfig, PlaywrightTestConfig, expect, devices } from '@playwright/experimental-ct-core';

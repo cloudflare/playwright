@@ -1,7 +1,8 @@
-import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from 'playwright-core/lib/server/transport';
+import { AsyncLocalStorage } from 'async_hooks';
 
 import { chunksToMessage, messageToChunks } from './chunking';
-import { AsyncLocalStorage } from 'async_hooks';
+
+import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from 'playwright-core/lib/server/transport';
 
 // stores the endpoint and options for client -> server communication
 export const transportZone = new AsyncLocalStorage<WebSocketTransport>();

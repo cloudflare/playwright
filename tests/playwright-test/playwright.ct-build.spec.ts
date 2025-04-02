@@ -196,31 +196,24 @@ test('should extract component list', async ({ runInlineTest }, testInfo) => {
 
   expect(Object.entries(metainfo.deps)).toEqual([
     [expect.stringContaining('clashingNames1.tsx'), [
-      expect.stringContaining('jsx-runtime.js'),
       expect.stringContaining('clashingNames1.tsx'),
     ]],
     [expect.stringContaining('clashingNames2.tsx'), [
-      expect.stringContaining('jsx-runtime.js'),
       expect.stringContaining('clashingNames2.tsx'),
     ]],
     [expect.stringContaining('defaultExport.tsx'), [
-      expect.stringContaining('jsx-runtime.js'),
       expect.stringContaining('defaultExport.tsx'),
     ]],
     [expect.stringContaining('components.tsx'), [
-      expect.stringContaining('jsx-runtime.js'),
       expect.stringContaining('components.tsx'),
     ]],
     [expect.stringContaining('button.tsx'), [
-      expect.stringContaining('jsx-runtime.js'),
       expect.stringContaining('button.tsx'),
     ]],
     [expect.stringContaining(`one${path.sep}index.tsx`), [
-      expect.stringContaining('jsx-runtime.js'),
       expect.stringContaining(`one${path.sep}index.tsx`),
     ]],
     [expect.stringContaining(`two${path.sep}index.tsx`), [
-      expect.stringContaining('jsx-runtime.js'),
       expect.stringContaining(`two${path.sep}index.tsx`),
     ]],
   ]);
@@ -503,7 +496,6 @@ test('should retain deps when test changes', async ({ runInlineTest }, testInfo)
     [
       expect.stringContaining('button.tsx'),
       [
-        expect.stringContaining('jsx-runtime.js'),
         expect.stringContaining('button.tsx'),
       ],
     ]
@@ -658,6 +650,36 @@ test('should pass undefined value as param', async ({ runInlineTest }) => {
       test('renders props with undefined type', async ({ mount, page }) => {
         const component = await mount(<Component value={undefined} />);
         await expect(component).toHaveText('undefined');
+      });
+    `,
+  }, { workers: 1 });
+
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+});
+
+test('should resolve components imported from node_modules', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'package.json': `{ "name": "test-project" }`,
+    'playwright.config.ts': playwrightCtConfigText,
+    'playwright/index.html': `<script type="module" src="./index.js"></script>`,
+    'playwright/index.js': ``,
+
+    'node_modules/@mui/material/index.js': `
+      const TextField = () => 'input';
+      module.exports = { TextField };
+    `,
+    'node_modules/@mui/material/package.json': JSON.stringify({
+      name: '@mui/material',
+      main: './index.js',
+    }),
+
+    'src/component.spec.tsx': `
+      import { test } from '@playwright/experimental-ct-react';
+      import { TextField } from '@mui/material';
+
+      test("passes", async ({ mount }) => {
+        await mount(<TextField />);
       });
     `,
   }, { workers: 1 });

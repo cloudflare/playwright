@@ -16,12 +16,16 @@
 
 import fs from 'fs';
 import path from 'path';
-import { debug } from 'playwright-core/lib/utilsBundle';
+
 import { getUserData } from 'playwright/lib/transform/compilationCache';
-import type { PlaywrightTestConfig as BasePlaywrightTestConfig, FullConfig } from 'playwright/test';
-import type { InlineConfig, Plugin, TransformResult, UserConfig } from 'vite';
-import type { ImportInfo } from './tsxTransform';
 import { resolveHook } from 'playwright/lib/transform/transform';
+import { debug } from 'playwright-core/lib/utilsBundle';
+
+import type { ImportInfo } from './tsxTransform';
+import type { PlaywrightTestConfig as BasePlaywrightTestConfig } from 'playwright/types/test';
+import type { FullConfig } from 'playwright/types/testReporter';
+import type { InlineConfig, Plugin, TransformResult, UserConfig } from 'vite';
+
 
 const log = debug('pw:vite');
 
@@ -182,7 +186,7 @@ export function transformIndexFile(id: string, content: string, templateDir: str
   lines.push(registerSource);
 
   for (const value of importInfos.values()) {
-    const importPath = resolveHook(value.filename, value.importSource);
+    const importPath = resolveHook(value.filename, value.importSource) || value.importSource;
     lines.push(`const ${value.id} = () => import('${importPath?.replaceAll(path.sep, '/')}').then((mod) => mod.${value.remoteName || 'default'});`);
   }
 

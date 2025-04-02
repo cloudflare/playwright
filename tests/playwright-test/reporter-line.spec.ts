@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import path from 'path';
 import { test, expect } from './playwright-test-fixtures';
 
 for (const useIntermediateMergeReport of [false, true] as const) {
@@ -109,6 +110,28 @@ for (const useIntermediateMergeReport of [false, true] as const) {
       ].join('\n'));
     });
 
+    test('should trim multiline step titles to first line', {
+      annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/31266' }
+    }, async ({ runInlineTest }) => {
+      const result = await runInlineTest({
+        'a.test.ts': `
+          import { test, expect } from '@playwright/test';
+          test('passes', async ({}) => {
+            await test.step(\`outer
+                             1.0\`, async () => {
+              await test.step(\`inner
+                                1.1\`, async () => {
+                expect(1).toBe(1);
+              });
+            });
+          });
+        `,
+      }, { reporter: 'line' }, { PLAYWRIGHT_FORCE_TTY: '1' });
+      const text = result.output;
+      expect(text).toContain('[1/1] a.test.ts:3:15 › passes › outer › inner');
+      expect(result.exitCode).toBe(0);
+    });
+
     test('should render failed test steps', async ({ runInlineTest }) => {
       const result = await runInlineTest({
         'a.test.ts': `
@@ -164,6 +187,23 @@ for (const useIntermediateMergeReport of [false, true] as const) {
       }, { reporter: 'line' });
       const text = result.output;
       expect(text).toContain('1) a.test.ts:3:15 › passes ──');
+      expect(result.exitCode).toBe(1);
+    });
+
+    test('should show error prompt with relative path', async ({ runInlineTest, useIntermediateMergeReport }) => {
+      const result = await runInlineTest({
+        'a.test.js': `
+          const { test, expect } = require('@playwright/test');
+          test('one', async ({}) => {
+            expect(1).toBe(0);
+          });
+        `,
+      }, { reporter: 'line' });
+      const text = result.output;
+      if (useIntermediateMergeReport)
+        expect(text).toContain(`Error Prompt: ${path.join('blob-report', 'resources')}`);
+      else
+        expect(text).toContain(`Error Prompt: ${path.join('test-results', 'a-one', 'prompt.md')}`);
       expect(result.exitCode).toBe(1);
     });
   });

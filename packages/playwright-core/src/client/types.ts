@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 
+import type { Size } from '../utils/isomorphic/types';
 import type * as channels from '@protocol/channels';
-import type { Size } from '../common/types';
-export type { Size, Point, Rect, Quad, URLMatch, TimeoutOptions, HeadersArray } from '../common/types';
+export type { HeadersArray, Point, Quad, Rect, Size, TimeoutOptions } from '../utils/isomorphic/types';
 
 type LoggerSeverity = 'verbose' | 'info' | 'warning' | 'error';
 export interface Logger {
@@ -33,21 +33,32 @@ export type WaitForEventOptions = Function | { predicate?: Function, timeout?: n
 export type WaitForFunctionOptions = { timeout?: number, polling?: 'raf' | number };
 
 export type SelectOption = { value?: string, label?: string, index?: number, valueOrLabel?: string };
-export type SelectOptionOptions = { force?: boolean, timeout?: number, noWaitAfter?: boolean };
+export type SelectOptionOptions = { force?: boolean, timeout?: number };
 export type FilePayload = { name: string, mimeType: string, buffer: Buffer };
 export type StorageState = {
   cookies: channels.NetworkCookie[],
-  origins: channels.OriginStorage[]
+  origins: (Omit<channels.OriginStorage, 'indexedDB'>)[],
 };
 export type SetStorageState = {
   cookies?: channels.SetNetworkCookie[],
-  origins?: channels.OriginStorage[]
+  origins?: (Omit<channels.SetOriginStorage, 'indexedDB'> & { indexedDB?: unknown[] })[]
 };
 
 export type LifecycleEvent = channels.LifecycleEvent;
 export const kLifecycleEvents: Set<LifecycleEvent> = new Set(['load', 'domcontentloaded', 'networkidle', 'commit']);
 
-export type BrowserContextOptions = Omit<channels.BrowserNewContextOptions, 'viewport' | 'noDefaultViewport' | 'extraHTTPHeaders' | 'storageState' | 'recordHar' | 'colorScheme' | 'reducedMotion' | 'forcedColors' | 'acceptDownloads'> & {
+export type ClientCertificate = {
+  origin: string;
+  cert?: Buffer;
+  certPath?: string;
+  key?: Buffer;
+  keyPath?: string;
+  pfx?: Buffer;
+  pfxPath?: string;
+  passphrase?: string;
+};
+
+export type BrowserContextOptions = Omit<channels.BrowserNewContextOptions, 'viewport' | 'noDefaultViewport' | 'extraHTTPHeaders' | 'clientCertificates' | 'storageState' | 'recordHar' | 'colorScheme' | 'reducedMotion' | 'forcedColors' | 'acceptDownloads' | 'contrast'> & {
   viewport?: Size | null;
   extraHTTPHeaders?: Headers;
   logger?: Logger;
@@ -69,7 +80,9 @@ export type BrowserContextOptions = Omit<channels.BrowserNewContextOptions, 'vie
   colorScheme?: 'dark' | 'light' | 'no-preference' | null;
   reducedMotion?: 'reduce' | 'no-preference' | null;
   forcedColors?: 'active' | 'none' | null;
+  contrast?: 'more' | 'no-preference' | null;
   acceptDownloads?: boolean;
+  clientCertificates?: ClientCertificate[];
 };
 
 type LaunchOverrides = {
@@ -90,6 +103,12 @@ export type ConnectOptions = {
   slowMo?: number,
   timeout?: number,
   logger?: Logger,
+  proxy?: {
+    server: string,
+    bypass?: string,
+    username?: string,
+    password?: string
+  },
 };
 export type LaunchServerOptions = {
   channel?: channels.BrowserTypeLaunchOptions['channel'],
@@ -111,6 +130,7 @@ export type LaunchServerOptions = {
   },
   downloadsPath?: string,
   chromiumSandbox?: boolean,
+  host?: string,
   port?: number,
   wsPath?: string,
   logger?: Logger,
@@ -122,6 +142,7 @@ export type LaunchAndroidServerOptions = {
   adbHost?: string,
   adbPort?: number,
   omitDriverInstall?: boolean,
+  host?: string,
   port?: number,
   wsPath?: string,
 };
@@ -140,4 +161,4 @@ export type SelectorEngine = {
 export type RemoteAddr = channels.RemoteAddr;
 export type SecurityDetails = channels.SecurityDetails;
 
-export type FrameExpectOptions = channels.FrameExpectOptions & { isNot?: boolean };
+export type FrameExpectParams = Omit<channels.FrameExpectParams, 'selector'|'expression'|'expectedValue'> & { expectedValue?: any };

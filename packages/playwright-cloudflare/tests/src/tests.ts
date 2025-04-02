@@ -1,3 +1,4 @@
+/* eslint-disable quotes */
 import '@cloudflareTests/browser-rendering/api.spec';
 
 import '@workerTests/page/elementhandle-bounding-box.spec';
@@ -50,6 +51,7 @@ import '@workerTests/page/page-add-init-script.spec';
 import '@workerTests/page/page-add-locator-handler.spec';
 import '@workerTests/page/page-add-script-tag.spec';
 import '@workerTests/page/page-add-style-tag.spec';
+import '@workerTests/page/page-aria-snapshot.spec';
 import '@workerTests/page/page-autowaiting-basic.spec';
 import '@workerTests/page/page-autowaiting-no-hang.spec';
 import '@workerTests/page/page-basic.spec';
@@ -77,29 +79,31 @@ import '@workerTests/page/page-event-pageerror.spec';
 import '@workerTests/page/page-event-popup.spec';
 import '@workerTests/page/page-event-request.spec';
 import '@workerTests/page/page-expose-function.spec';
+import '@workerTests/page/page-filechooser.spec';
 import '@workerTests/page/page-fill.spec';
 import '@workerTests/page/page-focus.spec';
 import '@workerTests/page/page-goto.spec';
 import '@workerTests/page/page-history.spec';
 import '@workerTests/page/page-keyboard.spec';
 // import '@workerTests/page/page-leaks.spec';
+import '@workerTests/page/page-listeners.spec';
 import '@workerTests/page/page-mouse.spec';
 import '@workerTests/page/page-navigation.spec';
 import '@workerTests/page/page-network-idle.spec';
 import '@workerTests/page/page-network-request.spec';
 import '@workerTests/page/page-network-response.spec';
 import '@workerTests/page/page-network-sizes.spec';
-import '@workerTests/page/page-object-count.spec';
 import '@workerTests/page/page-request-continue.spec';
 import '@workerTests/page/page-request-fallback.spec';
 import '@workerTests/page/page-request-fulfill.spec';
+import '@workerTests/page/page-request-gc.spec';
 import '@workerTests/page/page-request-intercept.spec';
 import '@workerTests/page/page-route.spec';
 // import '@workerTests/page/page-screenshot.spec';
 import '@workerTests/page/page-select-option.spec';
 import '@workerTests/page/page-set-content.spec';
 import '@workerTests/page/page-set-extra-http-headers.spec';
-// import '@workerTests/page/page-set-input-files.spec';
+import '@workerTests/page/page-set-input-files.spec';
 import '@workerTests/page/page-strict.spec';
 import '@workerTests/page/page-wait-for-function.spec';
 import '@workerTests/page/page-wait-for-load-state.spec';
@@ -120,6 +124,7 @@ import '@workerTests/page/selectors-register.spec';
 import '@workerTests/page/selectors-role.spec';
 import '@workerTests/page/selectors-text.spec';
 import '@workerTests/page/selectors-vue.spec';
+import '@workerTests/page/to-match-aria-snapshot.spec';
 import '@workerTests/page/wheel.spec';
 import '@workerTests/page/workers.spec';
 
@@ -185,6 +190,7 @@ export const skipTests: string[][] = [
   ["page/page-click.spec.ts", "should click the button after a cross origin navigation "], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
   ["page/page-click.spec.ts", "should scroll and click the button with smooth scroll behavior"], // Error: Test timeout of 5000ms exceeded.
   ["page/page-dispatchevent.spec.ts", "should dispatch click after a cross origin navigation "], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
+  ["page/page-drag.spec.ts", "Drag and drop", "should work @smoke"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-drag.spec.ts", "Drag and drop", "should be able to drag the mouse in a frame"], // Error: Error: expect(received).toEqual(expected) // deep equality
   ["page/page-drag.spec.ts", "Drag and drop", "should respect the drop effect"], // Error: Test timeout of 5000ms exceeded.
   ["page/page-evaluate-handle.spec.ts", "should accept object handle as an argument"], // Error: Error: expect(received).toContain(expected) // indexOf
@@ -199,18 +205,18 @@ export const skipTests: string[][] = [
   ["page/page-event-load.spec.ts", "should fire once with iframe navigation"], // Error: Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://test-workers.rui-figueira.workers.dev/home
   ["page/page-event-network.spec.ts", "Page.Events.RequestFailed @smoke"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-event-network.spec.ts", "should support redirects"], // Error: TypeError: server.setRedirect is not a function
-  ["page/page-event-network.spec.ts","interrupt request.response() and request.allHeaders() on page.close"], // Error: Error: expect(received).toContain(expected) // indexOf
+  ["page/page-event-network.spec.ts", "interrupt request.response() and request.allHeaders() on page.close"], // Error: Error: expect(received).toContain(expected) // indexOf
   ["page/page-event-popup.spec.ts", "should not treat navigations as new popups"], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
-  ["page/page-event-popup.spec.ts","should be able to capture alert"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should emit for immediately closed popups 2"], // Error: Test timeout of 5000ms exceeded.
-  ["page/page-event-popup.spec.ts","should report popup opened from iframes"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should work with clicking target=_blank and rel=noopener"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should work with clicking target=_blank"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should work with empty url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should work with fake-clicking target=_blank and rel=noopener"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should work with noopener and about:blank"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should work with noopener and no url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts","should work with noopener and url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should be able to capture alert"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should emit for immediately closed popups 2"], // Error: Test timeout of 5000ms exceeded.
+  ["page/page-event-popup.spec.ts", "should report popup opened from iframes"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should work with clicking target=_blank and rel=noopener"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should work with clicking target=_blank"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should work with empty url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should work with fake-clicking target=_blank and rel=noopener"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should work with noopener and about:blank"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should work with noopener and no url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should work with noopener and url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
   ["page/page-event-request.spec.ts", "should return response body when Cross-Origin-Opener-Policy is set"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-expose-function.spec.ts", "exposeBinding should work @smoke"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
   ["page/page-expose-function.spec.ts", "exposeBinding(handle) should work with element handles"], // Error: Test timeout of 5000ms exceeded.
@@ -234,7 +240,7 @@ export const skipTests: string[][] = [
   ["page/page-expose-function.spec.ts", "should work with overridden console object"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
   ["page/page-expose-function.spec.ts", "should work with setContent"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-expose-function.spec.ts", "should work"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-fill.spec.ts","should fill contenteditable"], // Error: Test timeout of 5000ms exceeded.
+  ["page/page-fill.spec.ts", "should fill contenteditable"], // Error: Test timeout of 5000ms exceeded.
   ["page/page-focus.spec.ts", "should emit blur event"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-focus.spec.ts", "should emit focus event"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-focus.spec.ts", "should traverse focus"], // Error: Error: expect(received).toBe(expected) // Object.is equality
@@ -376,8 +382,8 @@ export const skipTests: string[][] = [
   ["page/page-wait-for-url.spec.ts", "should work with commit"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/selectors-get-by.spec.ts", "getByTestId should escape id"], // Error: Test timeout of 5000ms exceeded.
   ["page/selectors-get-by.spec.ts", "getByTestId should work for regex"], // Error: Test timeout of 5000ms exceeded.
-  ["page/selectors-text.spec.ts","should work @smoke"], // Error: Test timeout of 5000ms exceeded.
-  ["page/selectors-text.spec.ts","should work with large DOM"], // Error: Test timeout of 5000ms exceeded.
+  ["page/selectors-text.spec.ts", "should work @smoke"], // Error: Test timeout of 5000ms exceeded.
+  ["page/selectors-text.spec.ts", "should work with large DOM"], // Error: Test timeout of 5000ms exceeded.
   ["page/workers.spec.ts", "should clear upon cross-process navigation"], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
   ["page/workers.spec.ts", "should emit created and destroyed events"], // Error: Error: expect(received).toContain(expected) // indexOf
 ];

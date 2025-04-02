@@ -1,11 +1,6 @@
-import type { Fetcher } from '@cloudflare/workers-types';
-import { launch } from "@cloudflare/playwright";
-import { expect } from "@cloudflare/playwright/test";
-import fs from "@cloudflare/playwright/fs";
-
-interface Env {
-  MYBROWSER: Fetcher;
-}
+import { launch } from '@cloudflare/playwright';
+import { expect } from '@cloudflare/playwright/test';
+import fs from '@cloudflare/playwright/fs';
 
 export default {
   async fetch(request: Request, env: Env) {
@@ -16,8 +11,9 @@ export default {
     const browser = await launch(env.MYBROWSER);
     const page = await browser.newPage();
 
-    if (trace) await page.context().tracing.start({ screenshots: true, snapshots: true });
-    
+    if (trace)
+      await page.context().tracing.start({ screenshots: true, snapshots: true });
+
     await page.goto('https://demo.playwright.dev/todomvc');
 
     const TODO_ITEMS = todos.length > 0 ? todos : [
@@ -35,7 +31,7 @@ export default {
     await expect(page.getByTestId('todo-title')).toHaveCount(TODO_ITEMS.length);
 
     await Promise.all(TODO_ITEMS.map(
-      (value, index) => expect(page.getByTestId('todo-title').nth(index)).toHaveText(value)
+        (value, index) => expect(page.getByTestId('todo-title').nth(index)).toHaveText(value)
     ));
 
     if (trace) {
@@ -52,7 +48,7 @@ export default {
     } else {
       const img = await page.screenshot();
       await browser.close();
-  
+
       return new Response(img, {
         headers: {
           'Content-Type': 'image/png',

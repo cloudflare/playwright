@@ -2,10 +2,9 @@
   "name": "trace-viewer",
   "private": true,
   "version": "0.0.0",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build && tsc",
-    "build-sw": "vite --config vite.sw.config.ts build && tsc",
-    "preview": "vite preview"
+  "type": "module",
+  "dependencies": {
+    "yaml": "^2.6.0",
+    "markdown-to-jsx": "^7.7.3"
   }
 }

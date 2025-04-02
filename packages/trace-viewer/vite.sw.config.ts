@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
+import path from 'path';
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-// @ts-ignore
+
 import { bundle } from './bundle';
-import * as path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -36,17 +37,18 @@ export default defineConfig({
       '@web': path.resolve(__dirname, '../web/src'),
     },
   },
+  publicDir: false,
   build: {
-    outDir: path.resolve(__dirname, '../playwright-core/lib/vite/traceViewer'),
-    // Output dir is shared with vite.config.ts, clearing it here is racy.
+    // outputs into the public dir, where the build of vite.config.ts will pick it up
+    outDir: path.resolve(__dirname, 'public'),
     emptyOutDir: false,
     rollupOptions: {
       input: {
-        sw: path.resolve(__dirname, 'src/sw.ts'),
+        sw: path.resolve(__dirname, 'src/sw-main.ts'),
       },
       output: {
-        entryFileNames: info => '[name].bundle.js',
-        assetFileNames: () => '[name].[hash][extname]',
+        entryFileNames: info => 'sw.bundle.js',
+        assetFileNames: () => 'sw.[hash][extname]',
         manualChunks: undefined,
       },
     },

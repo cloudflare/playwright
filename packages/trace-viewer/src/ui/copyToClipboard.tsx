@@ -15,22 +15,47 @@
  */
 
 import * as React from 'react';
+import { ToolbarButton } from '@web/components/toolbarButton';
+import './copyToClipboard.css';
 
 export const CopyToClipboard: React.FunctionComponent<{
-  value: string,
-}> = ({ value }) => {
-  const [iconClassName, setIconClassName] = React.useState('codicon-clippy');
+  value: string | (() => Promise<string>),
+  description?: string,
+}> = ({ value, description }) => {
+  const [icon, setIcon] = React.useState('copy');
 
   const handleCopy = React.useCallback(() => {
-    navigator.clipboard.writeText(value).then(() => {
-      setIconClassName('codicon-check');
-      setTimeout(() => {
-        setIconClassName('codicon-clippy');
-      }, 3000);
+    const valuePromise = typeof value === 'function' ? value() : Promise.resolve(value);
+    valuePromise.then(value => {
+      navigator.clipboard.writeText(value).then(() => {
+        setIcon('check');
+        setTimeout(() => {
+          setIcon('copy');
+        }, 3000);
+      }, () => {
+        setIcon('close');
+      });
     }, () => {
-      setIconClassName('codicon-close');
+      setIcon('close');
     });
 
   }, [value]);
-  return <span className={`copy-icon codicon ${iconClassName}`} onClick={handleCopy}/>;
+  return <ToolbarButton title={description ? description : 'Copy'} icon={icon} onClick={handleCopy}/>;
+};
+
+export const CopyToClipboardTextButton: React.FunctionComponent<{
+  value: string | (() => Promise<string>),
+  description: string,
+  copiedDescription?: React.ReactNode,
+  style?: React.CSSProperties,
+}> = ({ value, description, copiedDescription = description, style }) => {
+  const [copied, setCopied] = React.useState(false);
+  const handleCopy = React.useCallback(async () => {
+    const valueToCopy = typeof value === 'function' ? await value() : value;
+    await navigator.clipboard.writeText(valueToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  }, [value]);
+
+  return <ToolbarButton style={style} title={description} onClick={handleCopy} className='copy-to-clipboard-text-button'>{copied ? copiedDescription : description}</ToolbarButton>;
 };

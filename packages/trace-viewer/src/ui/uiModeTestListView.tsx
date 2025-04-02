@@ -27,10 +27,10 @@ import type * as reporterTypes from 'playwright/types/testReporter';
 import React from 'react';
 import type { SourceLocation } from './modelUtil';
 import { testStatusIcon } from './testUtils';
-import type { TestModel } from './uiModeModel';
 import './uiModeTestListView.css';
 import type { TestServerConnection } from '@testIsomorphic/testServerConnection';
 import { TagView } from './tag';
+import type { TeleSuiteUpdaterTestModel } from '@testIsomorphic/teleSuiteUpdater';
 
 const TestTreeView = TreeView<TreeItem>;
 
@@ -38,20 +38,23 @@ export const TestListView: React.FC<{
   filterText: string,
   testTree: TestTree,
   testServerConnection: TestServerConnection | undefined,
-  testModel?: TestModel,
+  testModel?: TeleSuiteUpdaterTestModel,
   runTests: (mode: 'bounce-if-busy' | 'queue-if-busy', testIds: Set<string>) => void,
-  runningState?: { testIds: Set<string>, itemSelectedByUser?: boolean },
+  runningState?: { testIds: Set<string>, itemSelectedByUser?: boolean, completed?: boolean },
   watchAll: boolean,
   watchedTreeIds: { value: Set<string> },
   setWatchedTreeIds: (ids: { value: Set<string> }) => void,
   isLoading?: boolean,
   onItemSelected: (item: { treeItem?: TreeItem, testCase?: reporterTypes.TestCase, testFile?: SourceLocation }) => void,
   requestedCollapseAllCount: number,
-  setFilterText: (text: string) => void;
-}> = ({ filterText, testModel, testServerConnection, testTree, runTests, runningState, watchAll, watchedTreeIds, setWatchedTreeIds, isLoading, onItemSelected, requestedCollapseAllCount, setFilterText }) => {
+  requestedExpandAllCount: number,
+  setFilterText: (text: string) => void,
+  onRevealSource: () => void,
+}> = ({ filterText, testModel, testServerConnection, testTree, runTests, runningState, watchAll, watchedTreeIds, setWatchedTreeIds, isLoading, onItemSelected, requestedCollapseAllCount, requestedExpandAllCount, setFilterText, onRevealSource }) => {
   const [treeState, setTreeState] = React.useState<TreeState>({ expandedItems: new Map() });
   const [selectedTreeItemId, setSelectedTreeItemId] = React.useState<string | undefined>();
   const [collapseAllCount, setCollapseAllCount] = React.useState(requestedCollapseAllCount);
+  const [expandAllCount, setExpandAllCount] = React.useState(requestedExpandAllCount);
 
   // Look for a first failure within the run batch to select it.
   React.useEffect(() => {
@@ -61,6 +64,16 @@ export const TestListView: React.FC<{
       for (const item of testTree.flatTreeItems())
         treeState.expandedItems.set(item.id, false);
       setCollapseAllCount(requestedCollapseAllCount);
+      setSelectedTreeItemId(undefined);
+      setTreeState({ ...treeState });
+      return;
+    }
+
+    if (expandAllCount !== requestedExpandAllCount) {
+      treeState.expandedItems.clear();
+      for (const item of testTree.flatTreeItems())
+        treeState.expandedItems.set(item.id, true);
+      setExpandAllCount(requestedExpandAllCount);
       setSelectedTreeItemId(undefined);
       setTreeState({ ...treeState });
       return;
@@ -84,32 +97,27 @@ export const TestListView: React.FC<{
 
     if (selectedTreeItem)
       setSelectedTreeItemId(selectedTreeItem.id);
-  }, [runningState, setSelectedTreeItemId, testTree, collapseAllCount, setCollapseAllCount, requestedCollapseAllCount, treeState, setTreeState]);
+  }, [runningState, setSelectedTreeItemId, testTree, collapseAllCount, setCollapseAllCount, requestedCollapseAllCount, expandAllCount, setExpandAllCount, requestedExpandAllCount, treeState, setTreeState]);
 
-  // Compute selected item.
-  const { selectedTreeItem } = React.useMemo(() => {
+  // Compute selected item
+  const selectedTreeItem = React.useMemo(() => {
+    if (!selectedTreeItemId)
+      return undefined;
+    return testTree.treeItemById(selectedTreeItemId);
+  }, [selectedTreeItemId, testTree]);
+
+  // Handle selection effects separately
+  React.useEffect(() => {
     if (!testModel)
-      return { selectedTreeItem: undefined };
-    const selectedTreeItem = selectedTreeItemId ? testTree.treeItemById(selectedTreeItemId) : undefined;
-    let testFile: SourceLocation | undefined;
-    if (selectedTreeItem) {
-      testFile = {
-        file: selectedTreeItem.location.file,
-        line: selectedTreeItem.location.line,
-        source: {
-          errors: testModel.loadErrors.filter(e => e.location?.file === selectedTreeItem.location.file).map(e => ({ line: e.location!.line, message: e.message! })),
-          content: undefined,
-        }
-      };
-    }
+      return;
+    const testFile = itemLocation(selectedTreeItem, testModel);
     let selectedTest: reporterTypes.TestCase | undefined;
     if (selectedTreeItem?.kind === 'test')
       selectedTest = selectedTreeItem.test;
     else if (selectedTreeItem?.kind === 'case' && selectedTreeItem.tests.length === 1)
       selectedTest = selectedTreeItem.tests[0];
     onItemSelected({ treeItem: selectedTreeItem, testCase: selectedTest, testFile });
-    return { selectedTreeItem };
-  }, [onItemSelected, selectedTreeItemId, testModel, testTree]);
+  }, [testModel, selectedTreeItem, onItemSelected]);
 
   // Update watch all.
   React.useEffect(() => {
@@ -156,15 +164,18 @@ export const TestListView: React.FC<{
     rootItem={testTree.rootItem}
     dataTestId='test-tree'
     render={treeItem => {
-      return <div className='hbox ui-mode-list-item'>
-        <div className='ui-mode-list-item-title'>
-          <span title={treeItem.title}>{treeItem.title}</span>
+      const prefixId = treeItem.id.replace(/[^\w\d-_]/g, '-');
+      const labelId = prefixId + '-label';
+      const timeId = prefixId + '-time';
+      return <div className='hbox ui-mode-tree-item' aria-labelledby={`${labelId} ${timeId}`}>
+        <div id={labelId} className='ui-mode-tree-item-title'>
+          <span>{treeItem.title}</span>
           {treeItem.kind === 'case' ? treeItem.tags.map(tag => <TagView key={tag} tag={tag.slice(1)} onClick={e => handleTagClick(e, tag)} />) : null}
         </div>
-        {!!treeItem.duration && treeItem.status !== 'skipped' && <div className='ui-mode-list-item-time'>{msToString(treeItem.duration)}</div>}
+        {!!treeItem.duration && treeItem.status !== 'skipped' && <div id={timeId} className='ui-mode-tree-item-time'>{msToString(treeItem.duration)}</div>}
         <Toolbar noMinHeight={true} noShadow={true}>
-          <ToolbarButton icon='play' title='Run' onClick={() => runTreeItem(treeItem)} disabled={!!runningState}></ToolbarButton>
-          <ToolbarButton icon='go-to-file' title='Open in VS Code' onClick={() => testServerConnection?.openNoReply({ location: treeItem.location })} style={(treeItem.kind === 'group' && treeItem.subKind === 'folder') ? { visibility: 'hidden' } : {}}></ToolbarButton>
+          <ToolbarButton icon='play' title='Run' onClick={() => runTreeItem(treeItem)} disabled={!!runningState && !runningState.completed}></ToolbarButton>
+          <ToolbarButton icon='go-to-file' title='Show source' onClick={onRevealSource} style={(treeItem.kind === 'group' && treeItem.subKind === 'folder') ? { visibility: 'hidden' } : {}}></ToolbarButton>
           {!watchAll && <ToolbarButton icon='eye' title='Watch' onClick={() => {
             if (watchedTreeIds.value.has(treeItem.id))
               watchedTreeIds.value.delete(treeItem.id);
@@ -176,6 +187,7 @@ export const TestListView: React.FC<{
       </div>;
     }}
     icon={treeItem => testStatusIcon(treeItem.status)}
+    title={treeItem => treeItem.title}
     selectedItem={selectedTreeItem}
     onAccepted={runTreeItem}
     onSelected={treeItem => {
@@ -187,3 +199,17 @@ export const TestListView: React.FC<{
     autoExpandDepth={filterText ? 5 : 1}
     noItemsMessage={isLoading ? 'Loading\u2026' : 'No tests'} />;
 };
+
+function itemLocation(item: TreeItem | undefined, model: TeleSuiteUpdaterTestModel | undefined): SourceLocation | undefined {
+  if (!item || !model)
+    return;
+  return {
+    file: item.location.file,
+    line: item.location.line,
+    column: item.location.column,
+    source: {
+      errors: model.loadErrors.filter(e => e.location?.file === item.location.file).map(e => ({ line: e.location!.line, message: e.message! })),
+      content: undefined,
+    }
+  };
+}

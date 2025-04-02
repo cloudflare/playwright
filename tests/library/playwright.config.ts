@@ -21,7 +21,6 @@ import { type Config, type PlaywrightTestOptions, type PlaywrightWorkerOptions, 
 import * as path from 'path';
 import type { TestModeWorkerOptions } from '../config/testModeFixtures';
 import type { TestModeName } from '../config/testMode';
-import type { CoverageWorkerOptions } from '../config/coverageFixtures';
 
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
 
@@ -57,7 +56,7 @@ const os: 'linux' | 'windows' = (process.env.PLAYWRIGHT_SERVICE_OS as 'linux' | 
 const runId = process.env.PLAYWRIGHT_SERVICE_RUN_ID || new Date().toISOString(); // name the test run
 
 let connectOptions: any;
-let webServer: any;
+let webServer: Config['webServer'];
 
 if (mode === 'service') {
   connectOptions = { wsEndpoint: 'ws://localhost:3333/' };
@@ -65,6 +64,7 @@ if (mode === 'service') {
     command: 'npx playwright run-server --port=3333',
     url: 'http://localhost:3333',
     reuseExistingServer: !process.env.CI,
+    env: { PWTEST_UNDER_TEST: '1' }
   };
 }
 if (mode === 'service2') {
@@ -79,7 +79,7 @@ if (mode === 'service2') {
   };
 }
 
-const config: Config<CoverageWorkerOptions & PlaywrightWorkerOptions & PlaywrightTestOptions & TestModeWorkerOptions> = {
+const config: Config<PlaywrightWorkerOptions & PlaywrightTestOptions & TestModeWorkerOptions> = {
   testDir,
   outputDir,
   expect: {
@@ -107,37 +107,46 @@ for (const browserName of browserNames) {
     console.error(`Using executable at ${executablePath}`);
   const devtools = process.env.DEVTOOLS === '1';
   const testIgnore: RegExp[] = browserNames.filter(b => b !== browserName).map(b => new RegExp(b));
-  for (const folder of ['library', 'page']) {
-    config.projects.push({
-      name: `${browserName}-${folder}`,
-      testDir: path.join(testDir, folder),
-      testIgnore,
-      snapshotPathTemplate: `{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}-${browserName}{ext}`,
-      use: {
-        mode,
-        browserName,
-        headless: !headed,
-        channel,
-        video: video ? 'on' : undefined,
-        launchOptions: {
-          executablePath,
-          devtools
-        },
-        trace: trace ? 'on' : undefined,
-        coverageName: browserName,
+
+  const projectTemplate: typeof config.projects[0] = {
+    testIgnore,
+    snapshotPathTemplate: `{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}-${browserName}{ext}`,
+    use: {
+      mode,
+      browserName,
+      headless: !headed,
+      channel,
+      video: video ? 'on' : undefined,
+      launchOptions: {
+        executablePath,
+        devtools
       },
-      metadata: {
-        platform: process.platform,
-        docker: !!process.env.INSIDE_DOCKER,
-        headful: !!headed,
-        browserName,
-        channel,
-        mode,
-        video: !!video,
-        trace: !!trace,
-      },
-    });
-  }
+      trace: trace ? 'on' : undefined,
+    },
+    metadata: {
+      platform: process.platform,
+      docker: !!process.env.INSIDE_DOCKER,
+      headless: headed ? 'headed' : 'headless',
+      browserName,
+      channel,
+      mode,
+      video: !!video,
+      trace: !!trace,
+      clock: process.env.PW_CLOCK ? 'clock-' + process.env.PW_CLOCK : undefined,
+    }
+  };
+
+  config.projects.push({
+    name: `${browserName}-library`,
+    testDir: path.join(testDir, 'library'),
+    ...projectTemplate,
+  });
+
+  config.projects.push({
+    name: `${browserName}-page`,
+    testDir: path.join(testDir, 'page'),
+    ...projectTemplate,
+  });
 }
 
 export default config;

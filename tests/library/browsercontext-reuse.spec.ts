@@ -15,12 +15,12 @@
  */
 
 import { browserTest, expect } from '../config/browserTest';
-import type { BrowserContext } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 
 const test = browserTest.extend<{ reusedContext: () => Promise<BrowserContext> }>({
   reusedContext: async ({ browserType, browser }, use) => {
     await use(async () => {
-      const defaultContextOptions = (browserType as any)._defaultContextOptions;
+      const defaultContextOptions = (browserType as any)._playwright._defaultContextOptions;
       const context = await (browser as any)._newContextForReuse(defaultContextOptions);
       return context;
     });
@@ -203,10 +203,10 @@ test('should ignore binding from beforeunload', async ({ reusedContext }) => {
   expect(called).toBe(false);
 });
 
-test('should reset mouse position', async ({ reusedContext, browserName, platform }) => {
+test('should reset mouse position', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/22432' },
+}, async ({ reusedContext, browserName, platform }) => {
   // Note: this test only reproduces the issue locally when run with --repeat-each=20.
-  test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/22432' });
-  test.fixme(browserName === 'chromium' && platform !== 'darwin', 'chromium keeps hover on linux/win');
 
   const pageContent = `
     <style>
@@ -214,6 +214,7 @@ test('should reset mouse position', async ({ reusedContext, browserName, platfor
       div:hover { background: red; }
       html, body { margin: 0; padding: 0; }
     </style>
+    <div id=filler>one</div>
     <div id=one>one</div>
     <div id=two>two</div>
   `;
@@ -224,7 +225,7 @@ test('should reset mouse position', async ({ reusedContext, browserName, platfor
   await expect(page.locator('#one')).toHaveCSS('background-color', 'rgb(0, 0, 255)');
   await expect(page.locator('#two')).toHaveCSS('background-color', 'rgb(0, 0, 255)');
 
-  await page.mouse.move(10, 45);
+  await page.mouse.move(10, 75);
   await expect(page.locator('#one')).toHaveCSS('background-color', 'rgb(0, 0, 255)');
   await expect(page.locator('#two')).toHaveCSS('background-color', 'rgb(255, 0, 0)');
 
@@ -252,6 +253,19 @@ test('should reset tracing', async ({ reusedContext, trace }, testInfo) => {
   expect(error.message).toContain('Must start tracing before stopping');
 });
 
+test('should work with clock emulation', async ({ reusedContext, trace }, testInfo) => {
+  let context = await reusedContext();
+
+  let page = await context.newPage();
+  await page.clock.setFixedTime(new Date('2020-01-01T00:00:00.000Z'));
+  expect(await page.evaluate('new Date().toISOString()')).toBe('2020-01-01T00:00:00.000Z');
+
+  context = await reusedContext();
+  page = context.pages()[0];
+  await page.clock.setFixedTime(new Date('2020-01-01T00:00:00Z'));
+  expect(await page.evaluate('new Date().toISOString()')).toBe('2020-01-01T00:00:00.000Z');
+});
+
 test('should continue issuing events after closing the reused page', async ({ reusedContext, server }) => {
   test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/24574' });
 
@@ -272,4 +286,43 @@ test('should continue issuing events after closing the reused page', async ({ re
       page.goto(server.PREFIX + '/one-style.html'),
     ]);
   }
+});
+
+test('should work with routeWebSocket', async ({ reusedContext, server, browser }, testInfo) => {
+  async function setup(page: Page, suffix: string) {
+    await page.routeWebSocket(/ws1/, ws => {
+      ws.onMessage(message => {
+        ws.send('page-mock-' + suffix);
+      });
+    });
+    await page.context().routeWebSocket(/.*/, ws => {
+      ws.onMessage(message => {
+        ws.send('context-mock-' + suffix);
+      });
+    });
+    await page.goto('about:blank');
+    await page.evaluate(({ port }) => {
+      window.log = [];
+      (window as any).ws1 = new WebSocket('ws://localhost:' + port + '/ws1');
+      (window as any).ws1.addEventListener('message', event => window.log.push(`ws1:${event.data}`));
+      (window as any).ws2 = new WebSocket('ws://localhost:' + port + '/ws2');
+      (window as any).ws2.addEventListener('message', event => window.log.push(`ws2:${event.data}`));
+    }, { port: server.PORT });
+  }
+
+  let context = await reusedContext();
+  let page = await context.newPage();
+  await setup(page, 'before');
+  await page.evaluate(() => (window as any).ws1.send('request'));
+  await expect.poll(() => page.evaluate(() => window.log)).toEqual([`ws1:page-mock-before`]);
+  await page.evaluate(() => (window as any).ws2.send('request'));
+  await expect.poll(() => page.evaluate(() => window.log)).toEqual([`ws1:page-mock-before`, `ws2:context-mock-before`]);
+
+  context = await reusedContext();
+  page = context.pages()[0];
+  await setup(page, 'after');
+  await page.evaluate(() => (window as any).ws1.send('request'));
+  await expect.poll(() => page.evaluate(() => window.log)).toEqual([`ws1:page-mock-after`]);
+  await page.evaluate(() => (window as any).ws2.send('request'));
+  await expect.poll(() => page.evaluate(() => window.log)).toEqual([`ws1:page-mock-after`, `ws2:context-mock-after`]);
 });

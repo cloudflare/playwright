@@ -17,8 +17,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { sourceMapSupport } from '../utilsBundle';
+
 import { isWorkerProcess } from '../common/globals';
+import { sourceMapSupport } from '../utilsBundle';
 
 export type MemoryCache = {
   codePath: string;
@@ -64,13 +65,7 @@ const fileDependencies = new Map<string, Set<string>>();
 // Dependencies resolved by the external bundler.
 const externalDependencies = new Map<string, Set<string>>();
 
-let sourceMapSupportInstalled = false;
-
-export function installSourceMapSupportIfNeeded() {
-  if (sourceMapSupportInstalled)
-    return;
-  sourceMapSupportInstalled = true;
-
+export function installSourceMapSupport() {
   Error.stackTraceLimit = 200;
 
   sourceMapSupport.install({
@@ -211,16 +206,27 @@ export function fileDependenciesForTest() {
   return fileDependencies;
 }
 
-export function collectAffectedTestFiles(dependency: string, testFileCollector: Set<string>) {
-  if (fileDependencies.has(dependency))
-    testFileCollector.add(dependency);
+export function collectAffectedTestFiles(changedFile: string, testFileCollector: Set<string>) {
+  const isTestFile = (file: string) => fileDependencies.has(file);
+
+  if (isTestFile(changedFile))
+    testFileCollector.add(changedFile);
+
   for (const [testFile, deps] of fileDependencies) {
-    if (deps.has(dependency))
+    if (deps.has(changedFile))
       testFileCollector.add(testFile);
   }
-  for (const [testFile, deps] of externalDependencies) {
-    if (deps.has(dependency))
-      testFileCollector.add(testFile);
+
+  for (const [importingFile, depsOfImportingFile] of externalDependencies) {
+    if (depsOfImportingFile.has(changedFile)) {
+      if (isTestFile(importingFile))
+        testFileCollector.add(importingFile);
+
+      for (const [testFile, depsOfTestFile] of fileDependencies) {
+        if (depsOfTestFile.has(importingFile))
+          testFileCollector.add(testFile);
+      }
+    }
   }
 }
 
@@ -237,25 +243,25 @@ export function internalDependenciesForTestFile(filename: string): Set<string> |
 
 export function dependenciesForTestFile(filename: string): Set<string> {
   const result = new Set<string>();
-  for (const dep of fileDependencies.get(filename) || [])
-    result.add(dep);
+  for (const testDependency of fileDependencies.get(filename) || []) {
+    result.add(testDependency);
+    for (const externalDependency of externalDependencies.get(testDependency) || [])
+      result.add(externalDependency);
+  }
   for (const dep of externalDependencies.get(filename) || [])
     result.add(dep);
   return result;
 }
 
-// These two are only used in the dev mode, they are specifically excluding
+// This is only used in the dev mode, specifically excluding
 // files from packages/playwright*. In production mode, node_modules covers
 // that.
 const kPlaywrightInternalPrefix = path.resolve(__dirname, '../../../playwright');
-const kPlaywrightCoveragePrefix = path.resolve(__dirname, '../../../../tests/config/coverage.js');
 
 export function belongsToNodeModules(file: string) {
   if (file.includes(`${path.sep}node_modules${path.sep}`))
     return true;
   if (file.startsWith(kPlaywrightInternalPrefix) && (file.endsWith('.js') || file.endsWith('.mjs')))
-    return true;
-  if (file.startsWith(kPlaywrightCoveragePrefix) && (file.endsWith('.js') || file.endsWith('.mjs')))
     return true;
   return false;
 }

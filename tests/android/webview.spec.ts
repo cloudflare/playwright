@@ -16,13 +16,7 @@
 
 import { androidTest as test, expect } from './androidTest';
 
-test.afterEach(async ({ androidDevice }) => {
-  await androidDevice.shell('am force-stop org.chromium.webview_shell');
-  await androidDevice.shell('am force-stop com.android.chrome');
-});
-
 test('androidDevice.webView', async function({ androidDevice }) {
-  test.slow();
   expect(androidDevice.webViews().length).toBe(0);
   await androidDevice.shell('am start org.chromium.webview_shell/.WebViewBrowserActivity');
   const webview = await androidDevice.webView({ pkg: 'org.chromium.webview_shell' });
@@ -48,14 +42,12 @@ test('should navigate page internally', async function({ androidDevice }) {
 });
 
 test('should navigate page externally', async function({ androidDevice }) {
-  test.fixme(true, 'Hangs on the bots');
-
   expect(androidDevice.webViews().length).toBe(0);
   await androidDevice.shell('am start org.chromium.webview_shell/.WebViewBrowserActivity');
   const webview = await androidDevice.webView({ pkg: 'org.chromium.webview_shell' });
   const page = await webview.page();
 
-  await androidDevice.fill({ res: 'org.chromium.webview_shell:id/url_field' }, 'data:text/html,<title>Hello world!</title>');
+  await androidDevice.fill({ res: 'org.chromium.webview_shell:id/url_field' }, 'data:text/html,<title>Hello world!</title>', { timeout: test.info().timeout });
   await Promise.all([
     page.waitForNavigation(),
     androidDevice.press({ res: 'org.chromium.webview_shell:id/url_field' }, 'Enter')
@@ -64,7 +56,6 @@ test('should navigate page externally', async function({ androidDevice }) {
 });
 
 test('select webview from socketName', async function({ androidDevice }) {
-  test.slow();
   const context = await androidDevice.launchBrowser();
   const newPage = await context.newPage();
   await newPage.goto('about:blank');
@@ -77,4 +68,37 @@ test('select webview from socketName', async function({ androidDevice }) {
 
   await newPage.close();
   await context.close();
+});
+
+test('should be able to receive webView cookies', {
+  annotation: {
+    type: 'issue',
+    description: 'https://github.com/microsoft/playwright/issues/35392',
+  }
+}, async function({ androidDevice, server }) {
+  expect(androidDevice.webViews().length).toBe(0);
+  server.setRoute('/cookies', (req, res) => {
+    res.setHeader('Set-Cookie', 'cookie1=value1; Path=/; HttpOnly');
+    res.setHeader('Content-Type', 'text/html');
+    res.end('<html><body>hello world</body></html>');
+  });
+  await androidDevice.shell('am start org.chromium.webview_shell/.WebViewBrowserActivity');
+  const webview = await androidDevice.webView({ pkg: 'org.chromium.webview_shell' });
+  const page = await webview.page();
+  await page.goto(server.CROSS_PROCESS_PREFIX + '/cookies');
+  const cookies = await page.context().cookies();
+  expect(cookies.length).toBe(1);
+  expect(cookies).toEqual([
+    {
+      name: 'cookie1',
+      value: 'value1',
+      domain: new URL(server.CROSS_PROCESS_PREFIX).hostname,
+      path: '/',
+      expires: -1,
+      httpOnly: true,
+      secure: false,
+      sameSite: 'Lax'
+    }
+  ]);
+  await page.context().clearCookies();
 });

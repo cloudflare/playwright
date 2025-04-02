@@ -18,7 +18,7 @@
 import { playwrightTest as test, expect } from '../../config/browserTest';
 import http from 'http';
 import fs from 'fs';
-import { getUserAgent } from '../../../packages/playwright-core/lib/utils/userAgent';
+import { getUserAgent } from '../../../packages/playwright-core/lib/server/utils/userAgent';
 import { suppressCertificateWarning } from '../../config/utils';
 
 test.skip(({ mode }) => mode === 'service2');
@@ -409,13 +409,13 @@ test('should connect to an existing cdp session when passed as a first argument'
   }
 });
 
-test('should use proxy with connectOverCDP', async ({ browserType, server, mode }, testInfo) => {
+test('should use proxy with connectOverCDP', async ({ browserType, server }, testInfo) => {
   server.setRoute('/target.html', async (req, res) => {
     res.end('<html><title>Served by the proxy</title></html>');
   });
   const port = 9339 + testInfo.workerIndex;
   const browserServer = await browserType.launch({
-    args: ['--remote-debugging-port=' + port, ...(process.platform === 'win32' ? ['--proxy-server=some-value'] : [])]
+    args: ['--remote-debugging-port=' + port]
   });
   try {
     const cdpBrowser = await browserType.connectOverCDP(`http://127.0.0.1:${port}/`);
@@ -441,6 +441,32 @@ test('should be able to connect via localhost', async ({ browserType }, testInfo
     const contexts = cdpBrowser.contexts();
     expect(contexts.length).toBe(1);
     await cdpBrowser.close();
+  } finally {
+    await browserServer.close();
+  }
+});
+
+test('should be able to connect over http proxy', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/35206' },
+}, async ({ browserType, proxyServer }, testInfo) => {
+  const port = 9339 + testInfo.workerIndex;
+  const browserServer = await browserType.launch({
+    args: ['--remote-debugging-port=' + port]
+  });
+  proxyServer.forwardTo(port, { allowConnectRequests: true });
+  try {
+    const cdpBrowser = await browserType.connectOverCDP(`http://some.random.host.does.not.exist:1337`, {
+      proxy: { server: `localhost:${proxyServer.PORT}` },
+    });
+    const contexts = cdpBrowser.contexts();
+    expect(contexts.length).toBe(1);
+    const page = await contexts[0].newPage();
+    expect(await page.evaluate('11 * 11')).toBe(121);
+    await cdpBrowser.close();
+    // We should "CONNECT" twice:
+    // - to convert http url into ws url
+    // - actually connect to the ws endpoint
+    expect(proxyServer.connectHosts).toEqual(['some.random.host.does.not.exist:1337', 'some.random.host.does.not.exist:1337']);
   } finally {
     await browserServer.close();
   }
@@ -526,4 +552,14 @@ test('setInputFiles should preserve lastModified timestamp', async ({ browserTyp
   } finally {
     await browserServer.close();
   }
+});
+
+test('should print custom ws close error', async ({ browserType, server }) => {
+  server.onceWebSocketConnection((ws, request) => {
+    ws.on('message', message => {
+      ws.close(4123, 'Oh my!');
+    });
+  });
+  const error = await browserType.connectOverCDP(`ws://localhost:${server.PORT}/ws`).catch(e => e);
+  expect(error.message).toContain(`Browser logs:\n\nOh my!\n`);
 });

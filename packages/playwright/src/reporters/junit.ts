@@ -16,50 +16,60 @@
 
 import fs from 'fs';
 import path from 'path';
-import type { FullConfig, FullResult, Suite, TestCase } from '../../types/testReporter';
-import { monotonicTime } from 'playwright-core/lib/utils';
-import { formatFailure, stripAnsiEscapes } from './base';
-import { assert } from 'playwright-core/lib/utils';
-import EmptyReporter from './empty';
 
-class JUnitReporter extends EmptyReporter {
+import { getAsBooleanFromENV } from 'playwright-core/lib/utils';
+
+import { formatFailure, nonTerminalScreen, resolveOutputFile } from './base';
+import { stripAnsiEscapes } from '../util';
+
+import type { ReporterV2 } from './reporterV2';
+import type { FullConfig, FullResult, Suite, TestCase } from '../../types/testReporter';
+
+type JUnitOptions = {
+  outputFile?: string,
+  stripANSIControlSequences?: boolean,
+  includeProjectInTestName?: boolean,
+
+  configDir: string,
+};
+
+class JUnitReporter implements ReporterV2 {
   private config!: FullConfig;
+  private configDir: string;
   private suite!: Suite;
   private timestamp!: Date;
-  private startTime!: number;
   private totalTests = 0;
   private totalFailures = 0;
   private totalSkipped = 0;
-  private outputFile: string | undefined;
   private resolvedOutputFile: string | undefined;
   private stripANSIControlSequences = false;
+  private includeProjectInTestName = false;
 
-  constructor(options: { outputFile?: string, stripANSIControlSequences?: boolean } = {}) {
-    super();
-    this.outputFile = options.outputFile || reportOutputNameFromEnv();
-    this.stripANSIControlSequences = options.stripANSIControlSequences || false;
+  constructor(options: JUnitOptions) {
+    this.stripANSIControlSequences = getAsBooleanFromENV('PLAYWRIGHT_JUNIT_STRIP_ANSI', !!options.stripANSIControlSequences);
+    this.includeProjectInTestName = getAsBooleanFromENV('PLAYWRIGHT_JUNIT_INCLUDE_PROJECT_IN_TEST_NAME', !!options.includeProjectInTestName);
+    this.configDir = options.configDir;
+    this.resolvedOutputFile = resolveOutputFile('JUNIT', options)?.outputFile;
   }
 
-  override printsToStdio() {
-    return !this.outputFile;
+  version(): 'v2' {
+    return 'v2';
   }
 
-  override onConfigure(config: FullConfig) {
+  printsToStdio() {
+    return !this.resolvedOutputFile;
+  }
+
+  onConfigure(config: FullConfig) {
     this.config = config;
   }
 
-  override onBegin(suite: Suite) {
+  onBegin(suite: Suite) {
     this.suite = suite;
     this.timestamp = new Date();
-    this.startTime = monotonicTime();
-    if (this.outputFile) {
-      assert(this.config.configFile || path.isAbsolute(this.outputFile), 'Expected fully resolved path if not using config file.');
-      this.resolvedOutputFile = this.config.configFile ? path.resolve(path.dirname(this.config.configFile), this.outputFile) : this.outputFile;
-    }
   }
 
-  override async onEnd(result: FullResult) {
-    const duration = monotonicTime() - this.startTime;
+  async onEnd(result: FullResult) {
     const children: XMLEntry[] = [];
     for (const projectSuite of this.suite.suites) {
       for (const fileSuite of projectSuite.suites)
@@ -77,7 +87,7 @@ class JUnitReporter extends EmptyReporter {
         failures: self.totalFailures,
         skipped: self.totalSkipped,
         errors: 0,
-        time: duration / 1000
+        time: result.duration / 1000
       },
       children
     };
@@ -98,6 +108,7 @@ class JUnitReporter extends EmptyReporter {
     let failures = 0;
     let duration = 0;
     const children: XMLEntry[] = [];
+    const testCaseNamePrefix = projectName && this.includeProjectInTestName ? `[${projectName}] ` : '';
 
     for (const test of suite.allTests()){
       ++tests;
@@ -107,7 +118,7 @@ class JUnitReporter extends EmptyReporter {
         ++failures;
       for (const result of test.results)
         duration += result.duration;
-      await this._addTestCase(suite.title, test, children);
+      await this._addTestCase(suite.title, testCaseNamePrefix, test, children);
     }
 
     this.totalTests += tests;
@@ -132,12 +143,12 @@ class JUnitReporter extends EmptyReporter {
     return entry;
   }
 
-  private async _addTestCase(suiteName: string, test: TestCase, entries: XMLEntry[]) {
+  private async _addTestCase(suiteName: string, namePrefix: string, test: TestCase, entries: XMLEntry[]) {
     const entry = {
       name: 'testcase',
       attributes: {
         // Skip root, project, file
-        name: test.titlePath().slice(3).join(' › '),
+        name: namePrefix + test.titlePath().slice(3).join(' › '),
         // filename
         classname: suiteName,
         time: (test.results.reduce((acc, value) => acc + value.duration, 0)) / 1000
@@ -155,7 +166,8 @@ class JUnitReporter extends EmptyReporter {
       children: [] as XMLEntry[]
     };
 
-    for (const annotation of test.annotations) {
+    const annotations = [...test.annotations, ...test.results.flatMap(r => r.annotations)];
+    for (const annotation of annotations) {
       const property: XMLEntry = {
         name: 'property',
         attributes: {
@@ -181,7 +193,7 @@ class JUnitReporter extends EmptyReporter {
           message: `${path.basename(test.location.file)}:${test.location.line}:${test.location.column} ${test.title}`,
           type: 'FAILURE',
         },
-        text: stripAnsiEscapes(formatFailure(this.config, test).message)
+        text: stripAnsiEscapes(formatFailure(nonTerminalScreen, this.config, test))
       });
     }
 
@@ -194,12 +206,12 @@ class JUnitReporter extends EmptyReporter {
         if (!attachment.path)
           continue;
 
-        let attachmentPath = path.relative(this.config.rootDir, attachment.path);
+        let attachmentPath = path.relative(this.configDir, attachment.path);
         try {
           if (this.resolvedOutputFile)
             attachmentPath = path.relative(path.dirname(this.resolvedOutputFile), attachment.path);
         } catch {
-          systemOut.push(`\nWarning: Unable to make attachment path ${attachment.path} relative to report output file ${this.outputFile}`);
+          systemOut.push(`\nWarning: Unable to make attachment path ${attachment.path} relative to report output file ${this.resolvedOutputFile}`);
         }
 
         try {
@@ -254,12 +266,6 @@ function escape(text: string, stripANSIControlSequences: boolean, isCharacterDat
 
   text = text.replace(discouragedXMLCharacters, '');
   return text;
-}
-
-function reportOutputNameFromEnv(): string | undefined {
-  if (process.env[`PLAYWRIGHT_JUNIT_OUTPUT_NAME`])
-    return path.resolve(process.cwd(), process.env[`PLAYWRIGHT_JUNIT_OUTPUT_NAME`]);
-  return undefined;
 }
 
 export default JUnitReporter;

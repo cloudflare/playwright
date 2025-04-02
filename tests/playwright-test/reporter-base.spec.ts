@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { test, expect } from './playwright-test-fixtures';
+import { test, expect, stripAnsi } from './playwright-test-fixtures';
 import * as path from 'path';
 
 for (const useIntermediateMergeReport of [false, true] as const) {
@@ -118,6 +118,53 @@ for (const useIntermediateMergeReport of [false, true] as const) {
       expect(output).toContain(`a.spec.ts:5:13`);
     });
 
+    test('should print error with a nested cause', async ({ runInlineTest }) => {
+      const result = await runInlineTest({
+        'a.spec.ts': `
+          import { test, expect } from '@playwright/test';
+
+          test('foobar', async ({}) => {
+            try {
+              try {
+                const error = new Error('my-message');
+                error.name = 'SpecialError';
+                throw error;
+              } catch (e) {
+                try {
+                  throw new Error('inner-message', { cause: e });
+                } catch (e) {
+                  throw new Error('outer-message', { cause: e });
+                }
+              }
+            } catch (e) {
+              throw new Error('wrapper-message', { cause: e });
+            }
+          });
+          test.afterAll(() => {
+            expect(test.info().errors.length).toBe(1);
+            expect(test.info().errors[0]).toBe(test.info().error);
+            expect(test.info().error.message).toBe('Error: wrapper-message');
+            expect(test.info().error.cause.message).toBe('Error: outer-message');
+            expect(test.info().error.cause.cause.message).toBe('Error: inner-message');
+            expect(test.info().error.cause.cause.cause.message).toBe('SpecialError: my-message');
+            expect(test.info().error.cause.cause.cause.cause).toBe(undefined);
+            console.log('afterAll executed successfully');
+          })
+        `
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.failed).toBe(1);
+      const testFile = path.join(result.report.config.rootDir, result.report.suites[0].specs[0].file);
+      expect(result.output).toContain(`${testFile}:18:21`);
+      expect(result.output).toContain(`[cause]: Error: outer-message`);
+      expect(result.output).toContain(`${testFile}:14:25`);
+      expect(result.output).toContain(`[cause]: Error: inner-message`);
+      expect(result.output).toContain(`${testFile}:12:25`);
+      expect(result.output).toContain(`[cause]: SpecialError: my-message`);
+      expect(result.output).toContain(`${testFile}:7:31`);
+      expect(result.output).toContain('afterAll executed successfully');
+    });
+
     test('should print codeframe from a helper', async ({ runInlineTest }) => {
       const result = await runInlineTest({
         'helper.ts': `
@@ -175,7 +222,7 @@ for (const useIntermediateMergeReport of [false, true] as const) {
       expect(result.output).toContain(`Slow test file: [bar] › dir${path.sep}a.test.js (`);
       expect(result.output).toContain(`Slow test file: [baz] › dir${path.sep}a.test.js (`);
       expect(result.output).toContain(`Slow test file: [qux] › dir${path.sep}a.test.js (`);
-      expect(result.output).toContain(`Consider splitting slow test files to speed up parallel execution`);
+      expect(result.output).toContain(`Consider running tests from slow files in parallel`);
       expect(result.output).not.toContain(`Slow test file: [foo] › dir${path.sep}b.test.js (`);
       expect(result.output).not.toContain(`Slow test file: [bar] › dir${path.sep}b.test.js (`);
       expect(result.output).not.toContain(`Slow test file: [baz] › dir${path.sep}b.test.js (`);
@@ -207,6 +254,33 @@ for (const useIntermediateMergeReport of [false, true] as const) {
       expect(result.passed).toBe(0);
       expect(result.didNotRun).toBe(2);
       expect(result.output).toContain('Testing stopped early after 1 maximum allowed failures.');
+    });
+
+    test('should print if globalTimeout is reached', async ({ runInlineTest }) => {
+      test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/29768' });
+      const result = await runInlineTest({
+        'playwright.config.ts': `
+          module.exports = {
+            globalTimeout: 3000,
+          };
+        `,
+        'dir/a.test.js': `
+          import { test, expect } from '@playwright/test';
+          test('first', async ({}) => {
+          });
+          test('second (hanging)', async ({}) => {
+            await new Promise(() => {});
+          });
+          test('third', async ({}) => {
+          });
+        `,
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.passed).toBe(1);
+      // TODO: uncomment once https://github.com/microsoft/playwright/issues/30550 is fixed.
+      // expect(result.interrupted).toBe(1);
+      // expect(result.didNotRun).toBe(1);
+      expect(result.output).toContain('Timed out waiting 3s for the test suite to run');
     });
 
     test('should not print slow parallel tests', async ({ runInlineTest }) => {
@@ -390,6 +464,27 @@ for (const useIntermediateMergeReport of [false, true] as const) {
       expect(result.exitCode).toBe(0);
       expect(result.passed).toBe(1);
       expect(result.output).toMatch(/\d+ passed \(\d+(\.\d)?(ms|s)\)/);
+    });
+
+    test('should output tags', async ({ runInlineTest }) => {
+      const result = await runInlineTest({
+        'a.test.ts': `
+          const { test, expect } = require('@playwright/test');
+          test('passes', { tag: ['@foo1', '@foo2'] }, async ({}) => {
+            expect(0).toBe(0);
+          });
+          test('passes @bar1 @bar2', async ({}) => {
+            expect(0).toBe(0);
+          });
+          test('passes @baz1', { tag: ['@baz2'] }, async ({}) => {
+            expect(0).toBe(0);
+          });
+        `,
+      });
+      const text = stripAnsi(result.output);
+      expect(text).toContain('› passes @foo1 @foo2 (');
+      expect(text).toContain('› passes @bar1 @bar2 (');
+      expect(text).toContain('› passes @baz1 @baz2 (');
     });
   });
 }

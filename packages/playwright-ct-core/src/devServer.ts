@@ -16,33 +16,30 @@
 
 import fs from 'fs';
 import path from 'path';
+
 import { Watcher } from 'playwright/lib/fsWatcher';
-import { loadConfigFromFileRestartIfNeeded } from 'playwright/lib/common/configLoader';
-import { Runner } from 'playwright/lib/runner/runner';
-import type { PluginContext } from 'rollup';
+
 import { source as injectedSource } from './generated/indexSource';
-import { createConfig, populateComponentsFromTests, resolveDirs, transformIndexFile, frameworkConfig } from './viteUtils';
+import { createConfig, frameworkConfig, populateComponentsFromTests, resolveDirs, transformIndexFile } from './viteUtils';
+
 import type { ComponentRegistry } from './viteUtils';
+import type { FullConfig } from 'playwright/test';
+import type { PluginContext } from 'rollup';
 
-export async function runDevServer(configFile: string) {
-  const config = await loadConfigFromFileRestartIfNeeded(configFile);
-  if (!config)
-    return;
-
-  const { registerSourceFile, frameworkPluginFactory } = frameworkConfig(config.config);
-  const runner = new Runner(config);
-  await runner.loadAllTests();
+export async function runDevServer(config: FullConfig): Promise<() => Promise<void>> {
+  const { registerSourceFile, frameworkPluginFactory } = frameworkConfig(config);
   const componentRegistry: ComponentRegistry = new Map();
   await populateComponentsFromTests(componentRegistry);
 
-  const dirs = await resolveDirs(config.configDir, config.config);
+  const configDir = config.configFile ? path.dirname(config.configFile) : config.rootDir;
+  const dirs = await resolveDirs(configDir, config);
   if (!dirs) {
     // eslint-disable-next-line no-console
     console.log(`Template file playwright/index.html is missing.`);
-    return;
+    return async () => {};
   }
   const registerSource = injectedSource + '\n' + await fs.promises.readFile(registerSourceFile, 'utf-8');
-  const viteConfig = await createConfig(dirs, config.config, frameworkPluginFactory, false);
+  const viteConfig = await createConfig(dirs, config, frameworkPluginFactory, false);
   viteConfig.plugins.push({
     name: 'playwright:component-index',
 
@@ -56,16 +53,16 @@ export async function runDevServer(configFile: string) {
   await devServer.listen();
   const protocol = viteConfig.server.https ? 'https:' : 'http:';
   // eslint-disable-next-line no-console
-  console.log(`Test Server listening on ${protocol}//${viteConfig.server.host || 'localhost'}:${viteConfig.server.port}`);
+  console.log(`Dev Server listening on ${protocol}//${viteConfig.server.host || 'localhost'}:${viteConfig.server.port}`);
 
   const projectDirs = new Set<string>();
   const projectOutputs = new Set<string>();
   for (const p of config.projects) {
-    projectDirs.add(p.project.testDir);
-    projectOutputs.add(p.project.outputDir);
+    projectDirs.add(p.testDir);
+    projectOutputs.add(p.outputDir);
   }
 
-  const globalWatcher = new Watcher('deep', async () => {
+  const globalWatcher = new Watcher(async () => {
     const registry: ComponentRegistry = new Map();
     await populateComponentsFromTests(registry);
     // compare componentRegistry to registry key sets.
@@ -84,5 +81,6 @@ export async function runDevServer(configFile: string) {
     if (rootModule)
       devServer.moduleGraph.onFileChange(rootModule.file!);
   });
-  globalWatcher.update([...projectDirs], [...projectOutputs], false);
+  await globalWatcher.update([...projectDirs], [...projectOutputs], false);
+  return () => Promise.all([devServer.close(), globalWatcher.close()]).then(() => {});
 }

@@ -15,11 +15,15 @@
  */
 
 import path from 'path';
+
 import { createGuid } from 'playwright-core/lib/utils';
-import type * as reporterTypes from '../../types/testReporter';
-import type * as teleReceiver from '../isomorphic/teleReceiver';
+
 import { serializeRegexPatterns } from '../isomorphic/teleReceiver';
+
 import type { ReporterV2 } from './reporterV2';
+import type * as reporterTypes from '../../types/testReporter';
+import type { TestAnnotation } from '../../types/test';
+import type * as teleReceiver from '../isomorphic/teleReceiver';
 
 export type TeleReporterEmitterOptions = {
   omitOutput?: boolean;
@@ -30,6 +34,9 @@ export class TeleReporterEmitter implements ReporterV2 {
   private _messageSink: (message: teleReceiver.JsonEvent) => void;
   private _rootDir!: string;
   private _emitterOptions: TeleReporterEmitterOptions;
+  // In case there is blob reporter and UI mode, make sure one does override
+  // the id assigned by the other.
+  private readonly _idSymbol = Symbol('id');
 
   constructor(messageSink: (message: teleReceiver.JsonEvent) => void, options: TeleReporterEmitterOptions = {}) {
     this._messageSink = messageSink;
@@ -53,7 +60,7 @@ export class TeleReporterEmitter implements ReporterV2 {
   }
 
   onTestBegin(test: reporterTypes.TestCase, result: reporterTypes.TestResult): void {
-    (result as any)[idSymbol] = createGuid();
+    (result as any)[this._idSymbol] = createGuid();
     this._messageSink({
       method: 'onTestBegin',
       params: {
@@ -67,8 +74,8 @@ export class TeleReporterEmitter implements ReporterV2 {
     const testEnd: teleReceiver.JsonTestEnd = {
       testId: test.id,
       expectedStatus: test.expectedStatus,
-      annotations: test.annotations,
       timeout: test.timeout,
+      annotations: []
     };
     this._messageSink({
       method: 'onTestEnd',
@@ -80,12 +87,12 @@ export class TeleReporterEmitter implements ReporterV2 {
   }
 
   onStepBegin(test: reporterTypes.TestCase, result: reporterTypes.TestResult, step: reporterTypes.TestStep): void {
-    (step as any)[idSymbol] = createGuid();
+    (step as any)[this._idSymbol] = createGuid();
     this._messageSink({
       method: 'onStepBegin',
       params: {
         testId: test.id,
-        resultId: (result as any)[idSymbol],
+        resultId: (result as any)[this._idSymbol],
         step: this._serializeStepStart(step)
       }
     });
@@ -96,8 +103,8 @@ export class TeleReporterEmitter implements ReporterV2 {
       method: 'onStepEnd',
       params: {
         testId: test.id,
-        resultId: (result as any)[idSymbol],
-        step: this._serializeStepEnd(step)
+        resultId: (result as any)[this._idSymbol],
+        step: this._serializeStepEnd(step, result)
       }
     });
   }
@@ -124,7 +131,7 @@ export class TeleReporterEmitter implements ReporterV2 {
     const data = isBase64 ? chunk.toString('base64') : chunk;
     this._messageSink({
       method: 'onStdIO',
-      params: { testId: test?.id, resultId: result ? (result as any)[idSymbol] : undefined, type, data, isBase64 }
+      params: { testId: test?.id, resultId: result ? (result as any)[this._idSymbol] : undefined, type, data, isBase64 }
     });
   }
 
@@ -140,9 +147,6 @@ export class TeleReporterEmitter implements ReporterV2 {
         result: resultPayload
       }
     });
-  }
-
-  async onExit() {
   }
 
   printsToStdio() {
@@ -181,16 +185,26 @@ export class TeleReporterEmitter implements ReporterV2 {
       dependencies: project.dependencies,
       snapshotDir: this._relativePath(project.snapshotDir),
       teardown: project.teardown,
+      use: this._serializeProjectUseOptions(project.use),
     };
     return report;
+  }
+
+  private _serializeProjectUseOptions(use: reporterTypes.FullProject['use']): Record<string, any> {
+    return {
+      testIdAttribute: use.testIdAttribute,
+    };
   }
 
   private _serializeSuite(suite: reporterTypes.Suite): teleReceiver.JsonSuite {
     const result = {
       title: suite.title,
       location: this._relativeLocation(suite.location),
-      suites: suite.suites.map(s => this._serializeSuite(s)),
-      tests: suite.tests.map(t => this._serializeTest(t)),
+      entries: suite.entries().map(e => {
+        if (e.type === 'test')
+          return this._serializeTest(e);
+        return this._serializeSuite(e);
+      })
     };
     return result;
   }
@@ -203,12 +217,13 @@ export class TeleReporterEmitter implements ReporterV2 {
       retries: test.retries,
       tags: test.tags,
       repeatEachIndex: test.repeatEachIndex,
+      annotations: this._relativeAnnotationLocations(test.annotations),
     };
   }
 
   private _serializeResultStart(result: reporterTypes.TestResult): teleReceiver.JsonTestResultStart {
     return {
-      id: (result as any)[idSymbol],
+      id: (result as any)[this._idSymbol],
       retry: result.retry,
       workerIndex: result.workerIndex,
       parallelIndex: result.parallelIndex,
@@ -218,11 +233,12 @@ export class TeleReporterEmitter implements ReporterV2 {
 
   private _serializeResultEnd(result: reporterTypes.TestResult): teleReceiver.JsonTestResultEnd {
     return {
-      id: (result as any)[idSymbol],
+      id: (result as any)[this._idSymbol],
       duration: result.duration,
       status: result.status,
       errors: result.errors,
       attachments: this._serializeAttachments(result.attachments),
+      annotations: result.annotations?.length ? this._relativeAnnotationLocations(result.annotations) : undefined,
     };
   }
 
@@ -238,8 +254,8 @@ export class TeleReporterEmitter implements ReporterV2 {
 
   private _serializeStepStart(step: reporterTypes.TestStep): teleReceiver.JsonTestStepStart {
     return {
-      id: (step as any)[idSymbol],
-      parentStepId: (step.parent as any)?.[idSymbol],
+      id: (step as any)[this._idSymbol],
+      parentStepId: (step.parent as any)?.[this._idSymbol],
       title: step.title,
       category: step.category,
       startTime: +step.startTime,
@@ -247,12 +263,22 @@ export class TeleReporterEmitter implements ReporterV2 {
     };
   }
 
-  private _serializeStepEnd(step: reporterTypes.TestStep): teleReceiver.JsonTestStepEnd {
+  private _serializeStepEnd(step: reporterTypes.TestStep, result: reporterTypes.TestResult): teleReceiver.JsonTestStepEnd {
     return {
-      id: (step as any)[idSymbol],
+      id: (step as any)[this._idSymbol],
       duration: step.duration,
       error: step.error,
+      attachments: step.attachments.length ? step.attachments.map(a => result.attachments.indexOf(a)) : undefined,
+      annotations: step.annotations.length ? this._relativeAnnotationLocations(step.annotations) : undefined,
     };
+  }
+
+  private _relativeAnnotationLocations(annotations: TestAnnotation[]): TestAnnotation[] {
+    return annotations.map(annotation => {
+      if (annotation.location)
+        annotation.location = this._relativeLocation(annotation.location);
+      return annotation;
+    });
   }
 
   private _relativeLocation(location: reporterTypes.Location): reporterTypes.Location;
@@ -274,5 +300,3 @@ export class TeleReporterEmitter implements ReporterV2 {
     return path.relative(this._rootDir, absolutePath);
   }
 }
-
-const idSymbol = Symbol('id');

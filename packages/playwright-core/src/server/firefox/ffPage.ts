@@ -15,27 +15,28 @@
  * limitations under the License.
  */
 
+import { eventsHelper } from '../utils/eventsHelper';
 import * as dialog from '../dialog';
 import * as dom from '../dom';
-import type * as frames from '../frames';
-import type { RegisteredListener } from '../../utils/eventsHelper';
-import { eventsHelper } from '../../utils/eventsHelper';
-import type { PageBinding, PageDelegate } from '../page';
+import { InitScript } from '../page';
 import { Page, Worker } from '../page';
-import type * as types from '../types';
 import { getAccessibilityTree } from './ffAccessibility';
-import type { FFBrowserContext } from './ffBrowser';
 import { FFSession } from './ffConnection';
-import { FFExecutionContext } from './ffExecutionContext';
+import { createHandle, FFExecutionContext } from './ffExecutionContext';
 import { RawKeyboardImpl, RawMouseImpl, RawTouchscreenImpl } from './ffInput';
 import { FFNetworkManager } from './ffNetworkManager';
-import type { Protocol } from './protocol';
-import type { Progress } from '../progress';
-import { splitErrorMessage } from '../../utils/stackTrace';
-import { debugLogger } from '../../utils/debugLogger';
-import { ManualPromise } from '../../utils/manualPromise';
+import { debugLogger } from '../utils/debugLogger';
+import { splitErrorMessage } from '../../utils/isomorphic/stackTrace';
 import { BrowserContext } from '../browserContext';
 import { TargetClosedError } from '../errors';
+
+import type { Progress } from '../progress';
+import type { FFBrowserContext } from './ffBrowser';
+import type { Protocol } from './protocol';
+import type { RegisteredListener } from '../utils/eventsHelper';
+import type * as frames from '../frames';
+import type { PageDelegate } from '../page';
+import type * as types from '../types';
 
 export const UTILITY_WORLD_NAME = '__playwright_utility_world__';
 
@@ -48,15 +49,13 @@ export class FFPage implements PageDelegate {
   readonly _page: Page;
   readonly _networkManager: FFNetworkManager;
   readonly _browserContext: FFBrowserContext;
-  private _pagePromise = new ManualPromise<Page | Error>();
-  _initializedPage: Page | null = null;
-  private _initializationFailed = false;
+  private _reportedAsNew = false;
   readonly _opener: FFPage | null;
   private readonly _contextIdToContext: Map<string, dom.FrameExecutionContext>;
   private _eventListeners: RegisteredListener[];
   private _workers = new Map<string, { frameId: string, session: FFSession }>();
   private _screencastId: string | undefined;
-  private _initScripts: { script: string, worldName?: string }[] = [];
+  private _initScripts: { initScript: InitScript, worldName?: string }[] = [];
 
   constructor(session: FFSession, browserContext: FFBrowserContext, opener: FFPage | null) {
     this._session = session;
@@ -101,40 +100,23 @@ export class FFPage implements PageDelegate {
       eventsHelper.addEventListener(this._session, 'Page.screencastFrame', this._onScreencastFrame.bind(this)),
 
     ];
-    this._session.once('Page.ready', async () => {
-      await this._page.initOpener(this._opener);
-      if (this._initializationFailed)
+    this._session.once('Page.ready', () => {
+      if (this._reportedAsNew)
         return;
-      // Note: it is important to call |reportAsNew| before resolving pageOrError promise,
-      // so that anyone who awaits pageOrError got a ready and reported page.
-      this._initializedPage = this._page;
-      this._page.reportAsNew();
-      this._pagePromise.resolve(this._page);
+      this._reportedAsNew = true;
+      this._page.reportAsNew(this._opener?._page);
     });
     // Ideally, we somehow ensure that utility world is created before Page.ready arrives, but currently it is racy.
     // Therefore, we can end up with an initialized page without utility world, although very unlikely.
-    this.addInitScript('', UTILITY_WORLD_NAME).catch(e => this._markAsError(e));
-  }
-
-  potentiallyUninitializedPage(): Page {
-    return this._page;
+    this.addInitScript(new InitScript('', true), UTILITY_WORLD_NAME).catch(e => this._markAsError(e));
   }
 
   async _markAsError(error: Error) {
-    // Same error may be report twice: channer disconnected and session.send fails.
-    if (this._initializationFailed)
+    // Same error may be reported twice: channel disconnected and session.send fails.
+    if (this._reportedAsNew)
       return;
-    this._initializationFailed = true;
-
-    if (!this._initializedPage) {
-      await this._page.initOpener(this._opener);
-      this._page.reportAsNew(error);
-      this._pagePromise.resolve(error);
-    }
-  }
-
-  async pageOrError(): Promise<Page | Error> {
-    return this._pagePromise;
+    this._reportedAsNew = true;
+    this._page.reportAsNew(this._opener?._page, error);
   }
 
   _onWebSocketCreated(event: Protocol.Page.webSocketCreatedPayload) {
@@ -168,7 +150,6 @@ export class FFPage implements PageDelegate {
     else if (!auxData.name)
       worldName = 'main';
     const context = new dom.FrameExecutionContext(delegate, frame, worldName);
-    (context as any)[contextDelegateSymbol] = delegate;
     if (worldName)
       frame._contextCreated(worldName, context);
     this._contextIdToContext.set(executionContextId, context);
@@ -251,7 +232,8 @@ export class FFPage implements PageDelegate {
     const context = this._contextIdToContext.get(executionContextId);
     if (!context)
       return;
-    this._page._addConsoleMessage(type, args.map(arg => context.createHandle(arg)), location);
+    // Juggler reports 'warn' for some internal messages generated by the browser.
+    this._page._addConsoleMessage(type === 'warn' ? 'warning' : type, args.map(arg => createHandle(context, arg)), location);
   }
 
   _onDialogOpened(params: Protocol.Page.dialogOpenedPayload) {
@@ -266,7 +248,7 @@ export class FFPage implements PageDelegate {
   }
 
   async _onBindingCalled(event: Protocol.Page.bindingCalledPayload) {
-    const pageOrError = await this.pageOrError();
+    const pageOrError = await this._page.waitForInitializedOrError();
     if (!(pageOrError instanceof Error)) {
       const context = this._contextIdToContext.get(event.executionContextId);
       if (context)
@@ -279,7 +261,7 @@ export class FFPage implements PageDelegate {
     const context = this._contextIdToContext.get(executionContextId);
     if (!context)
       return;
-    const handle = context.createHandle(element).asElement()!;
+    const handle = createHandle(context, element).asElement()!;
     await this._page._onFileChooserOpened(handle);
   }
 
@@ -303,7 +285,7 @@ export class FFPage implements PageDelegate {
     workerSession.on('Runtime.console', event => {
       const { type, args, location } = event;
       const context = worker._existingExecutionContext!;
-      this._page._addConsoleMessage(type, args.map(arg => context.createHandle(arg)), location);
+      this._page._addConsoleMessage(type, args.map(arg => createHandle(context, arg)), location);
     });
     // Note: we receive worker exceptions directly from the page.
   }
@@ -331,15 +313,7 @@ export class FFPage implements PageDelegate {
   }
 
   _onVideoRecordingStarted(event: Protocol.Page.videoRecordingStartedPayload) {
-    this._browserContext._browser._videoStarted(this._browserContext, event.screencastId, event.file, this.pageOrError());
-  }
-
-  async exposeBinding(binding: PageBinding) {
-    await this._session.send('Page.addBinding', { name: binding.name, script: binding.source });
-  }
-
-  async removeExposedBindings() {
-    // TODO: implement me.
+    this._browserContext._browser._videoStarted(this._browserContext, event.screencastId, event.file, this._page.waitForInitializedOrError());
   }
 
   didClose() {
@@ -373,12 +347,14 @@ export class FFPage implements PageDelegate {
     const colorScheme = emulatedMedia.colorScheme === 'no-override' ? undefined : emulatedMedia.colorScheme;
     const reducedMotion = emulatedMedia.reducedMotion === 'no-override' ? undefined : emulatedMedia.reducedMotion;
     const forcedColors = emulatedMedia.forcedColors === 'no-override' ? undefined : emulatedMedia.forcedColors;
+    const contrast = emulatedMedia.contrast === 'no-override' ? undefined : emulatedMedia.contrast;
     await this._session.send('Page.setEmulatedMedia', {
       // Empty string means reset.
       type: emulatedMedia.media === 'no-override' ? '' : emulatedMedia.media,
       colorScheme,
       reducedMotion,
       forcedColors,
+      contrast,
     });
   }
 
@@ -405,14 +381,18 @@ export class FFPage implements PageDelegate {
     return success;
   }
 
-  async addInitScript(script: string, worldName?: string): Promise<void> {
-    this._initScripts.push({ script, worldName });
-    await this._session.send('Page.setInitScripts', { scripts: this._initScripts });
+  async requestGC(): Promise<void> {
+    await this._session.send('Heap.collectGarbage');
   }
 
-  async removeInitScripts() {
-    this._initScripts = [];
-    await this._session.send('Page.setInitScripts', { scripts: [] });
+  async addInitScript(initScript: InitScript, worldName?: string): Promise<void> {
+    this._initScripts.push({ initScript, worldName });
+    await this._session.send('Page.setInitScripts', { scripts: this._initScripts.map(s => ({ script: s.initScript.source, worldName: s.worldName })) });
+  }
+
+  async removeNonInternalInitScripts() {
+    this._initScripts = this._initScripts.filter(s => s.initScript.internal);
+    await this._session.send('Page.setInitScripts', { scripts: this._initScripts.map(s => ({ script: s.initScript.source, worldName: s.worldName })) });
   }
 
   async closePage(runBeforeUnload: boolean): Promise<void> {
@@ -460,10 +440,6 @@ export class FFPage implements PageDelegate {
       objectId: handle._objectId
     });
     return ownerFrameId || null;
-  }
-
-  isElementHandle(remoteObject: any): boolean {
-    return remoteObject.subtype === 'node';
   }
 
   async getBoundingBox(handle: dom.ElementHandle): Promise<types.Rect | null> {
@@ -538,11 +514,6 @@ export class FFPage implements PageDelegate {
     return result.quads.map(quad => [quad.p1, quad.p2, quad.p3, quad.p4]);
   }
 
-  async setInputFiles(handle: dom.ElementHandle<HTMLInputElement>, files: types.FilePayload[]): Promise<void> {
-    await handle.evaluateInUtility(([injected, node, files]) =>
-      injected.setInputFiles(node, files), files);
-  }
-
   async setInputFilePaths(handle: dom.ElementHandle<HTMLInputElement>, files: string[]): Promise<void> {
     await this._session.send('Page.setFileInputFiles', {
       frameId: handle._context.frame._id,
@@ -555,11 +526,11 @@ export class FFPage implements PageDelegate {
     const result = await this._session.send('Page.adoptNode', {
       frameId: handle._context.frame._id,
       objectId: handle._objectId,
-      executionContextId: ((to as any)[contextDelegateSymbol] as FFExecutionContext)._executionContextId
+      executionContextId: (to.delegate as FFExecutionContext)._executionContextId
     });
     if (!result.remoteObject)
       throw new Error(dom.kUnableToAdoptErrorMessage);
-    return to.createHandle(result.remoteObject) as dom.ElementHandle<T>;
+    return createHandle(to, result.remoteObject) as dom.ElementHandle<T>;
   }
 
   async getAccessibilityTree(needle?: dom.ElementHandle) {
@@ -584,11 +555,11 @@ export class FFPage implements PageDelegate {
     const context = await parent._mainContext();
     const result = await this._session.send('Page.adoptNode', {
       frameId: frame._id,
-      executionContextId: ((context as any)[contextDelegateSymbol] as FFExecutionContext)._executionContextId
+      executionContextId: (context.delegate as FFExecutionContext)._executionContextId
     });
     if (!result.remoteObject)
       throw new Error('Frame has been detached.');
-    return context.createHandle(result.remoteObject) as dom.ElementHandle;
+    return createHandle(context, result.remoteObject) as dom.ElementHandle;
   }
 
   shouldToggleStyleSheetToSyncAnimations(): boolean {
@@ -599,5 +570,3 @@ export class FFPage implements PageDelegate {
 function webSocketId(frameId: string, wsid: string): string {
   return `${frameId}---${wsid}`;
 }
-
-const contextDelegateSymbol = Symbol('delegate');

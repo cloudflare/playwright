@@ -17,10 +17,10 @@
 import type { SerializedValue } from '@protocol/channels';
 
 export function parseSerializedValue(value: SerializedValue, handles: any[] | undefined): any {
-  return innerParseSerializedValue(value, handles, new Map());
+  return innerParseSerializedValue(value, handles, new Map(), []);
 }
 
-function innerParseSerializedValue(value: SerializedValue, handles: any[] | undefined, refs: Map<number, object>): any {
+function innerParseSerializedValue(value: SerializedValue, handles: any[] | undefined, refs: Map<number, object>, accessChain: Array<string | number>): any {
   if (value.ref !== undefined)
     return refs.get(value.ref);
   if (value.n !== undefined)
@@ -49,21 +49,31 @@ function innerParseSerializedValue(value: SerializedValue, handles: any[] | unde
     return new URL(value.u);
   if (value.bi !== undefined)
     return BigInt(value.bi);
+  if (value.e !== undefined) {
+    const error = new Error(value.e.m);
+    error.name = value.e.n;
+    error.stack = value.e.s;
+    return error;
+  }
   if (value.r !== undefined)
     return new RegExp(value.r.p, value.r.f);
+  if (value.ta !== undefined) {
+    const ctor = typedArrayKindToConstructor[value.ta.k] as any;
+    return new ctor(value.ta.b.buffer, value.ta.b.byteOffset, value.ta.b.length / ctor.BYTES_PER_ELEMENT);
+  }
 
   if (value.a !== undefined) {
     const result: any[] = [];
     refs.set(value.id!, result);
-    for (const v of value.a)
-      result.push(innerParseSerializedValue(v, handles, refs));
+    for (let i = 0; i < value.a.length; i++)
+      result.push(innerParseSerializedValue(value.a[i], handles, refs, [...accessChain, i]));
     return result;
   }
   if (value.o !== undefined) {
     const result: any = {};
     refs.set(value.id!, result);
     for (const { k, v } of value.o)
-      result[k] = innerParseSerializedValue(v, handles, refs);
+      result[k] = innerParseSerializedValue(v, handles, refs, [...accessChain, k]);
     return result;
   }
   if (value.h !== undefined) {
@@ -71,7 +81,7 @@ function innerParseSerializedValue(value: SerializedValue, handles: any[] | unde
       throw new Error('Unexpected handle');
     return handles[value.h];
   }
-  throw new Error('Unexpected value');
+  throw new Error(`Attempting to deserialize unexpected value${accessChainToDisplayString(accessChain)}: ${value}`);
 }
 
 export type HandleOrValue = { h: number } | { fallThrough: any };
@@ -81,10 +91,10 @@ type VisitorInfo = {
 };
 
 export function serializeValue(value: any, handleSerializer: (value: any) => HandleOrValue): SerializedValue {
-  return innerSerializeValue(value, handleSerializer, { lastId: 0, visited: new Map() });
+  return innerSerializeValue(value, handleSerializer, { lastId: 0, visited: new Map() }, []);
 }
 
-function innerSerializeValue(value: any, handleSerializer: (value: any) => HandleOrValue, visitorInfo: VisitorInfo): SerializedValue {
+function innerSerializeValue(value: any, handleSerializer: (value: any) => HandleOrValue, visitorInfo: VisitorInfo, accessChain: Array<string | number>): SerializedValue {
   const handle = handleSerializer(value);
   if ('fallThrough' in handle)
     value = handle.fallThrough;
@@ -113,20 +123,18 @@ function innerSerializeValue(value: any, handleSerializer: (value: any) => Handl
     return { s: value };
   if (typeof value === 'bigint')
     return { bi: value.toString() };
-  if (isError(value)) {
-    const error = value;
-    if ('captureStackTrace' in globalThis.Error) {
-      // v8
-      return { s: error.stack || '' };
-    }
-    return { s: `${error.name}: ${error.message}\n${error.stack}` };
-  }
+  if (isError(value))
+    return { e: { n: value.name, m: value.message, s: value.stack || '' } };
   if (isDate(value))
     return { d: value.toJSON() };
   if (isURL(value))
     return { u: value.toJSON() };
   if (isRegExp(value))
     return { r: { p: value.source, f: value.flags } };
+
+  const typedArrayKind = constructorToTypedArrayKind.get(value.constructor);
+  if (typedArrayKind)
+    return { ta: { b: Buffer.from(value.buffer, value.byteOffset, value.byteLength), k: typedArrayKind } };
 
   const id = visitorInfo.visited.get(value);
   if (id)
@@ -137,7 +145,7 @@ function innerSerializeValue(value: any, handleSerializer: (value: any) => Handl
     const id = ++visitorInfo.lastId;
     visitorInfo.visited.set(value, id);
     for (let i = 0; i < value.length; ++i)
-      a.push(innerSerializeValue(value[i], handleSerializer, visitorInfo));
+      a.push(innerSerializeValue(value[i], handleSerializer, visitorInfo, [...accessChain, i]));
     return { a, id };
   }
   if (typeof value === 'object') {
@@ -145,10 +153,21 @@ function innerSerializeValue(value: any, handleSerializer: (value: any) => Handl
     const id = ++visitorInfo.lastId;
     visitorInfo.visited.set(value, id);
     for (const name of Object.keys(value))
-      o.push({ k: name, v: innerSerializeValue(value[name], handleSerializer, visitorInfo) });
+      o.push({ k: name, v: innerSerializeValue(value[name], handleSerializer, visitorInfo, [...accessChain, name]) });
     return { o, id };
   }
-  throw new Error('Unexpected value');
+  // Likely only functions can reach here.
+  throw new Error(`Attempting to serialize unexpected value${accessChainToDisplayString(accessChain)}: ${value}`);
+}
+
+function accessChainToDisplayString(accessChain: Array<string | number>): string {
+  const chainString = accessChain.map((accessor, i) => {
+    if (typeof accessor === 'string')
+      return i ? `.${accessor}` : accessor;
+    return `[${accessor}]`;
+  }).join('');
+
+  return chainString.length > 0 ? ` at position "${chainString}"` : '';
 }
 
 function isRegExp(obj: any): obj is RegExp {
@@ -167,3 +186,20 @@ function isError(obj: any): obj is Error {
   const proto = obj ? Object.getPrototypeOf(obj) : null;
   return obj instanceof Error || proto?.name === 'Error' || (proto && isError(proto));
 }
+
+
+type TypedArrayKind = NonNullable<SerializedValue['ta']>['k'];
+const typedArrayKindToConstructor: Record<TypedArrayKind, Function> = {
+  i8: Int8Array,
+  ui8: Uint8Array,
+  ui8c: Uint8ClampedArray,
+  i16: Int16Array,
+  ui16: Uint16Array,
+  i32: Int32Array,
+  ui32: Uint32Array,
+  f32: Float32Array,
+  f64: Float64Array,
+  bi64: BigInt64Array,
+  bui64: BigUint64Array,
+};
+const constructorToTypedArrayKind: Map<Function, TypedArrayKind> = new Map(Object.entries(typedArrayKindToConstructor).map(([k, v]) => [v, k as TypedArrayKind]));
