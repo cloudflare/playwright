@@ -1,8 +1,18 @@
 # Playwright for Cloudflare Workers
 
-## Capabilities
+### 🚧 Currently Unsupported (Work in Progress)
 
-### Playwright support on Cloudflare Workers, check [tests results](https://1d1e6337.playwright-reports-3id.pages.dev/) for an up to date list of the features that are fully supproted 
+The following capabilities are **not yet supported**, but we’re actively working on them.  
+This is **not an exhaustive list** — expect rapid changes as we work toward broader parity with the original feature set.
+
+- [API Testing](https://playwright.dev/docs/api-testing)
+- [Playwright Test](https://playwright.dev/docs/test-configuration) except [Assertions](https://playwright.dev/docs/test-assertions)
+- [Components](https://playwright.dev/docs/test-components)
+- [Firefox](https://playwright.dev/docs/api/class-playwright#playwright-firefox), [Android](https://playwright.dev/docs/api/class-android) and [Electron](https://playwright.dev/docs/api/class-electron), as well as different versions of Chrome
+- [Network](https://playwright.dev/docs/next/network#network)
+- [Videos](https://playwright.dev/docs/next/videos)
+
+### You can also check [latest test results](https://playwright-full-test-report.pages.dev/) for a granular up to date list of the features that are fully supported 
 
 
 ## Getting Started
