@@ -64,13 +64,20 @@ export class TestServerConnection implements TestServerInterface, TestServerInte
     });
     const pingInterval = setInterval(() => this._sendMessage('ping').catch(() => {}), 30000);
     this._connectedPromise = new Promise<void>((f, r) => {
-      this._ws.addEventListener('open', () => f());
+      this._ws.addEventListener('open', () => {
+        f();
+        this._ws.send(JSON.stringify({ id: -1, method: 'ready' }));
+      });
       this._ws.addEventListener('error', r);
     });
     this._ws.addEventListener('close', () => {
       this._onCloseEmitter.fire();
       clearInterval(pingInterval);
     });
+  }
+
+  connect() {
+    return this._connectedPromise;
   }
 
   private async _sendMessage(method: string, params?: any): Promise<any> {
@@ -103,16 +110,16 @@ export class TestServerConnection implements TestServerInterface, TestServerInte
       this._onLoadTraceRequestedEmitter.fire(params);
   }
 
-  async initialize(params: Parameters<TestServerInterface['initialize']>[0]): ReturnType<TestServerInterface['initialize']> {
-    await this._sendMessage('initialize', params);
+  async setSerializer(params: { serializer: string; }): Promise<void> {
+    await this._sendMessage('setSerializer', params);
   }
 
   async ping(params: Parameters<TestServerInterface['ping']>[0]): ReturnType<TestServerInterface['ping']> {
-    await this._sendMessage('ping', params);
+    await this._sendMessage('ping');
   }
 
   async pingNoReply(params: Parameters<TestServerInterface['ping']>[0]) {
-    this._sendMessageNoReply('ping', params);
+    this._sendMessageNoReply('ping');
   }
 
   async watch(params: Parameters<TestServerInterface['watch']>[0]): ReturnType<TestServerInterface['watch']> {
@@ -121,6 +128,10 @@ export class TestServerConnection implements TestServerInterface, TestServerInte
 
   watchNoReply(params: Parameters<TestServerInterface['watch']>[0]) {
     this._sendMessageNoReply('watch', params);
+  }
+
+  async watchTestDir(params: Parameters<TestServerInterface['watchTestDir']>[0]): ReturnType<TestServerInterface['watchTestDir']> {
+    await this._sendMessage('watchTestDir', params);
   }
 
   async open(params: Parameters<TestServerInterface['open']>[0]): ReturnType<TestServerInterface['open']> {
@@ -140,19 +151,19 @@ export class TestServerConnection implements TestServerInterface, TestServerInte
   }
 
   async checkBrowsers(params: Parameters<TestServerInterface['checkBrowsers']>[0]): ReturnType<TestServerInterface['checkBrowsers']> {
-    return await this._sendMessage('checkBrowsers', params);
+    return await this._sendMessage('checkBrowsers');
   }
 
   async installBrowsers(params: Parameters<TestServerInterface['installBrowsers']>[0]): ReturnType<TestServerInterface['installBrowsers']> {
-    await this._sendMessage('installBrowsers', params);
+    await this._sendMessage('installBrowsers');
   }
 
   async runGlobalSetup(params: Parameters<TestServerInterface['runGlobalSetup']>[0]): ReturnType<TestServerInterface['runGlobalSetup']> {
-    return await this._sendMessage('runGlobalSetup', params);
+    return await this._sendMessage('runGlobalSetup');
   }
 
   async runGlobalTeardown(params: Parameters<TestServerInterface['runGlobalTeardown']>[0]): ReturnType<TestServerInterface['runGlobalTeardown']> {
-    return await this._sendMessage('runGlobalTeardown', params);
+    return await this._sendMessage('runGlobalTeardown');
   }
 
   async listFiles(params: Parameters<TestServerInterface['listFiles']>[0]): ReturnType<TestServerInterface['listFiles']> {
@@ -172,21 +183,14 @@ export class TestServerConnection implements TestServerInterface, TestServerInte
   }
 
   async stopTests(params: Parameters<TestServerInterface['stopTests']>[0]): ReturnType<TestServerInterface['stopTests']> {
-    await this._sendMessage('stopTests', params);
+    await this._sendMessage('stopTests');
   }
 
   stopTestsNoReply(params: Parameters<TestServerInterface['stopTests']>[0]) {
-    this._sendMessageNoReply('stopTests', params);
+    this._sendMessageNoReply('stopTests');
   }
 
   async closeGracefully(params: Parameters<TestServerInterface['closeGracefully']>[0]): ReturnType<TestServerInterface['closeGracefully']> {
-    await this._sendMessage('closeGracefully', params);
-  }
-
-  close() {
-    try {
-      this._ws.close();
-    } catch {
-    }
+    await this._sendMessage('closeGracefully');
   }
 }

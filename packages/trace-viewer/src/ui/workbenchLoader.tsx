@@ -93,7 +93,6 @@ export const WorkbenchLoader: React.FunctionComponent<{
         setDragOver(false);
         setProcessingErrorMessage(null);
       });
-      testServerConnection.initialize({}).catch(() => {});
     } else if (!newTraceURLs.some(url => url.startsWith('blob:'))) {
       // Don't re-use blob file URLs on page load (results in Fetch error)
       setTraceURLs(newTraceURLs);

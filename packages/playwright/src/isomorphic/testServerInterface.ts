@@ -21,18 +21,15 @@ import type { JsonEvent } from './teleReceiver';
 export type ReportEntry = JsonEvent;
 
 export interface TestServerInterface {
-  initialize(params: {
-    serializer?: string,
-    closeOnDisconnect?: boolean,
-    interceptStdio?: boolean,
-    watchTestDirs?: boolean,
-  }): Promise<void>;
+  setSerializer(params: { serializer: string }): Promise<void>;
 
   ping(params: {}): Promise<void>;
 
   watch(params: {
     fileNames: string[];
   }): Promise<void>;
+
+  watchTestDir(params: {}): Promise<void>;
 
   open(params: { location: reporterTypes.Location }): Promise<void>;
 

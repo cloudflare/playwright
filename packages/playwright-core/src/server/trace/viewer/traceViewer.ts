@@ -222,13 +222,14 @@ class StdinServer implements Transport {
   }
 
   async dispatch(method: string, params: any) {
-    if (method === 'initialize') {
+    if (method === 'ready') {
       if (this._traceUrl)
         this._loadTrace(this._traceUrl);
     }
   }
 
   onclose() {
+    gracefullyProcessExitDoNotHang(0);
   }
 
   sendEvent?: (method: string, params: any) => void;

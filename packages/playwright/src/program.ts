@@ -169,8 +169,6 @@ async function runTests(args: string[], opts: { [key: string]: any }) {
       timeout: cliOverrides.timeout,
     });
     await stopProfiling('runner');
-    if (status === 'restarted')
-      return;
     const exitCode = status === 'interrupted' ? 130 : (status === 'passed' ? 0 : 1);
     gracefullyProcessExitDoNotHang(exitCode);
     return;
@@ -202,8 +200,6 @@ async function runTestServer(opts: { [key: string]: any }) {
   const host = opts.host || 'localhost';
   const port = opts.port ? +opts.port : 0;
   const status = await testServer.runTestServer(opts.config, { host, port });
-  if (status === 'restarted')
-    return;
   const exitCode = status === 'interrupted' ? 130 : (status === 'passed' ? 0 : 1);
   gracefullyProcessExitDoNotHang(exitCode);
 }

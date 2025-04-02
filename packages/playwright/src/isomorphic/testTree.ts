@@ -295,7 +295,20 @@ export class TestTree {
   }
 
   collectTestIds(treeItem?: TreeItem): Set<string> {
-    return treeItem ? collectTestIds(treeItem) : new Set();
+    const testIds = new Set<string>();
+    if (!treeItem)
+      return testIds;
+
+    const visit = (treeItem: TreeItem) => {
+      if (treeItem.kind === 'case')
+        treeItem.tests.map(t => t.id).forEach(id => testIds.add(id));
+      else if (treeItem.kind === 'test')
+        testIds.add(treeItem.id);
+      else
+        treeItem.children?.forEach(visit);
+    };
+    visit(treeItem);
+    return testIds;
   }
 }
 
@@ -334,20 +347,6 @@ export function sortAndPropagateStatus(treeItem: TreeItem) {
     treeItem.status = 'skipped';
   else if (allPassed)
     treeItem.status = 'passed';
-}
-
-export function collectTestIds(treeItem: TreeItem): Set<string> {
-  const testIds = new Set<string>();
-  const visit = (treeItem: TreeItem) => {
-    if (treeItem.kind === 'case')
-      treeItem.tests.map(t => t.id).forEach(id => testIds.add(id));
-    else if (treeItem.kind === 'test')
-      testIds.add(treeItem.id);
-    else
-      treeItem.children?.forEach(visit);
-  };
-  visit(treeItem);
-  return testIds;
 }
 
 export const statusEx = Symbol('statusEx');
