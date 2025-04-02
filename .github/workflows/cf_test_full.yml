@@ -95,3 +95,16 @@ jobs:
           name: playwright-report--attempt-${{ github.run_attempt }}
           path: packages/playwright-cloudflare/tests/playwright-report
           retention-days: 14
+
+      - name: Download HTML artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-report--attempt-${{ github.run_attempt }}
+          path: report 
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy to Cloudflare Pages
+        run: wrangler pages deploy report/packages/playwright-cloudflare/tests/playwright-report --project-name playwright-full-test-report
+
