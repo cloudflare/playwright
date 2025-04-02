@@ -206,40 +206,13 @@ export const skipTests: string[][] = [
   ["page/page-event-network.spec.ts", "Page.Events.RequestFailed @smoke"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-event-network.spec.ts", "should support redirects"], // Error: TypeError: server.setRedirect is not a function
   ["page/page-event-network.spec.ts", "interrupt request.response() and request.allHeaders() on page.close"], // Error: Error: expect(received).toContain(expected) // indexOf
-  ["page/page-event-popup.spec.ts", "should not treat navigations as new popups"], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
-  ["page/page-event-popup.spec.ts", "should be able to capture alert"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should emit for immediately closed popups 2"], // Error: Test timeout of 5000ms exceeded.
-  ["page/page-event-popup.spec.ts", "should report popup opened from iframes"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should work with clicking target=_blank and rel=noopener"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should work with clicking target=_blank"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should work with empty url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should work with fake-clicking target=_blank and rel=noopener"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should work with noopener and about:blank"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should work with noopener and no url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
-  ["page/page-event-popup.spec.ts", "should work with noopener and url"], // Error: Error: browser.newContext: Target page, context or browser has been closed
+  ["page/page-event-popup.spec.ts", "should not treat navigations as new popups"],
   ["page/page-event-request.spec.ts", "should return response body when Cross-Origin-Opener-Policy is set"], // Error: Error: expect(received).toBe(expected) // Object.is equality
-  ["page/page-expose-function.spec.ts", "exposeBinding should work @smoke"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "exposeBinding(handle) should work with element handles"], // Error: Test timeout of 5000ms exceeded.
-  ["page/page-expose-function.spec.ts", "exposeBindingHandle should not throw during navigation"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "exposeBindingHandle should throw for multiple arguments"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "exposeBindingHandle should work"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should alias Window, Document and Node"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should await returned promise"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should be callable from-inside addInitScript"], // Error: Error: expect(received).toBe(expected) // Object.is equality
-  ["page/page-expose-function.spec.ts", "should not result in unhandled rejection"], // Error: Test timeout of 5000ms exceeded.
-  ["page/page-expose-function.spec.ts", "should serialize cycles"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should support throwing \"null\""], // Error: Error: expect(received).toBe(expected) // Object.is equality
-  ["page/page-expose-function.spec.ts", "should survive navigation"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should throw exception in page context"], // Error: Error: expect(received).toBe(expected) // Object.is equality
-  ["page/page-expose-function.spec.ts", "should work after cross origin navigation"], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
-  ["page/page-expose-function.spec.ts", "should work on frames before navigation"], // Error: Error: frame.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should work on frames"], // Error: Error: frame.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should work with busted Array.prototype.map/push"], // Error: Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://test-workers.rui-figueira.workers.dev/test
-  ["page/page-expose-function.spec.ts", "should work with complex objects"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should work with handles and complex objects"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should work with overridden console object"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
-  ["page/page-expose-function.spec.ts", "should work with setContent"], // Error: Error: expect(received).toBe(expected) // Object.is equality
-  ["page/page-expose-function.spec.ts", "should work"], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
+  ["page/page-expose-function.spec.ts", "should throw exception in page context"],
+  ["page/page-expose-function.spec.ts", "should work after cross origin navigation"],
+  ["page/page-expose-function.spec.ts", "should work with busted Array.prototype.map/push"],
+  ["page/page-expose-function.spec.ts", "should work with overridden eval"],
+  ["page/page-expose-function.spec.ts", "should work with deleted Map"],
   ["page/page-fill.spec.ts", "should fill contenteditable"], // Error: Test timeout of 5000ms exceeded.
   ["page/page-focus.spec.ts", "should emit blur event"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/page-focus.spec.ts", "should emit focus event"], // Error: Error: expect(received).toBe(expected) // Object.is equality
