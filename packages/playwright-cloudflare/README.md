@@ -69,7 +69,8 @@ const img = await page.screenshot();
 ### Trace
 
 ```js
-import { launch, fs } from '@cloudflare/playwright';
+import { launch } from '@cloudflare/playwright';
+import fs from "@cloudflare/playwright/fs";
 
 const browser = await launch(env.MYBROWSER);
 const page = await browser.newPage();
