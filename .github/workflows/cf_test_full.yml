@@ -105,8 +105,13 @@ jobs:
           name: playwright-report--attempt-${{ github.run_attempt }}
           path: report 
 
+      - name: Debug report contents
+        run: |
+          echo "🔍 Listing contents of ./report recursively:"
+          ls -R report
+
       - name: Install Wrangler
         run: npm install -g wrangler
 
       - name: Deploy to Cloudflare Pages
-        run: wrangler pages deploy report/packages/playwright-cloudflare/tests/playwright-report --project-name playwright-full-test-report
+        run: wrangler pages deploy report --project-name playwright-full-test-report
