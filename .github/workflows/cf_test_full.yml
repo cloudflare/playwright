@@ -63,6 +63,9 @@ jobs:
   merge-reports:
     if: ${{ !cancelled() }}
     needs: [tests]
+    
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
     runs-on: ubuntu-latest
     steps:
@@ -107,4 +110,3 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         run: wrangler pages deploy report/packages/playwright-cloudflare/tests/playwright-report --project-name playwright-full-test-report
-
