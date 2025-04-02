@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-import { browserTest as it, expect } from '../config/browserTest';
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import type { Page } from 'playwright-core';
-import { spawnSync } from 'child_process';
 import { PNG, jpegjs } from 'playwright-core/lib/utilsBundle';
 import { registry } from '../../packages/playwright-core/lib/server';
-import { rewriteErrorMessage } from '../../packages/playwright-core/lib/utils/stackTrace';
+import { expect, browserTest as it } from '../config/browserTest';
 import { parseTraceRaw } from '../config/utils';
 
 const ffmpeg = registry.findExecutable('ffmpeg')!.executablePath('javascript');
@@ -56,18 +55,11 @@ export class VideoPlayer {
     this.videoHeight = parseInt(resolutionMatch![2], 10);
   }
 
-  seekFirstNonEmptyFrame(offset?: { x: number, y: number }): any | undefined {
+  findFrame(framePredicate: (pixels: Buffer) => boolean, offset?: { x: number, y: number }): any |undefined {
     for (let f = 1; f <= this.frames; ++f) {
       const frame = this.frame(f, offset);
-      let hasColor = false;
-      for (let i = 0; i < frame.data.length; i += 4) {
-        if (frame.data[i + 0] < 230 || frame.data[i + 1] < 230 || frame.data[i + 2] < 230) {
-          hasColor = true;
-          break;
-        }
-      }
-      if (hasColor)
-        return this.frame(f, offset);
+      if (framePredicate(frame.data))
+        return frame;
     }
   }
 
@@ -88,46 +80,52 @@ export class VideoPlayer {
   }
 }
 
-function almostRed(r, g, b, alpha) {
-  expect(r).toBeGreaterThan(185);
-  expect(g).toBeLessThan(70);
-  expect(b).toBeLessThan(70);
-  expect(alpha).toBe(255);
+type Pixel = { r: number, g: number, b: number, alpha: number };
+type PixelPredicate = (pixel: Pixel) => boolean;
+
+function isAlmostRed({ r, g, b, alpha }: Pixel): boolean {
+  return r > 185 && g < 70 && b < 70 && alpha === 255;
 }
 
-function almostBlack(r, g, b, alpha) {
-  expect(r).toBeLessThan(70);
-  expect(g).toBeLessThan(70);
-  expect(b).toBeLessThan(70);
-  expect(alpha).toBe(255);
+function isAlmostBlack({ r, g, b, alpha }: Pixel): boolean {
+  return r < 70 && g < 70 && b < 70 && alpha === 255;
 }
 
-function almostGray(r, g, b, alpha) {
-  expect(r).toBeGreaterThan(70);
-  expect(g).toBeGreaterThan(70);
-  expect(b).toBeGreaterThan(70);
-  expect(r).toBeLessThan(185);
-  expect(g).toBeLessThan(185);
-  expect(b).toBeLessThan(185);
-  expect(alpha).toBe(255);
+function isAlmostGray({ r, g, b, alpha }: Pixel): boolean {
+  return r > 70 && r < 185 &&
+    g > 70 && g < 185 &&
+    b > 70 && b < 185 &&
+    alpha === 255;
 }
 
-function expectAll(pixels: Buffer, rgbaPredicate) {
-  const checkPixel = i => {
-    const r = pixels[i];
-    const g = pixels[i + 1];
-    const b = pixels[i + 2];
-    const alpha = pixels[i + 3];
-    rgbaPredicate(r, g, b, alpha);
-  };
-  try {
-    for (let i = 0, n = pixels.length; i < n; i += 4)
-      checkPixel(i);
-  } catch (e) {
-    // Log pixel values on failure.
-    rewriteErrorMessage(e, e.message + `\n\nActual pixels=[${pixels.join(',')}]`);
-    throw e;
+function findPixel(pixels: Buffer, pixelPredicate: PixelPredicate): Pixel|undefined {
+  for (let i = 0, n = pixels.length; i < n; i += 4) {
+    const pixel = {
+      r: pixels[i],
+      g: pixels[i + 1],
+      b: pixels[i + 2],
+      alpha: pixels[i + 3],
+    };
+    if (pixelPredicate(pixel))
+      return pixel;
   }
+  return undefined;
+}
+
+function everyPixel(pixels: Buffer, pixelPredicate: PixelPredicate) {
+  const badPixel = findPixel(pixels, pixel => !pixelPredicate(pixel));
+  return !badPixel;
+}
+
+function expectAll(pixels: Buffer, pixelPredicate: PixelPredicate) {
+  const badPixel = findPixel(pixels, pixel => !pixelPredicate(pixel));
+  if (!badPixel)
+    return;
+  const rgba = [badPixel.r, badPixel.g, badPixel.b, badPixel.alpha].join(', ');
+  throw new Error([
+    `Expected all pixels to satisfy ${pixelPredicate.name}, found bad pixel (${rgba})`,
+    `Actual pixels=[${pixels.join(',')}]`,
+  ].join('\n'));
 }
 
 function findVideos(videoDir: string) {
@@ -145,11 +143,11 @@ function expectRedFrames(videoFile: string, size: { width: number, height: numbe
 
   {
     const pixels = videoPlayer.seekLastFrame().data;
-    expectAll(pixels, almostRed);
+    expectAll(pixels, isAlmostRed);
   }
   {
     const pixels = videoPlayer.seekLastFrame({ x: size.width - 20, y: 0 }).data;
-    expectAll(pixels, almostRed);
+    expectAll(pixels, isAlmostRed);
   }
 }
 
@@ -199,6 +197,36 @@ it.describe('screencast', () => {
     const page = await context.newPage();
 
     await page.evaluate(() => document.body.style.backgroundColor = 'red');
+    await waitForRafs(page, 100);
+    await context.close();
+
+    const videoFile = await page.video().path();
+    expectRedFrames(videoFile, size);
+  });
+
+  it('should continue recording main page after popup closes', async ({ browser, browserName }, testInfo) => {
+    it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/30837' });
+    // Firefox does not have a mobile variant and has a large minimum size (500 on windows and 450 elsewhere).
+    const size = browserName === 'firefox' ? { width: 500, height: 400 } : { width: 320, height: 240 };
+    const context = await browser.newContext({
+      recordVideo: {
+        dir: testInfo.outputPath(''),
+        size
+      },
+      viewport: size,
+    });
+    const page = await context.newPage();
+    await page.setContent('<a target=_blank href="about:blank">clickme</a>');
+    const [popup] = await Promise.all([
+      page.waitForEvent('popup'),
+      await page.click('a'),
+    ]);
+    await popup.close();
+
+    await page.evaluate(() => {
+      document.body.textContent = ''; // remove link
+      document.body.style.backgroundColor = 'red';
+    });
     await waitForRafs(page, 100);
     await context.close();
 
@@ -369,13 +397,14 @@ it.describe('screencast', () => {
     expect(duration).toBeGreaterThan(0);
 
     {
-      const pixels = videoPlayer.seekFirstNonEmptyFrame().data;
-      expectAll(pixels, almostBlack);
+      // Find a frame with all almost-black pixels.
+      const frame = videoPlayer.findFrame(pixels => everyPixel(pixels, isAlmostBlack));
+      expect(frame).not.toBeUndefined();
     }
 
     {
       const pixels = videoPlayer.seekLastFrame().data;
-      expectAll(pixels, almostGray);
+      expectAll(pixels, isAlmostGray);
     }
   });
 
@@ -405,7 +434,7 @@ it.describe('screencast', () => {
 
     {
       const pixels = videoPlayer.seekLastFrame({ x: 95, y: 45 }).data;
-      expectAll(pixels, almostRed);
+      expectAll(pixels, isAlmostRed);
     }
   });
 
@@ -443,9 +472,9 @@ it.describe('screencast', () => {
     expect(videoFiles.length).toBe(2);
   });
 
-  it('should scale frames down to the requested size ', async ({ browser, browserName, server, headless, trace }, testInfo) => {
-    const isChromiumHeadlessNew = browserName === 'chromium' && !!headless && !!process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW;
-    it.fixme(!headless || isChromiumHeadlessNew, 'Fails on headed');
+  it('should scale frames down to the requested size ', async ({ browser, browserName, server, headless, isHeadlessShell }, testInfo) => {
+    it.fixme(!headless, 'Fails on headed');
+    it.fixme(browserName === 'chromium' && !isHeadlessShell, 'Chromium (but not headless shell) has a min width issue');
 
     const context = await browser.newContext({
       recordVideo: {
@@ -476,19 +505,19 @@ it.describe('screencast', () => {
 
     {
       const pixels = videoPlayer.seekLastFrame({ x: 0, y: 0 }).data;
-      expectAll(pixels, almostRed);
+      expectAll(pixels, isAlmostRed);
     }
     {
       const pixels = videoPlayer.seekLastFrame({ x: 300, y: 0 }).data;
-      expectAll(pixels, almostGray);
+      expectAll(pixels, isAlmostGray);
     }
     {
       const pixels = videoPlayer.seekLastFrame({ x: 0, y: 200 }).data;
-      expectAll(pixels, almostGray);
+      expectAll(pixels, isAlmostGray);
     }
     {
       const pixels = videoPlayer.seekLastFrame({ x: 300, y: 200 }).data;
-      expectAll(pixels, almostRed);
+      expectAll(pixels, isAlmostRed);
     }
   });
 
@@ -573,7 +602,7 @@ it.describe('screencast', () => {
 
     {
       const pixels = videoPlayer.seekLastFrame().data;
-      expectAll(pixels, almostRed);
+      expectAll(pixels, isAlmostRed);
     }
   });
 
@@ -692,9 +721,9 @@ it.describe('screencast', () => {
     expect(files.length).toBe(1);
   });
 
-  it('should capture full viewport', async ({ browserType, browserName, headless, isWindows }, testInfo) => {
+  it('should capture full viewport', async ({ browserType, browserName, isWindows, headless, isHeadlessShell }, testInfo) => {
     it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/22411' });
-    it.fixme(browserName === 'chromium' && (!headless || !!process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW), 'The square is not on the video');
+    it.fixme(browserName === 'chromium' && !isHeadlessShell, 'The square is not on the video');
     it.fixme(browserName === 'firefox' && isWindows, 'https://github.com/microsoft/playwright/issues/14405');
     const size = { width: 600, height: 400 };
     const browser = await browserType.launch();
@@ -724,12 +753,12 @@ it.describe('screencast', () => {
     // Bottom right corner should be part of the red border.
     // However, headed browsers on mac have rounded corners, so offset by 10.
     const pixels = videoPlayer.seekLastFrame({ x: size.width - 20, y: size.height - 20 }).data;
-    expectAll(pixels, almostRed);
+    expectAll(pixels, isAlmostRed);
   });
 
-  it('should capture full viewport on hidpi', async ({ browserType, browserName, headless, isWindows, isLinux }, testInfo) => {
+  it('should capture full viewport on hidpi', async ({ browserType, browserName, headless, isWindows, isLinux, isHeadlessShell }, testInfo) => {
     it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/22411' });
-    it.fixme(browserName === 'chromium' && (!headless || !!process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW), 'The square is not on the video');
+    it.fixme(browserName === 'chromium' && !isHeadlessShell, 'The square is not on the video');
     it.fixme(browserName === 'firefox' && isWindows, 'https://github.com/microsoft/playwright/issues/14405');
     it.fixme(browserName === 'webkit' && isLinux && !headless, 'https://github.com/microsoft/playwright/issues/22617');
     const size = { width: 600, height: 400 };
@@ -761,12 +790,13 @@ it.describe('screencast', () => {
     // Bottom right corner should be part of the red border.
     // However, headed browsers on mac have rounded corners, so offset by 10.
     const pixels = videoPlayer.seekLastFrame({ x: size.width - 20, y: size.height - 20 }).data;
-    expectAll(pixels, almostRed);
+    expectAll(pixels, isAlmostRed);
   });
 
-  it('should work with video+trace', async ({ browser, trace, headless }, testInfo) => {
+  it('should work with video+trace', async ({ browser, trace, headless, browserName, isHeadlessShell }, testInfo) => {
     it.skip(trace === 'on');
-    it.fixme(!headless || !!process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW, 'different trace screencast image size on all browsers');
+    it.fixme(!headless, 'different trace screencast image size on all browsers');
+    it.fixme(browserName === 'chromium' && !isHeadlessShell, 'different trace screencast image size');
 
     const size = { width: 500, height: 400 };
     const traceFile = testInfo.outputPath('trace.zip');
@@ -796,7 +826,13 @@ it.describe('screencast', () => {
     expect(image.width).toBe(size.width);
     expect(image.height).toBe(size.height);
     const offset = size.width * size.height / 2 * 4 + size.width * 4 / 2; // Center should be red.
-    almostRed(image.data.readUInt8(offset), image.data.readUInt8(offset + 1), image.data.readUInt8(offset + 2), image.data.readUInt8(offset + 3));
+    const pixel: Pixel = {
+      r: image.data.readUInt8(offset),
+      g: image.data.readUInt8(offset + 1),
+      b: image.data.readUInt8(offset + 2),
+      alpha: image.data.readUInt8(offset + 3),
+    };
+    expect(isAlmostRed(pixel)).toBe(true);
   });
 });
 
@@ -829,8 +865,8 @@ async function waitForRafs(page: Page, count: number): Promise<void> {
       if (!count)
         resolve();
       else
-        requestAnimationFrame(onRaf);
+        window.builtins.requestAnimationFrame(onRaf);
     };
-    requestAnimationFrame(onRaf);
+    window.builtins.requestAnimationFrame(onRaf);
   }), count);
 }

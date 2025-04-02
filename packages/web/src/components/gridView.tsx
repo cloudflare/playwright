@@ -18,7 +18,7 @@ import * as React from 'react';
 import { ListView } from './listView';
 import type { ListViewProps } from './listView';
 import './gridView.css';
-import { ResizeView } from '@web/shared/resizeView';
+import { ResizeView } from '../shared/resizeView';
 
 export type Sorting<T> = { by: keyof T, negate: boolean };
 
@@ -30,19 +30,34 @@ export type RenderedGridCell = {
 export type GridViewProps<T> = Omit<ListViewProps<T>, 'render'> & {
   columns: (keyof T)[],
   columnTitle: (column: keyof T) => string,
-  columnWidth: (column: keyof T) => number,
+  columnWidths: Map<keyof T, number>,
+  setColumnWidths: (widths: Map<keyof T, number>) => void,
   render: (item: T, column: keyof T, index: number) => RenderedGridCell,
   sorting?: Sorting<T>,
   setSorting?: (sorting: Sorting<T> | undefined) => void,
 };
 
 export function GridView<T>(model: GridViewProps<T>) {
-  const initialOffsets: number[] = [];
-  for (let i = 0; i < model.columns.length - 1; ++i) {
-    const column = model.columns[i];
-    initialOffsets[i] = (initialOffsets[i - 1] || 0) + model.columnWidth(column);
+  const [offsets, setOffsets] = React.useState<number[]>([]);
+
+  React.useEffect(() => {
+    const offsets: number[] = [];
+    for (let i = 0; i < model.columns.length - 1; ++i) {
+      const column = model.columns[i];
+      offsets[i] = (offsets[i - 1] || 0) + model.columnWidths.get(column)!;
+    }
+    setOffsets(offsets);
+  }, [model.columns, model.columnWidths]);
+
+  function updateColumnWidths(offsets: number[]) {
+    const widths = new Map(model.columnWidths.entries());
+    for (let i = 0; i < offsets.length; ++i) {
+      const width = offsets[i] - (offsets[i - 1] || 0);
+      const column = model.columns[i];
+      widths.set(column, width);
+    }
+    model.setColumnWidths(widths);
   }
-  const [offsets, setOffsets] = React.useState<number[]>(initialOffsets);
 
   const toggleSorting = React.useCallback((f: keyof T) => {
     model.setSorting?.({ by: f, negate: model.sorting?.by === f ? !model.sorting.negate : false });
@@ -52,7 +67,7 @@ export function GridView<T>(model: GridViewProps<T>) {
     <ResizeView
       orientation={'horizontal'}
       offsets={offsets}
-      setOffsets={setOffsets}
+      setOffsets={updateColumnWidths}
       resizerColor='var(--vscode-panel-border)'
       resizerWidth={1}
       minColumnWidth={25}>
@@ -61,9 +76,10 @@ export function GridView<T>(model: GridViewProps<T>) {
       <div className='grid-view-header'>
         {model.columns.map((column, i) => {
           return <div
+            key={model.columnTitle(column)}
             className={'grid-view-header-cell ' + sortingHeader(column, model.sorting)}
             style={{
-              width: offsets[i] - (offsets[i - 1] || 0),
+              width: i < model.columns.length - 1 ? model.columnWidths.get(column) : undefined,
             }}
             onClick={() => model.setSorting && toggleSorting(column)}
           >
@@ -82,29 +98,29 @@ export function GridView<T>(model: GridViewProps<T>) {
             {model.columns.map((column, i) => {
               const { body, title } = model.render(item, column, index);
               return <div
+                key={model.columnTitle(column)}
                 className={`grid-view-cell grid-view-column-${String(column)}`}
                 title={title}
-                style={{ width: offsets[i] - (offsets[i - 1] || 0) }}>
+                style={{
+                  width: i < model.columns.length - 1 ? model.columnWidths.get(column) : undefined,
+                }}>
                 {body}
               </div>;
             })}
           </>;
         }}
         icon={model.icon}
-        indent={model.indent}
         isError={model.isError}
         isWarning={model.isWarning}
         isInfo={model.isInfo}
         selectedItem={model.selectedItem}
         onAccepted={model.onAccepted}
         onSelected={model.onSelected}
-        onLeftArrow={model.onLeftArrow}
-        onRightArrow={model.onRightArrow}
         onHighlighted={model.onHighlighted}
         onIconClicked={model.onIconClicked}
         noItemsMessage={model.noItemsMessage}
         dataTestId={model.dataTestId}
-        noHighlightOnHover={model.noHighlightOnHover}
+        notSelectable={model.notSelectable}
       ></ListView>
     </div>
   </div>;

@@ -14,17 +14,20 @@
  * limitations under the License.
  */
 
-import type { Playwright as PlaywrightAPI } from './client/playwright';
-import { createPlaywright, DispatcherConnection, RootDispatcher, PlaywrightDispatcher } from './server';
-import { Connection } from './client/connection';
-import { BrowserServerLauncherImpl } from './browserServerImpl';
 import { AndroidServerLauncherImpl } from './androidServerImpl';
-import type { Language } from './utils/isomorphic/locatorGenerators';
+import { BrowserServerLauncherImpl } from './browserServerImpl';
+import { DispatcherConnection, PlaywrightDispatcher, RootDispatcher, createPlaywright } from './server';
+import { nodePlatform } from './server/utils/nodePlatform';
+import { Connection } from './client/connection';
+import { setPlatformForSelectors } from './client/selectors';
+
+import type { Playwright as PlaywrightAPI } from './client/playwright';
+import type { Language } from './utils';
 
 export function createInProcessPlaywright(): PlaywrightAPI {
   const playwright = createPlaywright({ sdkLanguage: (process.env.PW_LANG_NAME as Language | undefined) || 'javascript' });
-
-  const clientConnection = new Connection(undefined, undefined);
+  setPlatformForSelectors(nodePlatform);
+  const clientConnection = new Connection(nodePlatform);
   clientConnection.useRawBuffers();
   const dispatcherConnection = new DispatcherConnection(true /* local */);
 
@@ -41,6 +44,8 @@ export function createInProcessPlaywright(): PlaywrightAPI {
   playwrightAPI.firefox._serverLauncher = new BrowserServerLauncherImpl('firefox');
   playwrightAPI.webkit._serverLauncher = new BrowserServerLauncherImpl('webkit');
   playwrightAPI._android._serverLauncher = new AndroidServerLauncherImpl();
+  playwrightAPI._bidiChromium._serverLauncher = new BrowserServerLauncherImpl('bidiChromium');
+  playwrightAPI._bidiFirefox._serverLauncher = new BrowserServerLauncherImpl('bidiFirefox');
 
   // Switch to async dispatch after we got Playwright object.
   dispatcherConnection.onmessage = message => setImmediate(() => clientConnection.dispatch(message));

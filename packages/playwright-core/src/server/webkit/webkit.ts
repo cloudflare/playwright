@@ -15,45 +15,47 @@
  * limitations under the License.
  */
 
-import { WKBrowser } from '../webkit/wkBrowser';
-import type { Env } from '../../utils/processLauncher';
 import path from 'path';
+
 import { kBrowserCloseMessageId } from './wkConnection';
+import { wrapInASCIIBox } from '../utils/ascii';
 import { BrowserType, kNoXServerRunningError } from '../browserType';
-import type { ConnectionTransport } from '../transport';
+import { WKBrowser } from '../webkit/wkBrowser';
+
 import type { BrowserOptions } from '../browser';
-import type * as types from '../types';
-import { wrapInASCIIBox } from '../../utils';
 import type { SdkObject } from '../instrumentation';
+import type { Env } from '../utils/processLauncher';
 import type { ProtocolError } from '../protocolError';
+import type { ConnectionTransport } from '../transport';
+import type * as types from '../types';
 
 export class WebKit extends BrowserType {
   constructor(parent: SdkObject) {
     super(parent, 'webkit');
   }
 
-  _connectToTransport(transport: ConnectionTransport, options: BrowserOptions): Promise<WKBrowser> {
+  override connectToTransport(transport: ConnectionTransport, options: BrowserOptions): Promise<WKBrowser> {
     return WKBrowser.connect(this.attribution.playwright, transport, options);
   }
 
-  _amendEnvironment(env: Env, userDataDir: string, executable: string, browserArguments: string[]): Env {
+  override amendEnvironment(env: Env, userDataDir: string, executable: string, browserArguments: string[]): Env {
     return { ...env, CURL_COOKIE_JAR_PATH: path.join(userDataDir, 'cookiejar.db') };
   }
 
-  _doRewriteStartupLog(error: ProtocolError): ProtocolError {
+  override doRewriteStartupLog(error: ProtocolError): ProtocolError {
     if (!error.logs)
       return error;
-    if (error.logs.includes('cannot open display'))
+    if (error.logs.includes('Failed to open display') || error.logs.includes('cannot open display'))
       error.logs = '\n' + wrapInASCIIBox(kNoXServerRunningError, 1);
     return error;
   }
 
-  _attemptToGracefullyCloseBrowser(transport: ConnectionTransport): void {
+  override attemptToGracefullyCloseBrowser(transport: ConnectionTransport): void {
     transport.send({ method: 'Playwright.close', params: {}, id: kBrowserCloseMessageId });
   }
 
-  _defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[] {
-    const { args = [], proxy, headless } = options;
+  override defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): string[] {
+    const { args = [], headless } = options;
     const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir'));
     if (userDataDirArg)
       throw this._createUserDataDirArgMisuseError('--user-data-dir');
@@ -68,6 +70,7 @@ export class WebKit extends BrowserType {
       webkitArguments.push(`--user-data-dir=${userDataDir}`);
     else
       webkitArguments.push(`--no-startup-window`);
+    const proxy = options.proxyOverride || options.proxy;
     if (proxy) {
       if (process.platform === 'darwin') {
         webkitArguments.push(`--proxy=${proxy.server}`);

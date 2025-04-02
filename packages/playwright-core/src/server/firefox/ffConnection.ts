@@ -16,13 +16,16 @@
  */
 
 import { EventEmitter } from 'events';
-import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
-import type { Protocol } from './protocol';
-import type { RecentLogsCollector } from '../../utils/debugLogger';
-import { debugLogger } from '../../utils/debugLogger';
-import type { ProtocolLogger } from '../types';
+
+import { debugLogger } from '../utils/debugLogger';
 import { helper } from '../helper';
 import { ProtocolError } from '../protocolError';
+
+import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from '../transport';
+import type { Protocol } from './protocol';
+import type { RecentLogsCollector } from '../utils/debugLogger';
+import type { ProtocolLogger } from '../types';
+
 
 export const ConnectionEvents = {
   Disconnected: Symbol('Disconnected'),
@@ -77,11 +80,11 @@ export class FFConnection extends EventEmitter {
       session.dispatchMessage(message);
   }
 
-  _onClose() {
+  _onClose(reason?: string) {
     this._closed = true;
     this._transport.onmessage = undefined;
     this._transport.onclose = undefined;
-    this._browserDisconnectedLogs = helper.formatBrowserLogs(this._browserLogsCollector.recentLogs());
+    this._browserDisconnectedLogs = helper.formatBrowserLogs(this._browserLogsCollector.recentLogs(), reason);
     this.rootSession.dispose();
     Promise.resolve().then(() => this.emit(ConnectionEvents.Disconnected));
   }

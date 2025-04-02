@@ -19,13 +19,12 @@ loadEnv({ path: path.join(__dirname, '..', '..', '.env') });
 
 import type { Config, PlaywrightTestOptions, PlaywrightWorkerOptions } from '@playwright/test';
 import * as path from 'path';
-import type { CoverageWorkerOptions } from '../config/coverageFixtures';
 
 process.env.PWPAGE_IMPL = 'webview2';
 
 const outputDir = path.join(__dirname, '..', '..', 'test-results');
 const testDir = path.join(__dirname, '..');
-const config: Config<CoverageWorkerOptions & PlaywrightWorkerOptions & PlaywrightTestOptions> = {
+const config: Config<PlaywrightWorkerOptions & PlaywrightTestOptions> = {
   testDir,
   outputDir,
   timeout: 30000,
@@ -36,6 +35,7 @@ const config: Config<CoverageWorkerOptions & PlaywrightWorkerOptions & Playwrigh
   reporter: process.env.CI ? [
     ['dot'],
     ['json', { outputFile: path.join(outputDir, 'report.json') }],
+    ['blob', { fileName: `${process.env.PWTEST_BOT_NAME}.zip` }],
   ] : 'line',
   projects: [],
   globalSetup: './globalSetup.ts',
@@ -43,7 +43,7 @@ const config: Config<CoverageWorkerOptions & PlaywrightWorkerOptions & Playwrigh
 
 const metadata = {
   platform: process.platform,
-  headful: true,
+  headless: 'headed',
   browserName: 'webview2',
   channel: undefined,
   mode: 'default',
@@ -56,7 +56,7 @@ config.projects.push({
   snapshotPathTemplate: '{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}-chromium{ext}',
   use: {
     browserName: 'chromium',
-    coverageName: 'webview2',
+    headless: false,
   },
   testDir: path.join(testDir, 'page'),
   metadata,

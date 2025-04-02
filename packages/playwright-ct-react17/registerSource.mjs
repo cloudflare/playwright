@@ -40,7 +40,10 @@ function __pwRender(value) {
     if (isJsxComponent(v)) {
       const component = v;
       const props = component.props ? __pwRender(component.props) : {};
+      const key = component.key ? __pwRender(component.key) : undefined;
       const { children, ...propsWithoutChildren } = props;
+      if (key)
+        propsWithoutChildren.key = key;
       const createElementArguments = [propsWithoutChildren];
       if (children)
         createElementArguments.push(children);
@@ -83,6 +86,8 @@ window.playwrightMount = async (component, rootElement, hooksConfig) => {
 window.playwrightUnmount = async rootElement => {
   if (!__pwReactDOM.unmountComponentAtNode(rootElement))
     throw new Error('Component was not mounted');
+
+  __pwRootRegistry.delete(rootElement);
 };
 
 window.playwrightUpdate = async (rootElement, component) => {

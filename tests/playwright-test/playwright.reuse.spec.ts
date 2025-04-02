@@ -85,35 +85,6 @@ test('should not reuse context with video if mode=when-possible', async ({ runIn
   expect(fs.existsSync(testInfo.outputPath('test-results', 'reuse-two', 'video.webm'))).toBeFalsy();
 });
 
-test('should reuse context and disable video if mode=force', async ({ runInlineTest }, testInfo) => {
-  const result = await runInlineTest({
-    'playwright.config.ts': `
-      export default {
-        use: { video: 'on' },
-      };
-    `,
-    'reuse.test.ts': `
-      import { test, expect } from '@playwright/test';
-      let lastContextGuid;
-
-      test('one', async ({ context, page }) => {
-        lastContextGuid = context._guid;
-        await page.waitForTimeout(2000);
-      });
-
-      test('two', async ({ context, page }) => {
-        expect(context._guid).toBe(lastContextGuid);
-        await page.waitForTimeout(2000);
-      });
-    `,
-  }, { workers: 1 }, { PW_TEST_REUSE_CONTEXT: '1' });
-
-  expect(result.exitCode).toBe(0);
-  expect(result.passed).toBe(2);
-  expect(fs.existsSync(testInfo.outputPath('test-results', 'reuse-one', 'video.webm'))).toBeFalsy();
-  expect(fs.existsSync(testInfo.outputPath('test-results', 'reuse-two', 'video.webm'))).toBeFalsy();
-});
-
 test('should reuse context with trace if mode=when-possible', async ({ runInlineTest }, testInfo) => {
   const result = await runInlineTest({
     'playwright.config.ts': `
@@ -124,6 +95,14 @@ test('should reuse context with trace if mode=when-possible', async ({ runInline
     'reuse.spec.ts': `
       import { test, expect } from '@playwright/test';
       let lastContextGuid;
+
+      test.beforeAll(async () => {
+        console.log('fromBeforeAll');
+      });
+
+      test.afterAll(async () => {
+        console.log('fromAfterAll');
+      });
 
       test('one', async ({ context, page }) => {
         lastContextGuid = context._guid;
@@ -142,10 +121,13 @@ test('should reuse context with trace if mode=when-possible', async ({ runInline
 
   expect(result.exitCode).toBe(0);
   expect(result.passed).toBe(2);
+  expect(result.output).toContain('fromBeforeAll');
+  expect(result.output).toContain('fromAfterAll');
 
   const trace1 = await parseTrace(testInfo.outputPath('test-results', 'reuse-one', 'trace.zip'));
   expect(trace1.actionTree).toEqual([
     'Before Hooks',
+    '  beforeAll hook',
     '  fixture: browser',
     '    browserType.launch',
     '  fixture: context',
@@ -172,6 +154,7 @@ test('should reuse context with trace if mode=when-possible', async ({ runInline
     'After Hooks',
     '  fixture: page',
     '  fixture: context',
+    '  afterAll hook',
   ]);
   expect(trace2.traceModel.storage().snapshotsForTest().length).toBeGreaterThan(0);
 });

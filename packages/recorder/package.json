@@ -2,9 +2,8 @@
   "name": "recorder",
   "private": true,
   "version": "0.0.0",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build && tsc",
-    "preview": "vite preview"
+  "type": "module",
+  "dependencies": {
+    "yaml": "^2.6.0"
   }
 }

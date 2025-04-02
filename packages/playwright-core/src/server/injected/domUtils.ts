@@ -84,7 +84,7 @@ export function isElementStyleVisibilityVisible(element: Element, style?: CSSSty
   // https://bugs.webkit.org/show_bug.cgi?id=264733
   // @ts-ignore
   if (Element.prototype.checkVisibility && browserNameForWorkarounds !== 'webkit') {
-    if (!element.checkVisibility({ checkOpacity: false, checkVisibilityCSS: false }))
+    if (!element.checkVisibility())
       return false;
   } else {
     // Manual workaround for WebKit that does not have checkVisibility.
@@ -124,4 +124,13 @@ export function isVisibleTextNode(node: Text) {
   range.selectNode(node);
   const rect = range.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
+}
+
+export function elementSafeTagName(element: Element) {
+  // Named inputs, e.g. <input name=tagName>, will be exposed as fields on the parent <form>
+  // and override its properties.
+  if (element instanceof HTMLFormElement)
+    return 'FORM';
+  // Elements from the svg namespace do not have uppercase tagName right away.
+  return element.tagName.toUpperCase();
 }

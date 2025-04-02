@@ -14,31 +14,44 @@
  * limitations under the License.
  */
 
-import type { SelectorEngine, SelectorRoot } from './selectorEngine';
-import { XPathEngine } from './xpathSelectorEngine';
-import { ReactEngine } from './reactSelectorEngine';
-import { VueEngine } from './vueSelectorEngine';
-import { createRoleEngine } from './roleSelectorEngine';
-import { parseAttributeSelector } from '../../utils/isomorphic/selectorParser';
-import type { NestedSelectorBody, ParsedSelector, ParsedSelectorPart } from '../../utils/isomorphic/selectorParser';
-import { visitAllSelectorParts, parseSelector, stringifySelector } from '../../utils/isomorphic/selectorParser';
-import { type TextMatcher, elementMatchesText, elementText, type ElementText, getElementLabels } from './selectorUtils';
-import { SelectorEvaluatorImpl, sortInDOMOrder } from './selectorEvaluator';
+import { parseAriaSnapshot } from '@isomorphic/ariaSnapshot';
+
+import { ensureBuiltins } from '../isomorphic/builtins';
+import { generateAriaTree, getAllByAria, matchesAriaTree, renderAriaTree } from './ariaSnapshot';
 import { enclosingShadowRootOrDocument, isElementVisible, isInsideScope, parentElementOrShadowHost, setBrowserName } from './domUtils';
-import type { CSSComplexSelectorList } from '../../utils/isomorphic/cssParser';
-import { generateSelector, type GenerateSelectorOptions } from './selectorGenerator';
-import type * as channels from '@protocol/channels';
 import { Highlight } from './highlight';
-import { getChecked, getAriaDisabled, getAriaRole, getElementAccessibleName } from './roleUtils';
-import { kLayoutSelectorNames, type LayoutSelectorName, layoutSelectorScore } from './layoutSelectorUtils';
+import { kLayoutSelectorNames,  layoutSelectorScore } from './layoutSelectorUtils';
+import { createReactEngine } from './reactSelectorEngine';
+import { createRoleEngine } from './roleSelectorEngine';
+import { getAriaDisabled, getAriaRole, getCheckedAllowMixed, getCheckedWithoutMixed, getElementAccessibleDescription, getElementAccessibleErrorMessage, getElementAccessibleName, getReadonly } from './roleUtils';
+import { SelectorEvaluatorImpl, sortInDOMOrder } from './selectorEvaluator';
+import { generateSelector  } from './selectorGenerator';
+import { elementMatchesText, elementText,  getElementLabels } from './selectorUtils';
+import { createVueEngine } from './vueSelectorEngine';
+import { XPathEngine } from './xpathSelectorEngine';
 import { asLocator } from '../../utils/isomorphic/locatorGenerators';
+import { parseAttributeSelector } from '../../utils/isomorphic/selectorParser';
+import { parseSelector, stringifySelector, visitAllSelectorParts } from '../../utils/isomorphic/selectorParser';
+import { cacheNormalizedWhitespaces, normalizeWhiteSpace, trimStringWithEllipsis } from '../../utils/isomorphic/stringUtils';
+
+import type { AriaSnapshot } from './ariaSnapshot';
+import type { Builtins } from '../isomorphic/builtins';
+import type { LayoutSelectorName } from './layoutSelectorUtils';
+import type { SelectorEngine, SelectorRoot } from './selectorEngine';
+import type { GenerateSelectorOptions } from './selectorGenerator';
+import type { ElementText, TextMatcher } from './selectorUtils';
+import type { CSSComplexSelectorList } from '../../utils/isomorphic/cssParser';
 import type { Language } from '../../utils/isomorphic/locatorGenerators';
-import { normalizeWhiteSpace, trimStringWithEllipsis } from '../../utils/isomorphic/stringUtils';
+import type { NestedSelectorBody, ParsedSelector, ParsedSelectorPart } from '../../utils/isomorphic/selectorParser';
+import type { AriaTemplateNode } from '@isomorphic/ariaSnapshot';
+import type * as channels from '@protocol/channels';
+
 
 export type FrameExpectParams = Omit<channels.FrameExpectParams, 'expectedValue'> & { expectedValue?: any };
 
-export type ElementStateWithoutStable = 'visible' | 'hidden' | 'enabled' | 'disabled' | 'editable' | 'checked' | 'unchecked';
-export type ElementState = ElementStateWithoutStable | 'stable';
+export type ElementState = 'visible' | 'hidden' | 'enabled' | 'disabled' | 'editable' | 'checked' | 'unchecked' | 'indeterminate' | 'stable';
+export type ElementStateWithoutStable = Exclude<ElementState, 'stable'>;
+export type ElementStateQueryResult = { matches: boolean, received?: string | 'error:notconnected' };
 
 export type HitTargetInterceptionResult = {
   stop: () => 'done' | { hitTargetDescription: string };
@@ -53,36 +66,125 @@ interface WebKitLegacyDeviceMotionEvent extends DeviceMotionEvent {
 }
 
 export class InjectedScript {
-  private _engines: Map<string, SelectorEngine>;
-  _evaluator: SelectorEvaluatorImpl;
+  private _engines: Builtins.Map<string, SelectorEngine>;
+  readonly _evaluator: SelectorEvaluatorImpl;
   private _stableRafCount: number;
   private _browserName: string;
-  onGlobalListenersRemoved = new Set<() => void>();
+  readonly onGlobalListenersRemoved: Builtins.Set<() => void>;
   private _hitTargetInterceptor: undefined | ((event: MouseEvent | PointerEvent | TouchEvent) => void);
   private _highlight: Highlight | undefined;
   readonly isUnderTest: boolean;
   private _sdkLanguage: Language;
   private _testIdAttributeNameForStrictErrorAndConsoleCodegen: string = 'data-testid';
+  private _markedElements?: { callId: string, elements: Builtins.Set<Element> };
   // eslint-disable-next-line no-restricted-globals
   readonly window: Window & typeof globalThis;
   readonly document: Document;
-  readonly utils = { isInsideScope, elementText, asLocator, normalizeWhiteSpace };
+  private _lastAriaSnapshot: AriaSnapshot | undefined;
+
+  // Recorder must use any external dependencies through InjectedScript.
+  // Otherwise it will end up with a copy of all modules it uses, and any
+  // module-level globals will be duplicated, which leads to subtle bugs.
+  readonly utils = {
+    asLocator,
+    cacheNormalizedWhitespaces,
+    elementText,
+    getAriaRole,
+    getElementAccessibleDescription,
+    getElementAccessibleName,
+    isElementVisible,
+    isInsideScope,
+    normalizeWhiteSpace,
+    parseAriaSnapshot,
+  };
+
+  readonly builtins: Builtins;
+  private _autoClosingTags: Builtins.Set<string>;
+  private _booleanAttributes: Builtins.Set<string>;
+  private _eventTypes: Builtins.Map<string, 'mouse' | 'keyboard' | 'touch' | 'pointer' | 'focus' | 'drag' | 'wheel' | 'deviceorientation' | 'devicemotion'>;
+  private _hoverHitTargetInterceptorEvents: Builtins.Set<string>;
+  private _tapHitTargetInterceptorEvents: Builtins.Set<string>;
+  private _mouseHitTargetInterceptorEvents: Builtins.Set<string>;
+  private _allHitTargetInterceptorEvents: Builtins.Set<string>;
 
   // eslint-disable-next-line no-restricted-globals
   constructor(window: Window & typeof globalThis, isUnderTest: boolean, sdkLanguage: Language, testIdAttributeNameForStrictErrorAndConsoleCodegen: string, stableRafCount: number, browserName: string, customEngines: { name: string, engine: SelectorEngine }[]) {
     this.window = window;
     this.document = window.document;
     this.isUnderTest = isUnderTest;
+    this.builtins = ensureBuiltins(window);
     this._sdkLanguage = sdkLanguage;
     this._testIdAttributeNameForStrictErrorAndConsoleCodegen = testIdAttributeNameForStrictErrorAndConsoleCodegen;
-    this._evaluator = new SelectorEvaluatorImpl(new Map());
+    this._evaluator = new SelectorEvaluatorImpl(this.builtins);
 
-    this._engines = new Map();
+    this.onGlobalListenersRemoved = new this.builtins.Set();
+    this._autoClosingTags = new this.builtins.Set(['AREA', 'BASE', 'BR', 'COL', 'COMMAND', 'EMBED', 'HR', 'IMG', 'INPUT', 'KEYGEN', 'LINK', 'MENUITEM', 'META', 'PARAM', 'SOURCE', 'TRACK', 'WBR']);
+    this._booleanAttributes = new this.builtins.Set(['checked', 'selected', 'disabled', 'readonly', 'multiple']);
+    this._eventTypes = new this.builtins.Map([
+      ['auxclick', 'mouse'],
+      ['click', 'mouse'],
+      ['dblclick', 'mouse'],
+      ['mousedown', 'mouse'],
+      ['mouseeenter', 'mouse'],
+      ['mouseleave', 'mouse'],
+      ['mousemove', 'mouse'],
+      ['mouseout', 'mouse'],
+      ['mouseover', 'mouse'],
+      ['mouseup', 'mouse'],
+      ['mouseleave', 'mouse'],
+      ['mousewheel', 'mouse'],
+
+      ['keydown', 'keyboard'],
+      ['keyup', 'keyboard'],
+      ['keypress', 'keyboard'],
+      ['textInput', 'keyboard'],
+
+      ['touchstart', 'touch'],
+      ['touchmove', 'touch'],
+      ['touchend', 'touch'],
+      ['touchcancel', 'touch'],
+
+      ['pointerover', 'pointer'],
+      ['pointerout', 'pointer'],
+      ['pointerenter', 'pointer'],
+      ['pointerleave', 'pointer'],
+      ['pointerdown', 'pointer'],
+      ['pointerup', 'pointer'],
+      ['pointermove', 'pointer'],
+      ['pointercancel', 'pointer'],
+      ['gotpointercapture', 'pointer'],
+      ['lostpointercapture', 'pointer'],
+
+      ['focus', 'focus'],
+      ['blur', 'focus'],
+
+      ['drag', 'drag'],
+      ['dragstart', 'drag'],
+      ['dragend', 'drag'],
+      ['dragover', 'drag'],
+      ['dragenter', 'drag'],
+      ['dragleave', 'drag'],
+      ['dragexit', 'drag'],
+      ['drop', 'drag'],
+
+      ['wheel', 'wheel'],
+
+      ['deviceorientation', 'deviceorientation'],
+      ['deviceorientationabsolute', 'deviceorientation'],
+
+      ['devicemotion', 'devicemotion'],
+    ]);
+    this._hoverHitTargetInterceptorEvents = new this.builtins.Set(['mousemove']);
+    this._tapHitTargetInterceptorEvents = new this.builtins.Set(['pointerdown', 'pointerup', 'touchstart', 'touchend', 'touchcancel']);
+    this._mouseHitTargetInterceptorEvents = new this.builtins.Set(['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'auxclick', 'dblclick', 'contextmenu']);
+    this._allHitTargetInterceptorEvents = new this.builtins.Set([...this._hoverHitTargetInterceptorEvents, ...this._tapHitTargetInterceptorEvents, ...this._mouseHitTargetInterceptorEvents]);
+
+    this._engines = new this.builtins.Map();
     this._engines.set('xpath', XPathEngine);
     this._engines.set('xpath:light', XPathEngine);
-    this._engines.set('_react', ReactEngine);
-    this._engines.set('_vue', VueEngine);
-    this._engines.set('role', createRoleEngine(false));
+    this._engines.set('_react', createReactEngine(this.builtins));
+    this._engines.set('_vue', createVueEngine(this.builtins));
+    this._engines.set('role', createRoleEngine(this.builtins, false));
     this._engines.set('text', this._createTextEngine(true, false));
     this._engines.set('text:light', this._createTextEngine(false, false));
     this._engines.set('id', this._createAttributeEngine('id', true));
@@ -108,7 +210,8 @@ export class InjectedScript {
     this._engines.set('internal:has-not-text', this._createInternalHasNotTextEngine());
     this._engines.set('internal:attr', this._createNamedAttributeEngine());
     this._engines.set('internal:testid', this._createNamedAttributeEngine());
-    this._engines.set('internal:role', createRoleEngine(true));
+    this._engines.set('internal:role', createRoleEngine(this.builtins, true));
+    this._engines.set('aria-ref', this._createAriaIdEngine());
 
     for (const { name, engine } of customEngines)
       this._engines.set(name, engine);
@@ -156,15 +259,15 @@ export class InjectedScript {
     return result[0];
   }
 
-  private _queryNth(elements: Set<Element>, part: ParsedSelectorPart): Set<Element> {
+  private _queryNth(elements: Builtins.Set<Element>, part: ParsedSelectorPart): Builtins.Set<Element> {
     const list = [...elements];
     let nth = +part.body;
     if (nth === -1)
       nth = list.length - 1;
-    return new Set<Element>(list.slice(nth, nth + 1));
+    return new this.builtins.Set<Element>(list.slice(nth, nth + 1));
   }
 
-  private _queryLayoutSelector(elements: Set<Element>, part: ParsedSelectorPart, originalRoot: Node): Set<Element> {
+  private _queryLayoutSelector(elements: Builtins.Set<Element>, part: ParsedSelectorPart, originalRoot: Node): Builtins.Set<Element> {
     const name = part.name as LayoutSelectorName;
     const body = part.body as NestedSelectorBody;
     const result: { element: Element, score: number }[] = [];
@@ -175,7 +278,23 @@ export class InjectedScript {
         result.push({ element, score });
     }
     result.sort((a, b) => a.score - b.score);
-    return new Set<Element>(result.map(r => r.element));
+    return new this.builtins.Set<Element>(result.map(r => r.element));
+  }
+
+  ariaSnapshot(node: Node, options?: { mode?: 'raw' | 'regex', ref?: boolean }): string {
+    if (node.nodeType !== Node.ELEMENT_NODE)
+      throw this.createStacklessError('Can only capture aria snapshot of Element nodes.');
+    const generation = (this._lastAriaSnapshot?.generation || 0) + 1;
+    this._lastAriaSnapshot = generateAriaTree(this.builtins, node as Element, generation, options?.ref ?? false);
+    return renderAriaTree(this._lastAriaSnapshot, options);
+  }
+
+  ariaSnapshotElement(snapshot: AriaSnapshot, elementId: number): Element | null {
+    return snapshot.elements.get(elementId) || null;
+  }
+
+  getAllByAria(document: Document, template: AriaTemplateNode): Element[] {
+    return getAllByAria(this.builtins, document.documentElement, template);
   }
 
   querySelectorAll(selector: ParsedSelector, root: Node): Element[] {
@@ -207,20 +326,20 @@ export class InjectedScript {
 
     this._evaluator.begin();
     try {
-      let roots = new Set<Element>([root as Element]);
+      let roots = new this.builtins.Set<Element>([root as Element]);
       for (const part of selector.parts) {
         if (part.name === 'nth') {
           roots = this._queryNth(roots, part);
         } else if (part.name === 'internal:and') {
           const andElements = this.querySelectorAll((part.body as NestedSelectorBody).parsed, root);
-          roots = new Set(andElements.filter(e => roots.has(e)));
+          roots = new this.builtins.Set(andElements.filter(e => roots.has(e)));
         } else if (part.name === 'internal:or') {
           const orElements = this.querySelectorAll((part.body as NestedSelectorBody).parsed, root);
-          roots = new Set(sortInDOMOrder(new Set([...roots, ...orElements])));
+          roots = new this.builtins.Set(sortInDOMOrder(this.builtins, new this.builtins.Set([...roots, ...orElements])));
         } else if (kLayoutSelectorNames.includes(part.name as LayoutSelectorName)) {
           roots = this._queryLayoutSelector(roots, part, root);
         } else {
-          const next = new Set<Element>();
+          const next = new this.builtins.Set<Element>();
           for (const root of roots) {
             const all = this._queryEngineAll(part, root);
             for (const one of all)
@@ -392,7 +511,8 @@ export class InjectedScript {
     const queryAll = (root: SelectorRoot, body: string) => {
       if (root.nodeType !== 1 /* Node.ELEMENT_NODE */)
         return [];
-      return isElementVisible(root as Element) === Boolean(body) ? [root as Element] : [];
+      const visible = body === 'true';
+      return isElementVisible(root as Element) === visible ? [root as Element] : [];
     };
     return { queryAll };
   }
@@ -414,10 +534,6 @@ export class InjectedScript {
     return new constrFunction(this, params);
   }
 
-  isVisible(element: Element): boolean {
-    return isElementVisible(element);
-  }
-
   async viewportRatio(element: Element): Promise<number> {
     return await new Promise(resolve => {
       const observer = new IntersectionObserver(entries => {
@@ -427,7 +543,7 @@ export class InjectedScript {
       observer.observe(element);
       // Firefox doesn't call IntersectionObserver callback unless
       // there are rafs.
-      requestAnimationFrame(() => {});
+      this.builtins.requestAnimationFrame(() => {});
     });
   }
 
@@ -459,20 +575,20 @@ export class InjectedScript {
       return null;
     if (behavior === 'none')
       return element;
-    if (!element.matches('input, textarea, select')) {
+    if (!element.matches('input, textarea, select') && !(element as any).isContentEditable) {
       if (behavior === 'button-link')
         element = element.closest('button, [role=button], a, [role=link]') || element;
       else
         element = element.closest('button, [role=button], [role=checkbox], [role=radio]') || element;
     }
     if (behavior === 'follow-label') {
-      if (!element.matches('input, textarea, button, select, [role=button], [role=checkbox], [role=radio]') &&
+      if (!element.matches('a, input, textarea, button, select, [role=link], [role=button], [role=checkbox], [role=radio]') &&
         !(element as any).isContentEditable) {
         // Go up to the label that might be connected to the input/textarea.
-        element = element.closest('label') || element;
+        const enclosingLabel: HTMLLabelElement | null = element.closest('label');
+        if (enclosingLabel && enclosingLabel.control)
+          element = enclosingLabel.control;
       }
-      if (element.nodeName === 'LABEL')
-        element = (element as HTMLLabelElement).control || element;
     }
     return element;
   }
@@ -483,15 +599,15 @@ export class InjectedScript {
       if (stableResult === false)
         return { missingState: 'stable' };
       if (stableResult === 'error:notconnected')
-        return stableResult;
+        return 'error:notconnected';
     }
     for (const state of states) {
       if (state !== 'stable') {
         const result = this.elementState(node, state);
-        if (result === false)
+        if (result.received === 'error:notconnected')
+          return 'error:notconnected';
+        if (!result.matches)
           return { missingState: state };
-        if (result === 'error:notconnected')
-          return result;
       }
     }
   }
@@ -508,7 +624,7 @@ export class InjectedScript {
         return 'error:notconnected';
 
       // Drop frames that are shorter than 16ms - WebKit Win bug.
-      const time = performance.now();
+      const time = this.builtins.performance.now();
       if (this._stableRafCount > 1 && time - lastTime < 15)
         return continuePolling;
       lastTime = time;
@@ -536,45 +652,84 @@ export class InjectedScript {
         if (success !== continuePolling)
           fulfill(success);
         else
-          requestAnimationFrame(raf);
+          this.builtins.requestAnimationFrame(raf);
       } catch (e) {
         reject(e);
       }
     };
-    requestAnimationFrame(raf);
+    this.builtins.requestAnimationFrame(raf);
 
     return result;
   }
 
-  elementState(node: Node, state: ElementStateWithoutStable): boolean | 'error:notconnected' {
-    const element = this.retarget(node, ['stable', 'visible', 'hidden'].includes(state) ? 'none' : 'follow-label');
+  _createAriaIdEngine() {
+    const queryAll = (root: SelectorRoot, selector: string): Element[] => {
+      const match = selector.match(/^s(\d+)e(\d+)$/);
+      if (!match)
+        throw this.createStacklessError('Invalid aria-ref selector, should be of form s<number>e<number>');
+      const [, generation, elementId] = match;
+      if (this._lastAriaSnapshot?.generation !== +generation)
+        throw this.createStacklessError(`Stale aria-ref, expected s${this._lastAriaSnapshot?.generation}e{number}, got ${selector}`);
+      const result = this._lastAriaSnapshot?.elements?.get(+elementId);
+      return result && result.isConnected ? [result] : [];
+    };
+    return { queryAll };
+  }
+
+  elementState(node: Node, state: ElementStateWithoutStable): ElementStateQueryResult {
+    const element = this.retarget(node, ['visible', 'hidden'].includes(state) ? 'none' : 'follow-label');
     if (!element || !element.isConnected) {
       if (state === 'hidden')
-        return true;
-      return 'error:notconnected';
+        return { matches: true, received: 'hidden' };
+      return { matches: false, received: 'error:notconnected' };
     }
 
-    if (state === 'visible')
-      return this.isVisible(element);
-    if (state === 'hidden')
-      return !this.isVisible(element);
+    if (state === 'visible' || state === 'hidden') {
+      const visible = isElementVisible(element);
+      return {
+        matches: state === 'visible' ? visible : !visible,
+        received: visible ? 'visible' : 'hidden'
+      };
+    }
 
-    const disabled = getAriaDisabled(element);
-    if (state === 'disabled')
-      return disabled;
-    if (state === 'enabled')
-      return !disabled;
+    if (state === 'disabled' || state === 'enabled') {
+      const disabled = getAriaDisabled(element);
+      return {
+        matches: state === 'disabled' ? disabled : !disabled,
+        received: disabled ? 'disabled' : 'enabled'
+      };
+    }
 
-    const editable = !(['INPUT', 'TEXTAREA', 'SELECT'].includes(element.nodeName) && element.hasAttribute('readonly'));
-    if (state === 'editable')
-      return !disabled && editable;
+    if (state === 'editable') {
+      const disabled = getAriaDisabled(element);
+      const readonly = getReadonly(element);
+      if (readonly === 'error')
+        throw this.createStacklessError('Element is not an <input>, <textarea>, <select> or [contenteditable] and does not have a role allowing [aria-readonly]');
+      return {
+        matches: !disabled && !readonly,
+        received: disabled ? 'disabled' : readonly ? 'readOnly' : 'editable'
+      };
+    }
 
     if (state === 'checked' || state === 'unchecked') {
       const need = state === 'checked';
-      const checked = getChecked(element, false);
+      const checked = getCheckedWithoutMixed(element);
       if (checked === 'error')
         throw this.createStacklessError('Not a checkbox or radio button');
-      return need === checked;
+      return {
+        matches: need === checked,
+        received: checked ? 'checked' : 'unchecked',
+      };
+    }
+
+    if (state === 'indeterminate') {
+      const checked = getCheckedAllowMixed(element);
+      if (checked === 'error')
+        throw this.createStacklessError('Not a checkbox or radio button');
+      return {
+        matches: checked === 'mixed',
+        received: checked === true ? 'checked' : checked === false ? 'unchecked' : 'mixed',
+      };
     }
     throw this.createStacklessError(`Unexpected element state "${state}"`);
   }
@@ -631,8 +786,8 @@ export class InjectedScript {
     if (element.nodeName.toLowerCase() === 'input') {
       const input = element as HTMLInputElement;
       const type = input.type.toLowerCase();
-      const kInputTypesToSetValue = new Set(['color', 'date', 'time', 'datetime-local', 'month', 'range', 'week']);
-      const kInputTypesToTypeInto = new Set(['', 'email', 'number', 'password', 'search', 'tel', 'text', 'url']);
+      const kInputTypesToSetValue = new this.builtins.Set(['color', 'date', 'time', 'datetime-local', 'month', 'range', 'week']);
+      const kInputTypesToTypeInto = new this.builtins.Set(['', 'email', 'number', 'password', 'search', 'tel', 'text', 'url']);
       if (!kInputTypesToTypeInto.has(type) && !kInputTypesToSetValue.has(type))
         throw this.createStacklessError(`Input of type "${type}" cannot be filled`);
       if (type === 'number') {
@@ -884,9 +1039,9 @@ export class InjectedScript {
       return { stop: () => 'done' };
 
     const events = {
-      'hover': kHoverHitTargetInterceptorEvents,
-      'tap': kTapHitTargetInterceptorEvents,
-      'mouse': kMouseHitTargetInterceptorEvents,
+      'hover': this._hoverHitTargetInterceptorEvents,
+      'tap': this._tapHitTargetInterceptorEvents,
+      'mouse': this._mouseHitTargetInterceptorEvents,
     }[action];
     let result: 'done' | { hitTargetDescription: string } | undefined;
 
@@ -931,13 +1086,46 @@ export class InjectedScript {
     return { stop };
   }
 
-  dispatchEvent(node: Node, type: string, eventInit: Object) {
+  dispatchEvent(node: Node, type: string, eventInitObj: Object) {
     let event;
-    eventInit = { bubbles: true, cancelable: true, composed: true, ...eventInit };
-    switch (eventType.get(type)) {
+    const eventInit: any = { bubbles: true, cancelable: true, composed: true, ...eventInitObj };
+    switch (this._eventTypes.get(type)) {
       case 'mouse': event = new MouseEvent(type, eventInit); break;
       case 'keyboard': event = new KeyboardEvent(type, eventInit); break;
-      case 'touch': event = new TouchEvent(type, eventInit); break;
+      case 'touch': {
+        // WebKit does not support Touch constructor, but has deprecated createTouch and createTouchList methods.
+        if (this._browserName === 'webkit') {
+          const createTouch = (t: any) => {
+            if (t instanceof Touch)
+              return t;
+            // createTouch does not accept clientX/clientY, so we have to use pageX/pageY.
+            let pageX = t.pageX;
+            if (pageX === undefined && t.clientX !== undefined)
+              pageX = t.clientX + (this.document.scrollingElement?.scrollLeft || 0);
+            let pageY = t.pageY;
+            if (pageY === undefined && t.clientY !== undefined)
+              pageY = t.clientY + (this.document.scrollingElement?.scrollTop || 0);
+            return (this.document as any).createTouch(this.window, t.target ?? node, t.identifier, pageX, pageY, t.screenX, t.screenY, t.radiusX, t.radiusY, t.rotationAngle, t.force);
+          };
+          const createTouchList = (touches: any) => {
+            if (touches instanceof TouchList || !touches)
+              return touches;
+            return (this.document as any).createTouchList(...touches.map(createTouch));
+          };
+          eventInit.target ??= node;
+          eventInit.touches = createTouchList(eventInit.touches);
+          eventInit.targetTouches = createTouchList(eventInit.targetTouches);
+          eventInit.changedTouches = createTouchList(eventInit.changedTouches);
+          event = new TouchEvent(type, eventInit);
+        } else {
+          eventInit.target ??= node;
+          eventInit.touches = eventInit.touches?.map((t: any) => t instanceof Touch ? t : new Touch({ ...t, target: t.target ?? node }));
+          eventInit.targetTouches = eventInit.targetTouches?.map((t: any) => t instanceof Touch ? t : new Touch({ ...t, target: t.target ?? node }));
+          eventInit.changedTouches = eventInit.changedTouches?.map((t: any) => t instanceof Touch ? t : new Touch({ ...t, target: t.target ?? node }));
+          event = new TouchEvent(type, eventInit);
+        }
+        break;
+      }
       case 'pointer': event = new PointerEvent(type, eventInit); break;
       case 'focus': event = new FocusEvent(type, eventInit); break;
       case 'drag': event = new DragEvent(type, eventInit); break;
@@ -977,14 +1165,14 @@ export class InjectedScript {
       const { name, value } = element.attributes[i];
       if (name === 'style')
         continue;
-      if (!value && booleanAttributes.has(name))
+      if (!value && this._booleanAttributes.has(name))
         attrs.push(` ${name}`);
       else
         attrs.push(` ${name}="${value}"`);
     }
     attrs.sort((a, b) => a.length - b.length);
-    const attrText = trimStringWithEllipsis(attrs.join(''), 50);
-    if (autoClosingTags.has(element.nodeName))
+    const attrText = trimStringWithEllipsis(attrs.join(''), 500);
+    if (this._autoClosingTags.has(element.nodeName))
       return oneLine(`<${element.nodeName.toLowerCase()}${attrText}/>`);
 
     const children = element.childNodes;
@@ -1052,15 +1240,34 @@ export class InjectedScript {
     }
   }
 
-  markTargetElements(markedElements: Set<Element>, callId: string) {
-    const customEvent = new CustomEvent('__playwright_target__', {
+  markTargetElements(markedElements: Builtins.Set<Element>, callId: string) {
+    if (this._markedElements?.callId !== callId)
+      this._markedElements = undefined;
+    const previous = this._markedElements?.elements || new this.builtins.Set();
+
+    const unmarkEvent = new CustomEvent('__playwright_unmark_target__', {
       bubbles: true,
       cancelable: true,
       detail: callId,
       composed: true,
     });
-    for (const element of markedElements)
-      element.dispatchEvent(customEvent);
+    for (const element of previous) {
+      if (!markedElements.has(element))
+        element.dispatchEvent(unmarkEvent);
+    }
+
+    const markEvent = new CustomEvent('__playwright_mark_target__', {
+      bubbles: true,
+      cancelable: true,
+      detail: callId,
+      composed: true,
+    });
+    for (const element of markedElements) {
+      if (!previous.has(element))
+        element.dispatchEvent(markEvent);
+    }
+
+    this._markedElements = { callId, elements: markedElements };
   }
 
   private _setupGlobalListenersRemovalDetection() {
@@ -1091,14 +1298,14 @@ export class InjectedScript {
   private _setupHitTargetInterceptors() {
     const listener = (event: PointerEvent | MouseEvent | TouchEvent) => this._hitTargetInterceptor?.(event);
     const addHitTargetInterceptorListeners = () => {
-      for (const event of kAllHitTargetInterceptorEvents)
+      for (const event of this._allHitTargetInterceptorEvents)
         this.window.addEventListener(event as any, listener, { capture: true, passive: false });
     };
     addHitTargetInterceptorListeners();
     this.onGlobalListenersRemoved.add(addHitTargetInterceptorListeners);
   }
 
-  async expect(element: Element | undefined, options: FrameExpectParams, elements: Element[]): Promise<{ matches: boolean, received?: any, missingRecevied?: boolean }> {
+  async expect(element: Element | undefined, options: FrameExpectParams, elements: Element[]): Promise<{ matches: boolean, received?: any, missingReceived?: boolean }> {
     const isArray = options.expression === 'to.have.count' || options.expression.endsWith('.array');
     if (isArray)
       return this.expectArray(elements, options);
@@ -1119,7 +1326,7 @@ export class InjectedScript {
       if (options.isNot && options.expression === 'to.be.in.viewport')
         return { matches: false };
       // When none of the above applies, expect does not match.
-      return { matches: options.isNot, missingRecevied: true };
+      return { matches: options.isNot, missingReceived: true };
     }
     return await this.expectSingleElement(element, options);
   }
@@ -1129,44 +1336,65 @@ export class InjectedScript {
 
     {
       // Element state / boolean values.
-      let elementState: boolean | 'error:notconnected' | 'error:notcheckbox' | undefined;
+      let result: ElementStateQueryResult | undefined;
       if (expression === 'to.have.attribute') {
-        elementState = element.hasAttribute(options.expressionArg);
+        const hasAttribute = element.hasAttribute(options.expressionArg);
+        result = {
+          matches: hasAttribute,
+          received: hasAttribute ? 'attribute present' : 'attribute not present',
+        };
       } else if (expression === 'to.be.checked') {
-        elementState = this.elementState(element, 'checked');
-      } else if (expression === 'to.be.unchecked') {
-        elementState = this.elementState(element, 'unchecked');
+        const { checked, indeterminate } = options.expectedValue;
+        if (indeterminate) {
+          if (checked !== undefined)
+            throw this.createStacklessError('Can\'t assert indeterminate and checked at the same time');
+          result = this.elementState(element, 'indeterminate');
+        } else {
+          result = this.elementState(element, checked === false ? 'unchecked' : 'checked');
+        }
       } else if (expression === 'to.be.disabled') {
-        elementState = this.elementState(element, 'disabled');
+        result = this.elementState(element, 'disabled');
       } else if (expression === 'to.be.editable') {
-        elementState = this.elementState(element, 'editable');
+        result = this.elementState(element, 'editable');
       } else if (expression === 'to.be.readonly') {
-        elementState = !this.elementState(element, 'editable');
+        result = this.elementState(element, 'editable');
+        result.matches = !result.matches;
       } else if (expression === 'to.be.empty') {
-        if (element.nodeName === 'INPUT' || element.nodeName === 'TEXTAREA')
-          elementState = !(element as HTMLInputElement).value;
-        else
-          elementState = !element.textContent?.trim();
+        if (element.nodeName === 'INPUT' || element.nodeName === 'TEXTAREA') {
+          const value = (element as HTMLInputElement).value;
+          result = { matches: !value, received: value ? 'notEmpty' : 'empty' };
+        } else {
+          const text = element.textContent?.trim();
+          result = { matches: !text, received: text ? 'notEmpty' : 'empty' };
+        }
       } else if (expression === 'to.be.enabled') {
-        elementState = this.elementState(element, 'enabled');
+        result = this.elementState(element, 'enabled');
       } else if (expression === 'to.be.focused') {
-        elementState = this._activelyFocused(element).isFocused;
+        const focused = this._activelyFocused(element).isFocused;
+        result = {
+          matches: focused,
+          received: focused ? 'focused' : 'inactive',
+        };
       } else if (expression === 'to.be.hidden') {
-        elementState = this.elementState(element, 'hidden');
+        result = this.elementState(element, 'hidden');
       } else if (expression === 'to.be.visible') {
-        elementState = this.elementState(element, 'visible');
+        result = this.elementState(element, 'visible');
       } else if (expression === 'to.be.attached') {
-        elementState = true;
+        result = {
+          matches: true,
+          received: 'attached',
+        };
       } else if (expression === 'to.be.detached') {
-        elementState = false;
+        result = {
+          matches: false,
+          received: 'attached',
+        };
       }
 
-      if (elementState !== undefined) {
-        if (elementState === 'error:notcheckbox')
-          throw this.createStacklessError('Element is not a checkbox');
-        if (elementState === 'error:notconnected')
+      if (result) {
+        if (result.received === 'error:notconnected')
           throw this.createStacklessError('Element is not connected');
-        return { received: elementState, matches: elementState };
+        return result;
       }
     }
 
@@ -1203,7 +1431,17 @@ export class InjectedScript {
         const received = [...(element as HTMLSelectElement).selectedOptions].map(o => o.value);
         if (received.length !== options.expectedText!.length)
           return { received, matches: false };
-        return { received, matches: received.map((r, i) => new ExpectedTextMatcher(options.expectedText![i]).matches(r)).every(Boolean) };
+        return { received, matches: received.map((r, i) => new ExpectedTextMatcher(this.builtins, options.expectedText![i]).matches(r)).every(Boolean) };
+      }
+    }
+
+    {
+      if (expression === 'to.match.aria') {
+        const result = matchesAriaTree(this.builtins, element, options.expectedValue);
+        return {
+          received: result.received,
+          matches: !!result.matches.length,
+        };
       }
     }
 
@@ -1216,13 +1454,26 @@ export class InjectedScript {
           return { received: null, matches: false };
         received = value;
       } else if (expression === 'to.have.class') {
-        received = element.classList.toString();
+        if (!options.expectedText)
+          throw this.createStacklessError('Expected text is not provided for ' + expression);
+        return {
+          received: element.classList.toString(),
+          matches: new ExpectedTextMatcher(this.builtins, options.expectedText[0]).matchesClassList(this, element.classList, options.expressionArg.partial),
+        };
       } else if (expression === 'to.have.css') {
         received = this.window.getComputedStyle(element).getPropertyValue(options.expressionArg);
       } else if (expression === 'to.have.id') {
         received = element.id;
       } else if (expression === 'to.have.text') {
-        received = options.useInnerText ? (element as HTMLElement).innerText : elementText(new Map(), element).full;
+        received = options.useInnerText ? (element as HTMLElement).innerText : elementText(new this.builtins.Map(), element).full;
+      } else if (expression === 'to.have.accessible.name') {
+        received = getElementAccessibleName(this.builtins, element, false /* includeHidden */);
+      } else if (expression === 'to.have.accessible.description') {
+        received = getElementAccessibleDescription(this.builtins, element, false /* includeHidden */);
+      } else if (expression === 'to.have.accessible.error.message') {
+        received = getElementAccessibleErrorMessage(this.builtins, element);
+      } else if (expression === 'to.have.role') {
+        received = getAriaRole(element) || '';
       } else if (expression === 'to.have.title') {
         received = this.document.title;
       } else if (expression === 'to.have.url') {
@@ -1235,7 +1486,7 @@ export class InjectedScript {
       }
 
       if (received !== undefined && options.expectedText) {
-        const matcher = new ExpectedTextMatcher(options.expectedText[0]);
+        const matcher = new ExpectedTextMatcher(this.builtins, options.expectedText[0]);
         return { received, matches: matcher.matches(received) };
       }
     }
@@ -1252,108 +1503,58 @@ export class InjectedScript {
       return { received, matches };
     }
 
-    // List of values.
-    let received: string[] | undefined;
-    if (expression === 'to.have.text.array' || expression === 'to.contain.text.array')
-      received = elements.map(e => options.useInnerText ? (e as HTMLElement).innerText : elementText(new Map(), e).full);
-    else if (expression === 'to.have.class.array')
-      received = elements.map(e => e.classList.toString());
+    // Following matchers depend all on ExpectedTextValue.
+    if (!options.expectedText)
+      throw this.createStacklessError('Expected text is not provided for ' + expression);
 
-    if (received && options.expectedText) {
-      // "To match an array" is "to contain an array" + "equal length"
-      const lengthShouldMatch = expression !== 'to.contain.text.array';
-      const matchesLength = received.length === options.expectedText.length || !lengthShouldMatch;
-      if (!matchesLength)
+    if (expression === 'to.have.class.array') {
+      const receivedClassLists = elements.map(e => e.classList);
+      const received = receivedClassLists.map(String);
+      if (receivedClassLists.length !== options.expectedText.length)
         return { received, matches: false };
-
-      // Each matcher should get a "received" that matches it, in order.
-      const matchers = options.expectedText.map(e => new ExpectedTextMatcher(e));
-      let mIndex = 0, rIndex = 0;
-      while (mIndex < matchers.length && rIndex < received.length) {
-        if (matchers[mIndex].matches(received[rIndex]))
-          ++mIndex;
-        ++rIndex;
-      }
-      return { received, matches: mIndex === matchers.length };
+      const matches = this._matchSequentially(options.expectedText, receivedClassLists, (matcher, r) =>
+        matcher.matchesClassList(this, r, options.expressionArg.partial)
+      );
+      return {
+        received: received,
+        matches,
+      };
     }
-    throw this.createStacklessError('Unknown expect matcher: ' + expression);
+
+    if (!['to.contain.text.array', 'to.have.text.array'].includes(expression))
+      throw this.createStacklessError('Unknown expect matcher: ' + expression);
+
+    const received = elements.map(e => options.useInnerText ? (e as HTMLElement).innerText : elementText(new this.builtins.Map(), e).full);
+    // "To match an array" is "to contain an array" + "equal length"
+    const lengthShouldMatch = expression !== 'to.contain.text.array';
+    const matchesLength = received.length === options.expectedText.length || !lengthShouldMatch;
+    if (!matchesLength)
+      return { received, matches: false };
+
+    const matches = this._matchSequentially(options.expectedText, received, (matcher, r) => matcher.matches(r));
+    return { received, matches };
   }
 
-  getElementAccessibleName(element: Element, includeHidden?: boolean): string {
-    return getElementAccessibleName(element, !!includeHidden);
-  }
-
-  getAriaRole(element: Element) {
-    return getAriaRole(element);
+  private _matchSequentially<T>(
+    expectedText: channels.ExpectedTextValue[],
+    received: T[],
+    matchFn: (matcher: ExpectedTextMatcher, received: T) => boolean
+  ): boolean {
+    const matchers = expectedText.map(e => new ExpectedTextMatcher(this.builtins, e));
+    let mIndex = 0;
+    let rIndex = 0;
+    while (mIndex < matchers.length && rIndex < received.length) {
+      if (matchFn(matchers[mIndex], received[rIndex]))
+        ++mIndex;
+      ++rIndex;
+    }
+    return mIndex === matchers.length;
   }
 }
-
-const autoClosingTags = new Set(['AREA', 'BASE', 'BR', 'COL', 'COMMAND', 'EMBED', 'HR', 'IMG', 'INPUT', 'KEYGEN', 'LINK', 'MENUITEM', 'META', 'PARAM', 'SOURCE', 'TRACK', 'WBR']);
-const booleanAttributes = new Set(['checked', 'selected', 'disabled', 'readonly', 'multiple']);
 
 function oneLine(s: string): string {
   return s.replace(/\n/g, '↵').replace(/\t/g, '⇆');
 }
-
-const eventType = new Map<string, 'mouse' | 'keyboard' | 'touch' | 'pointer' | 'focus' | 'drag' | 'wheel' | 'deviceorientation' | 'devicemotion'>([
-  ['auxclick', 'mouse'],
-  ['click', 'mouse'],
-  ['dblclick', 'mouse'],
-  ['mousedown', 'mouse'],
-  ['mouseeenter', 'mouse'],
-  ['mouseleave', 'mouse'],
-  ['mousemove', 'mouse'],
-  ['mouseout', 'mouse'],
-  ['mouseover', 'mouse'],
-  ['mouseup', 'mouse'],
-  ['mouseleave', 'mouse'],
-  ['mousewheel', 'mouse'],
-
-  ['keydown', 'keyboard'],
-  ['keyup', 'keyboard'],
-  ['keypress', 'keyboard'],
-  ['textInput', 'keyboard'],
-
-  ['touchstart', 'touch'],
-  ['touchmove', 'touch'],
-  ['touchend', 'touch'],
-  ['touchcancel', 'touch'],
-
-  ['pointerover', 'pointer'],
-  ['pointerout', 'pointer'],
-  ['pointerenter', 'pointer'],
-  ['pointerleave', 'pointer'],
-  ['pointerdown', 'pointer'],
-  ['pointerup', 'pointer'],
-  ['pointermove', 'pointer'],
-  ['pointercancel', 'pointer'],
-  ['gotpointercapture', 'pointer'],
-  ['lostpointercapture', 'pointer'],
-
-  ['focus', 'focus'],
-  ['blur', 'focus'],
-
-  ['drag', 'drag'],
-  ['dragstart', 'drag'],
-  ['dragend', 'drag'],
-  ['dragover', 'drag'],
-  ['dragenter', 'drag'],
-  ['dragleave', 'drag'],
-  ['dragexit', 'drag'],
-  ['drop', 'drag'],
-
-  ['wheel', 'wheel'],
-
-  ['deviceorientation', 'deviceorientation'],
-  ['deviceorientationabsolute', 'deviceorientation'],
-
-  ['devicemotion', 'devicemotion'],
-]);
-
-const kHoverHitTargetInterceptorEvents = new Set(['mousemove']);
-const kTapHitTargetInterceptorEvents = new Set(['pointerdown', 'pointerup', 'touchstart', 'touchend', 'touchcancel']);
-const kMouseHitTargetInterceptorEvents = new Set(['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'auxclick', 'dblclick', 'contextmenu']);
-const kAllHitTargetInterceptorEvents = new Set([...kHoverHitTargetInterceptorEvents, ...kTapHitTargetInterceptorEvents, ...kMouseHitTargetInterceptorEvents]);
 
 function cssUnquote(s: string): string {
   // Trim quotes.
@@ -1414,13 +1615,13 @@ class ExpectedTextMatcher {
   private _normalizeWhiteSpace: boolean | undefined;
   private _ignoreCase: boolean | undefined;
 
-  constructor(expected: channels.ExpectedTextValue) {
+  constructor(builtins: Builtins, expected: channels.ExpectedTextValue) {
     this._normalizeWhiteSpace = expected.normalizeWhiteSpace;
     this._ignoreCase = expected.ignoreCase;
     this._string = expected.matchSubstring ? undefined : this.normalize(expected.string);
     this._substring = expected.matchSubstring ? this.normalize(expected.string) : undefined;
     if (expected.regexSource) {
-      const flags = new Set((expected.regexFlags || '').split(''));
+      const flags = new builtins.Set((expected.regexFlags || '').split(''));
       if (expected.ignoreCase === false)
         flags.delete('i');
       if (expected.ignoreCase === true)
@@ -1439,6 +1640,15 @@ class ExpectedTextMatcher {
     if (this._regex)
       return !!this._regex.test(text);
     return false;
+  }
+
+  matchesClassList(injectedScript: InjectedScript, classList: DOMTokenList, partial: boolean): boolean {
+    if (partial) {
+      if (this._regex)
+        throw injectedScript.createStacklessError('Partial matching does not support regular expressions. Please provide a string value.');
+      return this._string!.split(/\s+/g).filter(Boolean).every(className => classList.contains(className));
+    }
+    return this.matches(classList.toString());
   }
 
   private normalize(s: string | undefined): string | undefined {

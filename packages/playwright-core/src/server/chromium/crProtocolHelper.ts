@@ -15,12 +15,15 @@
  * limitations under the License.
  */
 
+import fs from 'fs';
+
+import { splitErrorMessage } from '../../utils/isomorphic/stackTrace';
+import { mkdirIfNeeded } from '../utils/fileUtils';
+
 import type { CRSession } from './crConnection';
 import type { Protocol } from './protocol';
-import fs from 'fs';
 import type * as types from '../types';
-import { mkdirIfNeeded } from '../../utils/fileUtils';
-import { splitErrorMessage } from '../../utils/stackTrace';
+
 
 export function getExceptionMessage(exceptionDetails: Protocol.Runtime.ExceptionDetails): string {
   if (exceptionDetails.exception)
@@ -37,7 +40,7 @@ export function getExceptionMessage(exceptionDetails: Protocol.Runtime.Exception
 }
 
 export async function releaseObject(client: CRSession, objectId: string) {
-  await client.send('Runtime.releaseObject', { objectId }).catch(error => {});
+  await client.send('Runtime.releaseObject', { objectId }).catch(error => { });
 }
 
 export async function saveProtocolStream(client: CRSession, handle: string, path: string) {
@@ -91,7 +94,8 @@ export function exceptionToError(exceptionDetails: Protocol.Runtime.ExceptionDet
 
   const err = new Error(message);
   err.stack = stack;
-  err.name = name;
+  const nameOverride = exceptionDetails.exception?.preview?.properties.find(o => o.name === 'name');
+  err.name = nameOverride ? nameOverride.value ?? 'Error' : name;
   return err;
 }
 

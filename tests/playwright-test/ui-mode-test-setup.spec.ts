@@ -15,10 +15,11 @@
  */
 
 import { test, expect, retries, dumpTestTree } from './ui-mode-fixtures';
+import path from 'path';
 
 test.describe.configure({ mode: 'parallel', retries });
 
-test('should run global setup and teardown', async ({ runUITest }) => {
+test('should run global setup and teardown', async ({ runUITest }, testInfo) => {
   const { page, testProcess } = await runUITest({
     'playwright.config.ts': `
       import { defineConfig } from '@playwright/test';
@@ -28,26 +29,36 @@ test('should run global setup and teardown', async ({ runUITest }) => {
       });
     `,
     'globalSetup.ts': `
-      export default () => console.log('\\n%%from-global-setup');
+      import { basename } from "node:path";
+      export default (config) => {
+        console.log('\\n%%from-global-setup');
+        console.log("setupOutputDir: " + basename(config.projects[0].outputDir));
+      };
     `,
     'globalTeardown.ts': `
-      export default () => console.log('\\n%%from-global-teardown');
+      export default (config) => {
+        console.log('\\n%%from-global-teardown');
+        console.log('%%' + JSON.stringify(config));
+      };
     `,
     'a.test.js': `
       import { test, expect } from '@playwright/test';
       test('should work', async ({}) => {});
     `
-  });
+  }, undefined, { additionalArgs: ['--output=foo'] });
   await page.getByTitle('Run all').click();
   await expect(page.getByTestId('status-line')).toHaveText('1/1 passed (100%)');
 
   await page.getByTitle('Toggle output').click();
-  await expect(page.getByTestId('output')).toContainText('from-global-setup');
+  const output = page.getByTestId('output');
+  await expect(output).toContainText('from-global-setup');
+  await expect(output).toContainText('setupOutputDir: foo');
   await page.close();
 
-  await expect.poll(() => testProcess.outputLines()).toEqual([
-    'from-global-teardown',
-  ]);
+  await expect.poll(() => testProcess.outputLines()).toContain('from-global-teardown');
+
+  const teardownConfig = JSON.parse(testProcess.outputLines()[1]);
+  expect(teardownConfig.projects[0].outputDir).toEqual(testInfo.outputPath('foo'));
 });
 
 test('should teardown on sigint', async ({ runUITest, nodeVersion }) => {
@@ -118,9 +129,19 @@ const testsWithSetup = {
 test('should run setup and teardown projects (1)', async ({ runUITest }) => {
   const { page } = await runUITest(testsWithSetup);
   await page.getByText('Status:').click();
-  await page.getByLabel('setup').setChecked(false);
-  await page.getByLabel('teardown').setChecked(false);
-  await page.getByLabel('test').setChecked(false);
+  await page.getByRole('checkbox', { name: 'setup' }).setChecked(false);
+  await page.getByRole('checkbox', { name: 'teardown' }).setChecked(false);
+  await page.getByRole('checkbox', { name: 'test' }).setChecked(false);
+
+  await expect(page.getByTestId('project-filters')).toMatchAriaSnapshot(`
+    - list:
+      - listitem:
+        - checkbox "teardown"
+      - listitem:
+        - checkbox "setup"
+      - listitem:
+        - checkbox "test"
+  `);
 
   await page.getByTitle('Run all').click();
 
@@ -133,18 +154,45 @@ test('should run setup and teardown projects (1)', async ({ runUITest }) => {
         ✅ test
   `);
 
+  await expect(page.getByTestId('test-tree')).toMatchAriaSnapshot(`
+    - tree:
+      - treeitem "[icon-check] setup.ts" [expanded]:
+        - group:
+          - treeitem ${/\[icon-check\] setup/}
+      - treeitem "[icon-check] teardown.ts" [expanded]:
+        - group:
+          - treeitem ${/\[icon-check\] teardown/}
+      - treeitem "[icon-check] test.ts" [expanded]:
+        - group:
+          - treeitem ${/\[icon-check\] test/}
+  `);
+
   await page.getByTitle('Toggle output').click();
   await expect(page.getByTestId('output')).toContainText(`from-setup`);
   await expect(page.getByTestId('output')).toContainText(`from-test`);
   await expect(page.getByTestId('output')).toContainText(`from-teardown`);
+
+  await expect(page.getByTestId('output')).toMatchAriaSnapshot(`
+    - textbox "Terminal input"
+  `);
 });
 
 test('should run setup and teardown projects (2)', async ({ runUITest }) => {
   const { page } = await runUITest(testsWithSetup);
   await page.getByText('Status:').click();
-  await page.getByLabel('setup').setChecked(false);
-  await page.getByLabel('teardown').setChecked(true);
-  await page.getByLabel('test').setChecked(true);
+  await page.getByRole('checkbox', { name: 'setup' }).setChecked(false);
+  await page.getByRole('checkbox', { name: 'teardown' }).setChecked(true);
+  await page.getByRole('checkbox', { name: 'test' }).setChecked(true);
+
+  await expect(page.getByTestId('project-filters')).toMatchAriaSnapshot(`
+    - list:
+      - listitem:
+        - checkbox "teardown" [checked]
+      - listitem:
+        - checkbox "setup"
+      - listitem:
+        - checkbox "test" [checked]
+  `);
 
   await page.getByTitle('Run all').click();
 
@@ -155,18 +203,42 @@ test('should run setup and teardown projects (2)', async ({ runUITest }) => {
         ✅ test
   `);
 
+  await expect(page.getByTestId('test-tree')).toMatchAriaSnapshot(`
+    - tree:
+      - treeitem "[icon-check] teardown.ts" [expanded]:
+        - group:
+          - treeitem ${/\[icon-check\] teardown/}
+      - treeitem "[icon-check] test.ts" [expanded]:
+        - group:
+          - treeitem ${/\[icon-check\] test/}
+  `);
+
   await page.getByTitle('Toggle output').click();
   await expect(page.getByTestId('output')).toContainText(`from-test`);
   await expect(page.getByTestId('output')).toContainText(`from-teardown`);
   await expect(page.getByTestId('output')).not.toContainText(`from-setup`);
+
+  await expect(page.getByTestId('output')).toMatchAriaSnapshot(`
+    - textbox "Terminal input"
+  `);
 });
 
 test('should run setup and teardown projects (3)', async ({ runUITest }) => {
   const { page } = await runUITest(testsWithSetup);
   await page.getByText('Status:').click();
-  await page.getByLabel('setup').setChecked(false);
-  await page.getByLabel('teardown').setChecked(false);
-  await page.getByLabel('test').setChecked(true);
+  await page.getByRole('checkbox', { name: 'setup' }).setChecked(false);
+  await page.getByRole('checkbox', { name: 'teardown' }).setChecked(false);
+  await page.getByRole('checkbox', { name: 'test' }).setChecked(true);
+
+  await expect(page.getByTestId('project-filters')).toMatchAriaSnapshot(`
+    - list:
+      - listitem:
+        - checkbox "teardown"
+      - listitem:
+        - checkbox "setup"
+      - listitem:
+        - checkbox "test" [checked]
+  `);
 
   await page.getByTitle('Run all').click();
 
@@ -175,21 +247,42 @@ test('should run setup and teardown projects (3)', async ({ runUITest }) => {
         ✅ test
   `);
 
+  await expect(page.getByTestId('test-tree')).toMatchAriaSnapshot(`
+    - tree:
+      - treeitem "[icon-check] test.ts" [expanded]:
+        - group:
+          - treeitem ${/\[icon-check\] test/}
+  `);
+
   await page.getByTitle('Toggle output').click();
   await expect(page.getByTestId('output')).toContainText(`from-test`);
   await expect(page.getByTestId('output')).not.toContainText(`from-setup`);
   await expect(page.getByTestId('output')).not.toContainText(`from-teardown`);
+
+  await expect(page.getByTestId('output')).toMatchAriaSnapshot(`
+    - textbox "Terminal input"
+  `);
 });
 
 test('should run part of the setup only', async ({ runUITest }) => {
   const { page } = await runUITest(testsWithSetup);
   await page.getByText('Status:').click();
-  await page.getByLabel('setup').setChecked(true);
-  await page.getByLabel('teardown').setChecked(true);
-  await page.getByLabel('test').setChecked(true);
+  await page.getByRole('checkbox', { name: 'setup' }).setChecked(true);
+  await page.getByRole('checkbox', { name: 'teardown' }).setChecked(true);
+  await page.getByRole('checkbox', { name: 'test' }).setChecked(true);
+
+  await expect(page.getByTestId('project-filters')).toMatchAriaSnapshot(`
+    - list:
+      - listitem:
+        - checkbox "teardown" [checked]
+      - listitem:
+        - checkbox "setup" [checked]
+      - listitem:
+        - checkbox "test" [checked]
+  `);
 
   await page.getByText('setup.ts').hover();
-  await page.getByRole('listitem').filter({ hasText: 'setup.ts' }).getByTitle('Run').click();
+  await page.getByRole('treeitem', { name: 'setup.ts' }).getByRole('button', { name: 'Run' }).click();
 
   await expect.poll(dumpTestTree(page)).toBe(`
     ▼ ✅ setup.ts <=
@@ -198,6 +291,22 @@ test('should run part of the setup only', async ({ runUITest }) => {
         ✅ teardown
     ▼ ◯ test.ts
         ◯ test
+  `);
+
+  await expect(page.getByTestId('test-tree')).toMatchAriaSnapshot(`
+    - tree:
+      - treeitem "[icon-check] setup.ts" [expanded] [selected]:
+        - button "Run"
+        - button "Show source"
+        - button "Watch"
+        - group:
+          - treeitem ${/\[icon-check\] setup/}
+      - treeitem "[icon-check] teardown.ts" [expanded]:
+        - group:
+          - treeitem ${/\[icon-check\] teardown/}
+      - treeitem "[icon-circle-outline] test.ts" [expanded]:
+        - group:
+          - treeitem "[icon-circle-outline] test"
   `);
 });
 
@@ -235,3 +344,42 @@ for (const useWeb of [true, false]) {
     });
   });
 }
+
+test('should restart webserver on reload', async ({ runUITest }) => {
+  const SIMPLE_SERVER_PATH = path.join(__dirname, 'assets', 'simple-server.js');
+  const port = test.info().workerIndex * 2 + 10500;
+
+  const { page } = await runUITest({
+    'playwright.config.ts': `
+      import { defineConfig } from '@playwright/test';
+      export default defineConfig({
+        webServer: {
+          command: 'node ${JSON.stringify(SIMPLE_SERVER_PATH)} ${port}',
+          port: ${port},
+          reuseExistingServer: false,
+        },
+      });
+    `,
+    'a.test.js': `
+      import { test, expect } from '@playwright/test';
+      test('should work', async ({ page }) => {
+        await page.goto('http://localhost:${port}/hello');
+      });
+    `
+  }, { DEBUG: 'pw:webserver' });
+  await page.getByTitle('Run all').click();
+  await expect(page.getByTestId('status-line')).toHaveText('1/1 passed (100%)');
+
+  await page.getByTitle('Toggle output').click();
+  await expect(page.getByTestId('output')).toContainText('[WebServer] listening');
+
+  await page.getByTitle('Clear output').click();
+  await expect(page.getByTestId('output')).not.toContainText('[WebServer] listening');
+
+  await page.getByTitle('Reload').click();
+  await expect(page.getByTestId('output')).toContainText('[WebServer] listening');
+  await expect(page.getByTestId('output')).not.toContainText('set reuseExistingServer:true');
+
+  await page.getByTitle('Run all').click();
+  await expect(page.getByTestId('status-line')).toHaveText('1/1 passed (100%)');
+});

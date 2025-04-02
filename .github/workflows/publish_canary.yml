@@ -14,11 +14,12 @@ env:
 jobs:
   publish-canary:
     name: "publish canary NPM"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     if: github.repository == 'microsoft/playwright'
     permissions:
-      contents: read
-      id-token: write
+      id-token: write  # This is required for OIDC login (azure/login) to succeed
+      contents: read   # This is required for actions/checkout to succeed
+    environment: allow-publish-driver-to-cdn # This is required for OIDC login (azure/login)
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
@@ -49,31 +50,41 @@ jobs:
         utils/publish_all_packages.sh --beta
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_PW_CDN_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_PW_CDN_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_PW_CDN_SUBSCRIPTION_ID }}
     - name: build & publish driver
       env:
         AZ_UPLOAD_FOLDER: driver/next
-        AZ_ACCOUNT_KEY: ${{ secrets.AZ_ACCOUNT_KEY }}
-        AZ_ACCOUNT_NAME: ${{ secrets.AZ_ACCOUNT_NAME }}
       run: |
         utils/build/build-playwright-driver.sh
         utils/build/upload-playwright-driver.sh
 
   publish-trace-viewer:
     name: "publish Trace Viewer to trace.playwright.dev"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     if: github.repository == 'microsoft/playwright'
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
         node-version: 18
+    - uses: actions/create-github-app-token@v1
+      id: app-token
+      with:
+        app-id: ${{ vars.PLAYWRIGHT_APP_ID }}
+        private-key: ${{ secrets.PLAYWRIGHT_PRIVATE_KEY }}
+        repositories: trace.playwright.dev
     - name: Deploy Canary
       run: bash utils/build/deploy-trace-viewer.sh --canary
       if: contains(github.ref, 'main')
       env:
-        GH_SERVICE_ACCOUNT_TOKEN: ${{ secrets.REPOSITORY_DISPATCH_PERSONAL_ACCESS_TOKEN }}
+        GH_SERVICE_ACCOUNT_TOKEN: ${{ steps.app-token.outputs.token }}
     - name: Deploy BETA
       run: bash utils/build/deploy-trace-viewer.sh --beta
       if: contains(github.ref, 'release')
       env:
-        GH_SERVICE_ACCOUNT_TOKEN: ${{ secrets.REPOSITORY_DISPATCH_PERSONAL_ACCESS_TOKEN }}
+        GH_SERVICE_ACCOUNT_TOKEN: ${{ steps.app-token.outputs.token }}

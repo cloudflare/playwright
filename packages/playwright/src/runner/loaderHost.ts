@@ -14,15 +14,17 @@
  * limitations under the License.
  */
 
-import type { TestError } from '../../types/testReporter';
-import { serializeConfig } from '../common/ipc';
 import { ProcessHost } from './processHost';
+import { incorporateCompilationCache } from '../common/esmLoaderHost';
+import { serializeConfig } from '../common/ipc';
+import { PoolBuilder } from '../common/poolBuilder';
 import { Suite } from '../common/test';
 import { loadTestFile } from '../common/testLoader';
-import type { FullConfigInternal } from '../common/config';
-import { PoolBuilder } from '../common/poolBuilder';
 import { addToCompilationCache } from '../transform/compilationCache';
-import { incorporateCompilationCache, initializeEsmLoader } from '../common/esmLoaderHost';
+
+import type { TestError } from '../../types/testReporter';
+import type { FullConfigInternal } from '../common/config';
+
 
 export class InProcessLoaderHost {
   private _config: FullConfigInternal;
@@ -34,7 +36,6 @@ export class InProcessLoaderHost {
   }
 
   async start(errors: TestError[]) {
-    await initializeEsmLoader();
     return true;
   }
 

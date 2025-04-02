@@ -510,18 +510,19 @@ test('should work with video: on-first-retry', async ({ runInlineTest }) => {
   expect(fs.existsSync(dirPass)).toBeFalsy();
 
   const dirFail = test.info().outputPath('test-results', 'a-fail-chromium');
-  expect(fs.existsSync(dirFail)).toBeFalsy();
+  expect(fs.readdirSync(dirFail)).toEqual(['prompt.md']);
 
   const dirRetry = test.info().outputPath('test-results', 'a-fail-chromium-retry1');
   const videoFailRetry = fs.readdirSync(dirRetry).find(file => file.endsWith('webm'));
   expect(videoFailRetry).toBeTruthy();
 
-  expect(result.report.suites[0].specs[1].tests[0].results[0].attachments).toEqual([]);
+  const errorPrompt = expect.objectContaining({ name: '_prompt-0' });
+  expect(result.report.suites[0].specs[1].tests[0].results[0].attachments).toEqual([errorPrompt]);
   expect(result.report.suites[0].specs[1].tests[0].results[1].attachments).toEqual([{
     name: 'video',
     contentType: 'video/webm',
     path: path.join(dirRetry, videoFailRetry!),
-  }]);
+  }, errorPrompt]);
 });
 
 test('should work with video size', async ({ runInlineTest }) => {
@@ -826,4 +827,71 @@ test('should save trace in two APIRequestContexts', async ({ runInlineTest, serv
   }, { workers: 1 });
   expect(result.exitCode).toBe(0);
   expect(result.passed).toBe(1);
+});
+
+test('should explain a failure when using a dispose APIRequestContext', async ({ runInlineTest, server }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      import { test } from '@playwright/test';
+
+      let context;
+
+      test.beforeAll(async ({ request }) => {
+        context = request;
+      });
+
+      test('test', async () => {
+        await context.fetch('http://example.com');
+      });
+    `,
+  }, { workers: 1 });
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(0);
+  expect(result.output).toContain(`Recommended fix: use a separate { request } in the test`);
+});
+
+test('should allow dynamic import in evaluate', async ({ runInlineTest, server }) => {
+  server.setRoute('/foo.js', (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/javascript' }).end(`
+      export const foo = 'bar';
+    `);
+  });
+  const result = await runInlineTest({
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+
+      test('test', async ({ page }) => {
+        await page.goto("${server.EMPTY_PAGE}");
+        const result = await page.evaluate(async () => {
+          const { foo } = await import("${server.PREFIX + '/foo.js'}");
+          return foo;
+        });
+        expect(result).toBe('bar');
+      });
+    `,
+  }, { workers: 1 });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+});
+
+test('page.pause() should disable test timeout', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+
+      test('test', async ({ page }) => {
+        test.setTimeout(2000);
+
+        await Promise.race([
+          page.pause(),
+          new Promise(f => setTimeout(f, 3000)),
+        ]);
+
+        console.log('success!');
+      });
+    `,
+  }, { headed: true });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+  expect(result.output).toContain('success!');
 });

@@ -12,12 +12,13 @@
         "baseUrl": "..",
         "paths": {
           "@isomorphic/*": ["packages/playwright-core/src/utils/isomorphic/*"],
+          "@testIsomorphic/*": ["packages/playwright/src/isomorphic/*"],
           "@protocol/*": ["packages/protocol/src/*"],
           "@recorder/*": ["packages/recorder/src/*"],
           "@trace/*": ["packages/trace/src/*"],
           "@web/*": ["packages/web/src/*"],
         },
     },
-    "include": ["**/*.spec.js", "**/*.ts", "index.d.ts"],
+    "include": ["**/*.spec.js", "**/*.ts"],
     "exclude": ["components/", "installation/fixture-scripts/"]
 }

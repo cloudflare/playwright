@@ -15,25 +15,29 @@
  */
 
 import fs from 'fs';
-import type * as channels from '@protocol/channels';
-import * as injectedScriptSource from '../generated/injectedScriptSource';
-import { isSessionClosedError } from './protocolError';
-import type { ScreenshotOptions } from './screenshotter';
-import type * as frames from './frames';
-import type { InjectedScript, HitTargetInterceptionResult, ElementState } from './injected/injectedScript';
-import type { CallMetadata } from './instrumentation';
+
 import * as js from './javascript';
+import { ProgressController } from './progress';
+import { asLocator, isUnderTest } from '../utils';
+import { prepareFilesForUpload } from './fileUploadUtils';
+import { isSessionClosedError } from './protocolError';
+import * as injectedScriptSource from '../generated/injectedScriptSource';
+
+import type * as frames from './frames';
+import type { ElementState, HitTargetInterceptionResult, InjectedScript } from './injected/injectedScript';
+import type { CallMetadata } from './instrumentation';
 import type { Page } from './page';
 import type { Progress } from './progress';
-import { ProgressController } from './progress';
+import type { ScreenshotOptions } from './screenshotter';
 import type * as types from './types';
-import type { TimeoutOptions } from '../common/types';
-import { isUnderTest } from '../utils';
-import { prepareFilesForUpload } from './fileUploadUtils';
+import type { TimeoutOptions } from '../utils/isomorphic/types';
+import type * as channels from '@protocol/channels';
+
 
 export type InputFilesItems = {
   filePayloads?: types.FilePayload[],
   localPaths?: string[]
+  localDirectory?: string
 };
 
 type ActionName = 'click' | 'hover' | 'dblclick' | 'tap' | 'move and up' | 'move and down';
@@ -71,18 +75,12 @@ export class FrameExecutionContext extends js.ExecutionContext {
     return js.evaluate(this, false /* returnByValue */, pageFunction, arg);
   }
 
-  async evaluateExpression(expression: string, options: { isFunction?: boolean, exposeUtilityScript?: boolean }, arg?: any): Promise<any> {
+  async evaluateExpression(expression: string, options: { isFunction?: boolean }, arg?: any): Promise<any> {
     return js.evaluateExpression(this, expression, { ...options, returnByValue: true }, arg);
   }
 
-  async evaluateExpressionHandle(expression: string, options: { isFunction?: boolean, exposeUtilityScript?: boolean }, arg?: any): Promise<js.JSHandle<any>> {
+  async evaluateExpressionHandle(expression: string, options: { isFunction?: boolean }, arg?: any): Promise<js.JSHandle<any>> {
     return js.evaluateExpression(this, expression, { ...options, returnByValue: false }, arg);
-  }
-
-  override createHandle(remoteObject: js.RemoteObject): js.JSHandle {
-    if (this.frame._page._delegate.isElementHandle(remoteObject))
-      return new ElementHandle(this, remoteObject.objectId!);
-    return super.createHandle(remoteObject);
   }
 
   injectedScript(): Promise<js.JSHandle<InjectedScript>> {
@@ -107,7 +105,11 @@ export class FrameExecutionContext extends js.ExecutionContext {
         );
         })();
       `;
-      this._injectedScriptPromise = this.rawEvaluateHandle(source).then(objectId => new js.JSHandle(this, 'object', 'InjectedScript', objectId));
+      this._injectedScriptPromise = this.rawEvaluateHandle(source)
+          .then(handle => {
+            handle._setPreview('InjectedScript');
+            return handle;
+          });
     }
     return this._injectedScriptPromise;
   }
@@ -184,6 +186,15 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return this._page._delegate.getContentFrame(this);
   }
 
+  async generateLocatorString(): Promise<string | undefined> {
+    const selector = await this.evaluateInUtility(async ([injected, node]) => {
+      return injected.generateSelectorSimple(node as unknown as Element);
+    }, {});
+    if (selector === 'error:notconnected')
+      return;
+    return asLocator('javascript', selector);
+  }
+
   async getAttribute(metadata: CallMetadata, name: string): Promise<string | null> {
     return this._frame.getAttribute(metadata, ':scope', name, {}, this);
   }
@@ -232,7 +243,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
         this._page._timeoutSettings.timeout(options));
   }
 
-  private async _clickablePoint(): Promise<types.Point | 'error:notvisible' | 'error:notinviewport'> {
+  private async _clickablePoint(): Promise<types.Point | 'error:notvisible' | 'error:notinviewport' | 'error:notconnected'> {
     const intersectQuadWithViewport = (quad: types.Quad): types.Quad => {
       return quad.map(point => ({
         x: Math.min(Math.max(point.x, 0), metrics.width),
@@ -256,6 +267,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       this._page._delegate.getContentQuads(this),
       this._page.mainFrame()._utilityContext().then(utility => utility.evaluate(() => ({ width: innerWidth, height: innerHeight }))),
     ] as const);
+    if (quads === 'error:notconnected')
+      return quads;
     if (!quads || !quads.length)
       return 'error:notvisible';
 
@@ -263,14 +276,22 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     const filtered = quads.map(quad => intersectQuadWithViewport(quad)).filter(quad => computeQuadArea(quad) > 0.99);
     if (!filtered.length)
       return 'error:notinviewport';
-    // Return the middle point of the first quad.
-    const result = { x: 0, y: 0 };
-    for (const point of filtered[0]) {
-      result.x += point.x / 4;
-      result.y += point.y / 4;
+    if (this._page._browserContext._browser.options.name === 'firefox') {
+      // Firefox internally uses integer coordinates, so 8.x is converted to 8 or 9 when clicking.
+      //
+      // This does not work nicely for small elements. For example, 1x1 square with corners
+      // (8;8) and (9;9) is targeted when clicking at (8;8) but not when clicking at (9;9).
+      // So, clicking at (8.x;8.y) will sometimes click at (9;9) and miss the target.
+      //
+      // Therefore, we try to find an integer point within a quad to make sure we click inside the element.
+      for (const quad of filtered) {
+        const integerPoint = findIntegerPointInsideQuad(quad);
+        if (integerPoint)
+          return integerPoint;
+      }
     }
-    compensateHalfIntegerRoundingError(result);
-    return result;
+    // Return the middle point of the first quad.
+    return quadMiddlePoint(filtered[0]);
   }
 
   private async _offsetPoint(offset: types.Point): Promise<types.Point | 'error:notvisible' | 'error:notconnected'> {
@@ -289,14 +310,14 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     };
   }
 
-  async _retryAction(progress: Progress, actionName: string, action: (retry: number) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipLocatorHandlersCheckpoint?: boolean }): Promise<'error:notconnected' | 'done'> {
+  async _retryAction(progress: Progress, actionName: string, action: (retry: number) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipActionPreChecks?: boolean }): Promise<'error:notconnected' | 'done'> {
     let retry = 0;
     // We progressively wait longer between retries, up to 500ms.
     const waitTime = [0, 20, 100, 100, 500];
 
     while (progress.isRunning()) {
       if (retry) {
-        progress.log(`retrying ${actionName} action${options.trial ? ' (trial run)' : ''}, attempt #${retry}`);
+        progress.log(`retrying ${actionName} action${options.trial ? ' (trial run)' : ''}`);
         const timeout = waitTime[Math.min(retry - 1, waitTime.length - 1)];
         if (timeout) {
           progress.log(`  waiting ${timeout}ms`);
@@ -307,8 +328,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       } else {
         progress.log(`attempting ${actionName} action${options.trial ? ' (trial run)' : ''}`);
       }
-      if (!options.skipLocatorHandlersCheckpoint && !options.force)
-        await this._frame._page.performLocatorHandlersCheckpoint(progress);
+      if (!options.skipActionPreChecks && !options.force)
+        await this._frame._page.performActionPreChecks(progress);
       const result = await action(retry);
       ++retry;
       if (result === 'error:notvisible') {
@@ -341,9 +362,9 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   async _retryPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (point: types.Point) => Promise<void>,
-    options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    options: { waitAfter: boolean | 'disabled' } & types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     // Note: do not perform locator handlers checkpoint to avoid moving the mouse in the middle of a drag operation.
-    const skipLocatorHandlersCheckpoint = actionName === 'move and up';
+    const skipActionPreChecks = actionName === 'move and up';
     return await this._retryAction(progress, actionName, async retry => {
       // By default, we scroll with protocol method to reveal the action point.
       // However, that might not work to scroll from under position:sticky elements
@@ -357,10 +378,17 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       ];
       const forceScrollOptions = scrollOptions[retry % scrollOptions.length];
       return await this._performPointerAction(progress, actionName, waitForEnabled, action, forceScrollOptions, options);
-    }, { ...options, skipLocatorHandlersCheckpoint });
+    }, { ...options, skipActionPreChecks });
   }
 
-  async _performPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (point: types.Point) => Promise<void>, forceScrollOptions: ScrollIntoViewOptions | undefined, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<PerformActionResult> {
+  async _performPointerAction(
+    progress: Progress,
+    actionName: ActionName,
+    waitForEnabled: boolean,
+    action: (point: types.Point) => Promise<void>,
+    forceScrollOptions: ScrollIntoViewOptions | undefined,
+    options: { waitAfter: boolean | 'disabled' } & types.PointerActionOptions & types.PointerActionWaitOptions,
+  ): Promise<PerformActionResult> {
     const { force = false, position } = options;
 
     const doScrollIntoView = async () => {
@@ -411,7 +439,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       return maybePoint;
     const point = roundPoint(maybePoint);
     progress.metadata.point = point;
-    await progress.beforeInputAction(this);
+    await this.instrumentation.onBeforeInputAction(this, progress.metadata);
 
     let hitTargetInterceptionHandle: js.JSHandle<HitTargetInterceptionResult> | undefined;
     if (force) {
@@ -443,22 +471,24 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       });
     }
 
-    const actionResult = await this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
+    const actionResult = await this._page._frameManager.waitForSignalsCreatedBy(progress, options.waitAfter === true, async () => {
       if ((options as any).__testHookBeforePointerAction)
         await (options as any).__testHookBeforePointerAction();
       progress.throwIfAborted();  // Avoid action that has side-effects.
       let restoreModifiers: types.KeyboardModifier[] | undefined;
       if (options && options.modifiers)
-        restoreModifiers = await this._page.keyboard._ensureModifiers(options.modifiers);
+        restoreModifiers = await this._page.keyboard.ensureModifiers(options.modifiers);
       progress.log(`  performing ${actionName} action`);
       await action(point);
       if (restoreModifiers)
-        await this._page.keyboard._ensureModifiers(restoreModifiers);
+        await this._page.keyboard.ensureModifiers(restoreModifiers);
       if (hitTargetInterceptionHandle) {
-        const stopHitTargetInterception = hitTargetInterceptionHandle.evaluate(h => h.stop()).catch(e => 'done' as const).finally(() => {
+        const stopHitTargetInterception = this._frame.raceAgainstEvaluationStallingEvents(() => {
+          return hitTargetInterceptionHandle.evaluate(h => h.stop());
+        }).catch(e => 'done' as const).finally(() => {
           hitTargetInterceptionHandle?.dispose();
         });
-        if (!options.noWaitAfter) {
+        if (options.waitAfter !== false) {
           // When noWaitAfter is passed, we do not want to accidentally stall on
           // non-committed navigation blocking the evaluate.
           const hitTargetResult = await stopHitTargetInterception;
@@ -471,73 +501,87 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       if ((options as any).__testHookAfterPointerAction)
         await (options as any).__testHookAfterPointerAction();
       return 'done';
-    }, 'input');
+    });
     if (actionResult !== 'done')
       return actionResult;
     progress.log('  navigations have finished');
     return 'done';
   }
 
+  private async _markAsTargetElement(metadata: CallMetadata) {
+    if (!metadata.id)
+      return;
+    await this.evaluateInUtility(([injected, node, callId]) => {
+      if (node.nodeType === 1 /* Node.ELEMENT_NODE */)
+        injected.markTargetElements(new Set([node as Node as Element]), callId);
+    }, metadata.id);
+  }
+
   async hover(metadata: CallMetadata, options: types.PointerActionOptions & types.PointerActionWaitOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._hover(progress, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, point => this._page.mouse.move(point.x, point.y), options);
+  _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, point => this._page.mouse.move(point.x, point.y), { ...options, waitAfter: 'disabled' });
   }
 
-  async click(metadata: CallMetadata, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}): Promise<void> {
+  async click(metadata: CallMetadata, options: { noWaitAfter?: boolean } & types.MouseClickOptions & types.PointerActionWaitOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._click(progress, options);
+      await this._markAsTargetElement(metadata);
+      const result = await this._click(progress, { ...options, waitAfter: !options.noWaitAfter });
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _click(progress: Progress, options: types.MouseClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+  _click(progress: Progress, options: { waitAfter: boolean | 'disabled' } & types.MouseClickOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     return this._retryPointerAction(progress, 'click', true /* waitForEnabled */, point => this._page.mouse.click(point.x, point.y, options), options);
   }
 
-  async dblclick(metadata: CallMetadata, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<void> {
+  async dblclick(metadata: CallMetadata, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._dblclick(progress, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _dblclick(progress: Progress, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'dblclick', true /* waitForEnabled */, point => this._page.mouse.dblclick(point.x, point.y, options), options);
+  _dblclick(progress: Progress, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    return this._retryPointerAction(progress, 'dblclick', true /* waitForEnabled */, point => this._page.mouse.dblclick(point.x, point.y, options), { ...options, waitAfter: 'disabled' });
   }
 
-  async tap(metadata: CallMetadata, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions = {}): Promise<void> {
+  async tap(metadata: CallMetadata, options: types.PointerActionWaitOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._tap(progress, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  _tap(progress: Progress, options: types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'tap', true /* waitForEnabled */, point => this._page.touchscreen.tap(point.x, point.y), options);
+  _tap(progress: Progress, options: types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    return this._retryPointerAction(progress, 'tap', true /* waitForEnabled */, point => this._page.touchscreen.tap(point.x, point.y), { ...options, waitAfter: 'disabled' });
   }
 
-  async selectOption(metadata: CallMetadata, elements: ElementHandle[], values: types.SelectOption[], options: types.NavigatingActionWaitOptions & types.ForceOptions): Promise<string[]> {
+  async selectOption(metadata: CallMetadata, elements: ElementHandle[], values: types.SelectOption[], options: types.CommonActionOptions): Promise<string[]> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._selectOption(progress, elements, values, options);
       return throwRetargetableDOMError(result);
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _selectOption(progress: Progress, elements: ElementHandle[], values: types.SelectOption[], options: types.NavigatingActionWaitOptions & types.ForceOptions): Promise<string[] | 'error:notconnected'> {
+  async _selectOption(progress: Progress, elements: ElementHandle[], values: types.SelectOption[], options: types.CommonActionOptions): Promise<string[] | 'error:notconnected'> {
     let resultingOptions: string[] = [];
     await this._retryAction(progress, 'select option', async () => {
-      await progress.beforeInputAction(this);
+      await this.instrumentation.onBeforeInputAction(this, progress.metadata);
       if (!options.force)
         progress.log(`  waiting for element to be visible and enabled`);
       const optionsToSelect = [...elements, ...values];
@@ -559,44 +603,43 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return resultingOptions;
   }
 
-  async fill(metadata: CallMetadata, value: string, options: types.NavigatingActionWaitOptions & types.ForceOptions = {}): Promise<void> {
+  async fill(metadata: CallMetadata, value: string, options: types.CommonActionOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._fill(progress, value, options);
       assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _fill(progress: Progress, value: string, options: types.NavigatingActionWaitOptions & types.ForceOptions): Promise<'error:notconnected' | 'done'> {
+  async _fill(progress: Progress, value: string, options: types.CommonActionOptions): Promise<'error:notconnected' | 'done'> {
     progress.log(`  fill("${value}")`);
     return await this._retryAction(progress, 'fill', async () => {
-      await progress.beforeInputAction(this);
-      return this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
-        if (!options.force)
-          progress.log('  waiting for element to be visible, enabled and editable');
-        const result = await this.evaluateInUtility(async ([injected, node, { value, force }]) => {
-          if (!force) {
-            const checkResult = await injected.checkElementStates(node, ['visible', 'enabled', 'editable']);
-            if (checkResult)
-              return checkResult;
-          }
-          return injected.fill(node, value);
-        }, { value, force: options.force });
-        progress.throwIfAborted();  // Avoid action that has side-effects.
-        if (result === 'needsinput') {
-          if (value)
-            await this._page.keyboard.insertText(value);
-          else
-            await this._page.keyboard.press('Delete');
-          return 'done';
-        } else {
-          return result;
+      await this.instrumentation.onBeforeInputAction(this, progress.metadata);
+      if (!options.force)
+        progress.log('  waiting for element to be visible, enabled and editable');
+      const result = await this.evaluateInUtility(async ([injected, node, { value, force }]) => {
+        if (!force) {
+          const checkResult = await injected.checkElementStates(node, ['visible', 'enabled', 'editable']);
+          if (checkResult)
+            return checkResult;
         }
-      }, 'input');
+        return injected.fill(node, value);
+      }, { value, force: options.force });
+      progress.throwIfAborted();  // Avoid action that has side-effects.
+      if (result === 'needsinput') {
+        if (value)
+          await this._page.keyboard.insertText(value);
+        else
+          await this._page.keyboard.press('Delete');
+        return 'done';
+      } else {
+        return result;
+      }
     }, options);
   }
 
-  async selectText(metadata: CallMetadata, options: types.TimeoutOptions & types.ForceOptions = {}): Promise<void> {
+  async selectText(metadata: CallMetadata, options: types.CommonActionOptions = {}): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
       const result = await this._retryAction(progress, 'selectText', async () => {
@@ -619,45 +662,57 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     const inputFileItems = await prepareFilesForUpload(this._frame, params);
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
-      const result = await this._setInputFiles(progress, inputFileItems, params);
+      await this._markAsTargetElement(metadata);
+      const result = await this._setInputFiles(progress, inputFileItems);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(params));
   }
 
-  async _setInputFiles(progress: Progress, items: InputFilesItems, options: types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    const { filePayloads, localPaths } = items;
+  async _setInputFiles(progress: Progress, items: InputFilesItems): Promise<'error:notconnected' | 'done'> {
+    const { filePayloads, localPaths, localDirectory } = items;
     const multiple = filePayloads && filePayloads.length > 1 || localPaths && localPaths.length > 1;
-    const result = await this.evaluateHandleInUtility(([injected, node, multiple]): Element | undefined => {
+    const result = await this.evaluateHandleInUtility(([injected, node, { multiple, directoryUpload }]): Element | undefined => {
       const element = injected.retarget(node, 'follow-label');
       if (!element)
         return;
       if (element.tagName !== 'INPUT')
         throw injected.createStacklessError('Node is not an HTMLInputElement');
-      if (multiple && !(element as HTMLInputElement).multiple)
+      const inputElement = element as HTMLInputElement;
+      if (multiple && !inputElement.multiple && !inputElement.webkitdirectory)
         throw injected.createStacklessError('Non-multiple file input can only accept single file');
-      return element;
-    }, multiple);
+      if (directoryUpload && !inputElement.webkitdirectory)
+        throw injected.createStacklessError('File input does not support directories, pass individual files instead');
+      if (!directoryUpload && inputElement.webkitdirectory)
+        throw injected.createStacklessError('[webkitdirectory] input requires passing a path to a directory');
+      return inputElement;
+    }, { multiple, directoryUpload: !!localDirectory });
     if (result === 'error:notconnected' || !result.asElement())
       return 'error:notconnected';
     const retargeted = result.asElement() as ElementHandle<HTMLInputElement>;
-    await progress.beforeInputAction(this);
-    await this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
-      progress.throwIfAborted();  // Avoid action that has side-effects.
-      if (localPaths) {
-        await Promise.all(localPaths.map(localPath => (
-          fs.promises.access(localPath, fs.constants.F_OK)
-        )));
-        await this._page._delegate.setInputFilePaths(retargeted, localPaths);
-      } else {
-        await this._page._delegate.setInputFiles(retargeted, filePayloads!);
-      }
-    });
+    await this.instrumentation.onBeforeInputAction(this, progress.metadata);
+    progress.throwIfAborted();  // Avoid action that has side-effects.
+    if (localPaths || localDirectory) {
+      const localPathsOrDirectory = localDirectory ? [localDirectory] : localPaths!;
+      await Promise.all((localPathsOrDirectory).map(localPath => (
+        fs.promises.access(localPath, fs.constants.F_OK)
+      )));
+      // Browsers traverse the given directory asynchronously and we want to ensure all files are uploaded.
+      const waitForInputEvent = localDirectory ? this.evaluate(node => new Promise<any>(fulfill => {
+        node.addEventListener('input', fulfill, { once: true });
+      })).catch(() => {}) : Promise.resolve();
+      await this._page._delegate.setInputFilePaths(retargeted, localPathsOrDirectory);
+      await waitForInputEvent;
+    } else {
+      await retargeted.evaluateInUtility(([injected, node, files]) =>
+        injected.setInputFiles(node, files), filePayloads!);
+    }
     return 'done';
   }
 
   async focus(metadata: CallMetadata): Promise<void> {
     const controller = new ProgressController(metadata, this);
     await controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._focus(progress);
       return assertDone(throwRetargetableDOMError(result));
     }, 0);
@@ -673,49 +728,49 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return await this.evaluateInUtility(([injected, node]) => injected.blurNode(node), {});
   }
 
-  async type(metadata: CallMetadata, text: string, options: { delay?: number } & types.NavigatingActionWaitOptions): Promise<void> {
+  async type(metadata: CallMetadata, text: string, options: { delay?: number } & types.TimeoutOptions & types.StrictOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._type(progress, text, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _type(progress: Progress, text: string, options: { delay?: number } & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+  async _type(progress: Progress, text: string, options: { delay?: number } & types.TimeoutOptions & types.StrictOptions): Promise<'error:notconnected' | 'done'> {
     progress.log(`elementHandle.type("${text}")`);
-    await progress.beforeInputAction(this);
-    return this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
-      const result = await this._focus(progress, true /* resetSelectionIfNotFocused */);
-      if (result !== 'done')
-        return result;
-      progress.throwIfAborted();  // Avoid action that has side-effects.
-      await this._page.keyboard.type(text, options);
-      return 'done';
-    }, 'input');
+    await this.instrumentation.onBeforeInputAction(this, progress.metadata);
+    const result = await this._focus(progress, true /* resetSelectionIfNotFocused */);
+    if (result !== 'done')
+      return result;
+    progress.throwIfAborted();  // Avoid action that has side-effects.
+    await this._page.keyboard.type(text, options);
+    return 'done';
   }
 
-  async press(metadata: CallMetadata, key: string, options: { delay?: number } & types.NavigatingActionWaitOptions): Promise<void> {
+  async press(metadata: CallMetadata, key: string, options: { delay?: number, noWaitAfter?: boolean } & types.TimeoutOptions & types.StrictOptions): Promise<void> {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
+      await this._markAsTargetElement(metadata);
       const result = await this._press(progress, key, options);
       return assertDone(throwRetargetableDOMError(result));
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _press(progress: Progress, key: string, options: { delay?: number } & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+  async _press(progress: Progress, key: string, options: { delay?: number, noWaitAfter?: boolean } & types.TimeoutOptions & types.StrictOptions): Promise<'error:notconnected' | 'done'> {
     progress.log(`elementHandle.press("${key}")`);
-    await progress.beforeInputAction(this);
-    return this._page._frameManager.waitForSignalsCreatedBy(progress, options.noWaitAfter, async () => {
+    await this.instrumentation.onBeforeInputAction(this, progress.metadata);
+    return this._page._frameManager.waitForSignalsCreatedBy(progress, !options.noWaitAfter, async () => {
       const result = await this._focus(progress, true /* resetSelectionIfNotFocused */);
       if (result !== 'done')
         return result;
       progress.throwIfAborted();  // Avoid action that has side-effects.
       await this._page.keyboard.press(key, options);
       return 'done';
-    }, 'input');
+    });
   }
 
-  async check(metadata: CallMetadata, options: { position?: types.Point } & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions) {
+  async check(metadata: CallMetadata, options: { position?: types.Point } & types.PointerActionWaitOptions) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
       const result = await this._setChecked(progress, true, options);
@@ -723,7 +778,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async uncheck(metadata: CallMetadata, options: { position?: types.Point } & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions) {
+  async uncheck(metadata: CallMetadata, options: { position?: types.Point } & types.PointerActionWaitOptions) {
     const controller = new ProgressController(metadata, this);
     return controller.run(async progress => {
       const result = await this._setChecked(progress, false, options);
@@ -731,14 +786,17 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     }, this._page._timeoutSettings.timeout(options));
   }
 
-  async _setChecked(progress: Progress, state: boolean, options: { position?: types.Point } & types.PointerActionWaitOptions & types.NavigatingActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+  async _setChecked(progress: Progress, state: boolean, options: { position?: types.Point } & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     const isChecked = async () => {
       const result = await this.evaluateInUtility(([injected, node]) => injected.elementState(node, 'checked'), {});
-      return throwRetargetableDOMError(result);
+      if (result === 'error:notconnected' || result.received === 'error:notconnected')
+        throwElementIsNotAttached();
+      return result.matches;
     };
+    await this._markAsTargetElement(progress.metadata);
     if (await isChecked() === state)
       return 'done';
-    const result = await this._click(progress, options);
+    const result = await this._click(progress, { ...options, waitAfter: 'disabled' });
     if (result !== 'done')
       return result;
     if (options.trial)
@@ -750,6 +808,10 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
 
   async boundingBox(): Promise<types.Rect | null> {
     return this._page._delegate.getBoundingBox(this);
+  }
+
+  async ariaSnapshot(options: { id?: boolean, mode?: 'raw' | 'regex' }): Promise<string> {
+    return await this.evaluateInUtility(([injected, element, options]) => injected.ariaSnapshot(element, options), options);
   }
 
   async screenshot(metadata: CallMetadata, options: ScreenshotOptions & TimeoutOptions = {}): Promise<Buffer> {
@@ -864,8 +926,12 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
 
 export function throwRetargetableDOMError<T>(result: T | 'error:notconnected'): T {
   if (result === 'error:notconnected')
-    throw new Error('Element is not attached to the DOM');
+    throwElementIsNotAttached();
   return result;
+}
+
+export function throwElementIsNotAttached(): never {
+  throw new Error('Element is not attached to the DOM');
 }
 
 export function assertDone(result: 'done'): void {
@@ -879,24 +945,47 @@ function roundPoint(point: types.Point): types.Point {
   };
 }
 
-function compensateHalfIntegerRoundingError(point: types.Point) {
-  // Firefox internally uses integer coordinates, so 8.5 is converted to 9 when clicking.
-  //
-  // This does not work nicely for small elements. For example, 1x1 square with corners
-  // (8;8) and (9;9) is targeted when clicking at (8;8) but not when clicking at (9;9).
-  // So, clicking at (8.5;8.5) will effectively click at (9;9) and miss the target.
-  //
-  // Therefore, we skew half-integer values from the interval (8.49, 8.51) towards
-  // (8.47, 8.49) that is rounded towards 8. This means clicking at (8.5;8.5) will
-  // be replaced with (8.48;8.48) and will effectively click at (8;8).
-  //
-  // Other browsers use float coordinates, so this change should not matter.
-  const remainderX = point.x - Math.floor(point.x);
-  if (remainderX > 0.49 && remainderX < 0.51)
-    point.x -= 0.02;
-  const remainderY = point.y - Math.floor(point.y);
-  if (remainderY > 0.49 && remainderY < 0.51)
-    point.y -= 0.02;
+function quadMiddlePoint(quad: types.Quad): types.Point {
+  const result = { x: 0, y: 0 };
+  for (const point of quad) {
+    result.x += point.x / 4;
+    result.y += point.y / 4;
+  }
+  return result;
+}
+
+function triangleArea(p1: types.Point, p2: types.Point, p3: types.Point): number {
+  return Math.abs(p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y)) / 2;
+}
+
+function isPointInsideQuad(point: types.Point, quad: types.Quad): boolean {
+  const area1 = triangleArea(point, quad[0], quad[1]) + triangleArea(point, quad[1], quad[2]) + triangleArea(point, quad[2], quad[3]) + triangleArea(point, quad[3], quad[0]);
+  const area2 = triangleArea(quad[0], quad[1], quad[2]) + triangleArea(quad[1], quad[2], quad[3]);
+  // Check that point is inside the quad.
+  if (Math.abs(area1 - area2) > 0.1)
+    return false;
+  // Check that point is not on the right/bottom edge, because clicking
+  // there does not actually click the element.
+  return point.x < Math.max(quad[0].x, quad[1].x, quad[2].x, quad[3].x) &&
+         point.y < Math.max(quad[0].y, quad[1].y, quad[2].y, quad[3].y);
+}
+
+function findIntegerPointInsideQuad(quad: types.Quad): types.Point | undefined {
+  // Try all four rounding directions of the middle point.
+  const point = quadMiddlePoint(quad);
+  point.x = Math.floor(point.x);
+  point.y = Math.floor(point.y);
+  if (isPointInsideQuad(point, quad))
+    return point;
+  point.x += 1;
+  if (isPointInsideQuad(point, quad))
+    return point;
+  point.y += 1;
+  if (isPointInsideQuad(point, quad))
+    return point;
+  point.x -= 1;
+  if (isPointInsideQuad(point, quad))
+    return point;
 }
 
 export const kUnableToAdoptErrorMessage = 'Unable to adopt element handle from a different document';

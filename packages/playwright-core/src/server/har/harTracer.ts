@@ -14,24 +14,23 @@
  * limitations under the License.
  */
 
+import { assert, calculateSha1, monotonicTime } from '../../utils';
+import { getPlaywrightVersion, isTextualMimeType, urlMatches } from '../../utils';
+import { eventsHelper } from '../utils/eventsHelper';
+import { ManualPromise } from '../../utils/isomorphic/manualPromise';
+import { mime } from '../../utilsBundle';
 import { BrowserContext } from '../browserContext';
-import type { APIRequestEvent, APIRequestFinishedEvent } from '../fetch';
 import { APIRequestContext } from '../fetch';
+import { Frame } from '../frames';
 import { helper } from '../helper';
 import * as network from '../network';
-import type { Worker } from '../page';
+
+import type { RegisteredListener } from '../utils/eventsHelper';
+import type { APIRequestEvent, APIRequestFinishedEvent } from '../fetch';
 import type { Page } from '../page';
-import type * as har from '@trace/har';
-import { assert, calculateSha1, monotonicTime } from '../../utils';
-import type { RegisteredListener } from '../../utils/eventsHelper';
-import { eventsHelper } from '../../utils/eventsHelper';
-import { mime } from '../../utilsBundle';
-import { ManualPromise } from '../../utils/manualPromise';
-import { getPlaywrightVersion } from '../../utils/userAgent';
-import { urlMatches } from '../../utils/network';
-import { Frame } from '../frames';
+import type { Worker } from '../page';
 import type { HeadersArray, LifecycleEvent } from '../types';
-import { isTextualMimeType } from '../../utils/mimeType';
+import type * as har from '@trace/har';
 
 const FALLBACK_HTTP_VERSION = 'HTTP/1.1';
 
@@ -214,6 +213,20 @@ export class HarTracer {
     harEntry.response.statusText = event.statusMessage;
     harEntry.response.httpVersion = event.httpVersion;
     harEntry.response.redirectURL = event.headers.location || '';
+
+    if (!this._options.omitServerIP) {
+      harEntry.serverIPAddress = event.serverIPAddress;
+      harEntry._serverPort = event.serverPort;
+    }
+
+    if (!this._options.omitTiming) {
+      harEntry.timings = event.timings;
+      this._computeHarEntryTotalTime(harEntry);
+    }
+
+    if (!this._options.omitSecurityDetails)
+      harEntry._securityDetails = event.securityDetails;
+
     for (let i = 0; i < event.rawHeaders.length; i += 2) {
       harEntry.response.headers.push({
         name: event.rawHeaders[i],
@@ -232,6 +245,8 @@ export class HarTracer {
     if (contentType)
       content.mimeType = contentType;
     this._storeResponseContent(event.body, content, 'other');
+    if (!this._options.omitSizes)
+      harEntry.response.bodySize = event.body?.length ?? 0;
 
     if (this._started)
       this._delegate.onEntryFinished(harEntry);
@@ -243,7 +258,7 @@ export class HarTracer {
     const page = request.frame()?._page;
     if (this._page && page !== this._page)
       return;
-    const url = network.parsedURL(request.url());
+    const url = network.parseURL(request.url());
     if (!url)
       return;
 
@@ -351,7 +366,7 @@ export class HarTracer {
     });
     this._addBarrier(page || request.serviceWorker(), promise);
 
-    // Respose end timing is only available after the response event was received.
+    // Response end timing is only available after the response event was received.
     const timing = response.timing();
     harEntry.timings.receive = response.request()._responseEndTiming !== -1 ? helper.millisToRoundishMillis(response.request()._responseEndTiming - timing.responseStart) : -1;
     this._computeHarEntryTotalTime(harEntry);
@@ -433,12 +448,6 @@ export class HarTracer {
     const page = response.frame()?._page;
     const pageEntry = this._createPageEntryIfNeeded(page);
     const request = response.request();
-
-    // Prefer "response received" time over "request sent" time
-    // for the purpose of matching requests that were used in a particular snapshot.
-    // Note that both snapshot time and request time are taken here in the Node process.
-    if (this._options.includeTraceInfo)
-      harEntry._monotonicTime = monotonicTime();
 
     harEntry.response = {
       status: response.status(),

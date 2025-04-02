@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import type { TestInfoImpl } from '../worker/testInfo';
 import type { Suite } from './test';
+import type { TestInfoImpl } from '../worker/testInfo';
 
 let currentTestInfoValue: TestInfoImpl | null = null;
 export function setCurrentTestInfo(testInfo: TestInfoImpl | null) {
@@ -31,24 +31,6 @@ export function setCurrentlyLoadingFileSuite(suite: Suite | undefined) {
 }
 export function currentlyLoadingFileSuite() {
   return currentFileSuite;
-}
-
-let currentExpectConfigureTimeout: number | undefined;
-
-export function setCurrentExpectConfigureTimeout(timeout: number | undefined) {
-  currentExpectConfigureTimeout = timeout;
-}
-
-export function currentExpectTimeout(options: { timeout?: number }) {
-  const testInfo = currentTestInfo();
-  if (options.timeout !== undefined)
-    return options.timeout;
-  if (currentExpectConfigureTimeout !== undefined)
-    return currentExpectConfigureTimeout;
-  let defaultExpectTimeout = testInfo?._projectInternal?.expect?.timeout;
-  if (typeof defaultExpectTimeout === 'undefined')
-    defaultExpectTimeout = 5000;
-  return defaultExpectTimeout;
 }
 
 let _isWorkerProcess = false;

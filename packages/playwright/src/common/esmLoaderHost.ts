@@ -15,9 +15,10 @@
  */
 
 import url from 'url';
+
 import { addToCompilationCache, serializeCompilationCache } from '../transform/compilationCache';
-import { transformConfig } from '../transform/transform';
 import { PortTransport } from '../transform/portTransport';
+import { singleTSConfig, transformConfig } from '../transform/transform';
 
 let loaderChannel: PortTransport | undefined;
 // Node.js < 20
@@ -30,7 +31,6 @@ export function registerESMLoader() {
   const { port1, port2 } = new MessageChannel();
   // register will wait until the loader is initialized.
   require('node:module').register(url.pathToFileURL(require.resolve('../transform/esmLoader')), {
-    parentURL: url.pathToFileURL(__filename),
     data: { port: port2 },
     transferList: [port2],
   });
@@ -61,15 +61,22 @@ export async function incorporateCompilationCache() {
   if (!loaderChannel)
     return;
   // This is needed to gather dependency information from the esm loader
-  // that is populated from the resovle hook. We do not need to push
+  // that is populated from the resolve hook. We do not need to push
   // this information proactively during load, but gather it at the end.
   const result = await loaderChannel.send('getCompilationCache', {});
   addToCompilationCache(result.cache);
 }
 
-export async function initializeEsmLoader() {
+export async function configureESMLoader() {
   if (!loaderChannel)
     return;
-  await loaderChannel.send('setTransformConfig', { config: transformConfig() });
+  await loaderChannel.send('setSingleTSConfig', { tsconfig: singleTSConfig() });
   await loaderChannel.send('addToCompilationCache', { cache: serializeCompilationCache() });
+}
+
+export async function configureESMLoaderTransformConfig() {
+  if (!loaderChannel)
+    return;
+  await loaderChannel.send('setSingleTSConfig', { tsconfig: singleTSConfig() });
+  await loaderChannel.send('setTransformConfig', { config: transformConfig() });
 }

@@ -16,17 +16,22 @@
 
 import fs from 'fs';
 import path from 'path';
-import type { ReporterDescription } from '../../types/test';
-import type { FullConfigInternal } from '../common/config';
-import type { JsonConfig, JsonEvent, JsonFullResult, JsonLocation, JsonProject, JsonSuite, JsonTestResultEnd, JsonTestStepStart } from '../isomorphic/teleReceiver';
-import { TeleReporterReceiver } from '../isomorphic/teleReceiver';
-import { JsonStringInternalizer, StringInternPool } from '../isomorphic/stringInternPool';
-import { createReporters } from '../runner/reporters';
-import { Multiplexer } from './multiplexer';
+
 import { ZipFile } from 'playwright-core/lib/utils';
-import { currentBlobReportVersion, type BlobReportMetadata } from './blob';
+
+import {  currentBlobReportVersion } from './blob';
+import { Multiplexer } from './multiplexer';
+import { JsonStringInternalizer, StringInternPool } from '../isomorphic/stringInternPool';
+import { TeleReporterReceiver } from '../isomorphic/teleReceiver';
+import { createReporters } from '../runner/reporters';
 import { relativeFilePath } from '../util';
+
+import type { BlobReportMetadata } from './blob';
+import type { ReporterDescription, TestAnnotation } from '../../types/test';
 import type { TestError } from '../../types/testReporter';
+import type { FullConfigInternal } from '../common/config';
+import type { JsonConfig, JsonEvent, JsonFullResult, JsonLocation, JsonProject, JsonSuite, JsonTestCase, JsonTestEnd, JsonTestResultEnd, JsonTestStepEnd, JsonTestStepStart } from '../isomorphic/teleReceiver';
+import type * as blobV1 from './versions/blobV1';
 
 type StatusCallback = (message: string) => void;
 
@@ -136,15 +141,17 @@ async function extractAndParseReports(dir: string, shardFiles: string[], interna
       const content = await zipFile.read(entryName);
       if (entryName.endsWith('.jsonl')) {
         fileName = reportNames.makeUnique(fileName);
-        const parsedEvents = parseCommonEvents(content);
+        let parsedEvents = parseCommonEvents(content);
         // Passing reviver to JSON.parse doesn't work, as the original strings
-        // keep beeing used. To work around that we traverse the parsed events
+        // keep being used. To work around that we traverse the parsed events
         // as a post-processing step.
         internalizer.traverse(parsedEvents);
+        const metadata = findMetadata(parsedEvents, file);
+        parsedEvents = modernizer.modernize(metadata.version, parsedEvents);
         shardEvents.push({
           file,
           localPath: fileName,
-          metadata: findMetadata(parsedEvents, file),
+          metadata,
           parsedEvents
         });
       }
@@ -191,12 +198,18 @@ async function mergeEvents(dir: string, shardReportFiles: string[], stringPool: 
   printStatus(`merging events`);
 
   const reports: ReportData[] = [];
+  const globalTestIdSet = new Set<string>();
 
   for (let i = 0; i < blobs.length; ++i) {
     // Generate unique salt for each blob.
     const { parsedEvents, metadata, localPath } = blobs[i];
     const eventPatchers = new JsonEventPatchers();
-    eventPatchers.patchers.push(new IdsPatcher(stringPool, metadata.name, String(i)));
+    eventPatchers.patchers.push(new IdsPatcher(
+        stringPool,
+        metadata.name,
+        String(i),
+        globalTestIdSet,
+    ));
     // Only patch path separators if we are merging reports with explicit config.
     if (rootDirOverride)
       eventPatchers.patchers.push(new PathSeparatorPatcher(metadata.pathSeparator));
@@ -355,11 +368,20 @@ class IdsPatcher {
   private _stringPool: StringInternPool;
   private _botName: string | undefined;
   private _salt: string;
+  private _testIdsMap: Map<string, string>;
+  private _globalTestIdSet: Set<string>;
 
-  constructor(stringPool: StringInternPool, botName: string | undefined, salt: string) {
+  constructor(
+    stringPool: StringInternPool,
+    botName: string | undefined,
+    salt: string,
+    globalTestIdSet: Set<string>,
+  ) {
     this._stringPool = stringPool;
     this._botName = botName;
     this._salt = salt;
+    this._testIdsMap = new Map();
+    this._globalTestIdSet = globalTestIdSet;
   }
 
   patchEvent(event: JsonEvent) {
@@ -381,24 +403,42 @@ class IdsPatcher {
   }
 
   private _onProject(project: JsonProject) {
-    project.metadata = project.metadata ?? {};
-    project.metadata.botName = this._botName;
+    project.metadata ??= {};
     project.suites.forEach(suite => this._updateTestIds(suite));
   }
 
   private _updateTestIds(suite: JsonSuite) {
-    suite.tests.forEach(test => {
-      test.testId = this._mapTestId(test.testId);
-      if (this._botName) {
-        test.tags = test.tags || [];
-        test.tags.unshift('@' + this._botName);
-      }
+    suite.entries.forEach(entry => {
+      if ('testId' in entry)
+        this._updateTestId(entry);
+      else
+        this._updateTestIds(entry);
     });
-    suite.suites.forEach(suite => this._updateTestIds(suite));
+  }
+
+  private _updateTestId(test: JsonTestCase) {
+    test.testId = this._mapTestId(test.testId);
+    if (this._botName) {
+      test.tags = test.tags || [];
+      test.tags.unshift('@' + this._botName);
+    }
   }
 
   private _mapTestId(testId: string): string {
-    return this._stringPool.internString(testId + this._salt);
+    const t1 = this._stringPool.internString(testId);
+    if (this._testIdsMap.has(t1))
+      // already mapped
+      return this._testIdsMap.get(t1)!;
+    if (this._globalTestIdSet.has(t1)) {
+      // test id is used in another blob, so we need to salt it.
+      const t2 = this._stringPool.internString(testId + this._salt);
+      this._globalTestIdSet.add(t2);
+      this._testIdsMap.set(t1, t2);
+      return t2;
+    }
+    this._globalTestIdSet.add(t1);
+    this._testIdsMap.set(t1, t1);
+    return t1;
   }
 }
 
@@ -434,8 +474,11 @@ class PathSeparatorPatcher {
       return;
     }
     if (jsonEvent.method === 'onTestEnd') {
+      const test = jsonEvent.params.test as JsonTestEnd;
+      test.annotations?.forEach(annotation => this._updateAnnotationLocations(annotation));
       const testResult = jsonEvent.params.result as JsonTestResultEnd;
-      testResult.errors.forEach(error => this._updateLocation(error.location));
+      testResult.annotations?.forEach(annotation => this._updateAnnotationLocations(annotation));
+      testResult.errors.forEach(error => this._updateErrorLocations(error));
       testResult.attachments.forEach(attachment => {
         if (attachment.path)
           attachment.path = this._updatePath(attachment.path);
@@ -445,6 +488,12 @@ class PathSeparatorPatcher {
     if (jsonEvent.method === 'onStepBegin') {
       const step = jsonEvent.params.step as JsonTestStepStart;
       this._updateLocation(step.location);
+      return;
+    }
+    if (jsonEvent.method === 'onStepEnd') {
+      const step = jsonEvent.params.step as JsonTestStepEnd;
+      this._updateErrorLocations(step.error);
+      step.annotations?.forEach(annotation => this._updateAnnotationLocations(annotation));
       return;
     }
   }
@@ -460,10 +509,25 @@ class PathSeparatorPatcher {
     this._updateLocation(suite.location);
     if (isFileSuite)
       suite.title = this._updatePath(suite.title);
-    for (const child of suite.suites)
-      this._updateSuite(child);
-    for (const test of suite.tests)
-      this._updateLocation(test.location);
+    for (const entry of suite.entries) {
+      if ('testId' in entry) {
+        this._updateLocation(entry.location);
+        entry.annotations?.forEach(annotation => this._updateAnnotationLocations(annotation));
+      } else {
+        this._updateSuite(entry);
+      }
+    }
+  }
+
+  private _updateErrorLocations(error: TestError | undefined) {
+    while (error) {
+      this._updateLocation(error.location);
+      error = error.cause;
+    }
+  }
+
+  private _updateAnnotationLocations(annotation: TestAnnotation) {
+    this._updateLocation(annotation.location);
   }
 
   private _updateLocation(location?: JsonLocation) {
@@ -508,3 +572,37 @@ class JsonEventPatchers {
     }
   }
 }
+
+class BlobModernizer {
+  modernize(fromVersion: number, events: JsonEvent[]): JsonEvent[] {
+    const result = [];
+    for (const event of events)
+      result.push(...this._modernize(fromVersion, event));
+    return result;
+  }
+
+  private _modernize(fromVersion: number, event: JsonEvent): JsonEvent[] {
+    let events = [event];
+    for (let version = fromVersion; version < currentBlobReportVersion; ++version)
+      events = (this as any)[`_modernize_${version}_to_${version + 1}`].call(this, events);
+    return events;
+  }
+
+  _modernize_1_to_2(events: JsonEvent[]): JsonEvent[] {
+    return events.map(event => {
+      if (event.method === 'onProject') {
+        const modernizeSuite = (suite: blobV1.JsonSuite): JsonSuite => {
+          const newSuites = suite.suites.map(modernizeSuite);
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { suites, tests, ...remainder } = suite;
+          return { entries: [...newSuites, ...tests], ...remainder };
+        };
+        const project = event.params.project;
+        project.suites = project.suites.map(modernizeSuite);
+      }
+      return event;
+    });
+  }
+}
+
+const modernizer = new BlobModernizer();

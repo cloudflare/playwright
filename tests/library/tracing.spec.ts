@@ -66,10 +66,9 @@ test('should collect trace with resources, but no js', async ({ context, page, s
 
 test('should use the correct apiName for event driven callbacks', async ({ context, page, server }, testInfo) => {
   await context.tracing.start();
+  // route.* calls should not be included in the trace
   await page.route('**/empty.html', route => route.continue());
-  // page.goto -> page.route should be included in the trace since its handled.
   await page.goto(server.PREFIX + '/empty.html');
-  // page.route -> internalContinue should not be included in the trace since it was handled by Playwright internally.
   await page.goto(server.PREFIX + '/grid.html');
 
   // The default internal dialog handler should not provide an action.
@@ -87,7 +86,6 @@ test('should use the correct apiName for event driven callbacks', async ({ conte
   expect(actions).toEqual([
     'page.route',
     'page.goto',
-    'route.continue',
     'page.goto',
     'page.evaluate',
     'page.reload',
@@ -107,6 +105,28 @@ test('should not collect snapshots by default', async ({ context, page, server }
   const { events } = await parseTraceRaw(testInfo.outputPath('trace.zip'));
   expect(events.some(e => e.type === 'frame-snapshot')).toBeFalsy();
   expect(events.some(e => e.type === 'resource-snapshot')).toBeFalsy();
+});
+
+test('can call tracing.group/groupEnd at any time and auto-close', async ({ context, page, server }, testInfo) => {
+  await context.tracing.group('ignored');
+  await context.tracing.groupEnd();
+  await context.tracing.group('ignored2');
+
+  await context.tracing.start();
+  await context.tracing.group('actual');
+  await page.goto(server.EMPTY_PAGE);
+  await context.tracing.stopChunk({ path: testInfo.outputPath('trace.zip') });
+
+  await context.tracing.group('ignored3');
+  await context.tracing.groupEnd();
+  await context.tracing.groupEnd();
+  await context.tracing.groupEnd();
+
+  const { events } = await parseTraceRaw(testInfo.outputPath('trace.zip'));
+  const groups = events.filter(e => e.method === 'tracingGroup');
+  expect(groups).toHaveLength(1);
+  expect(groups[0].apiName).toBe('actual');
+  expect(events.some(e => e.type === 'after' && e.callId === groups[0].callId)).toBe(true);
 });
 
 test('should not include buffers in the trace', async ({ context, page, server }, testInfo) => {
@@ -348,8 +368,8 @@ test('should not crash when browser closes mid-trace', async ({ browserType, ser
 });
 
 test('should survive browser.close with auto-created traces dir', async ({ browserType }, testInfo) => {
-  const oldTracesDir = (browserType as any)._defaultLaunchOptions.tracesDir;
-  (browserType as any)._defaultLaunchOptions.tracesDir = undefined;
+  const oldTracesDir = (browserType as any)._playwright._defaultTracesDir;
+  (browserType as any)._playwright._defaultTracesDir = undefined;
   const browser = await browserType.launch();
   const page = await browser.newPage();
   await page.context().tracing.start();
@@ -374,7 +394,7 @@ test('should survive browser.close with auto-created traces dir', async ({ brows
   ]);
 
   done.value = true;
-  (browserType as any)._defaultLaunchOptions.tracesDir = oldTracesDir;
+  (browserType as any)._playwright._defaultTracesDir = oldTracesDir;
 });
 
 test('should not stall on dialogs', async ({ page, context, server }) => {
@@ -409,9 +429,9 @@ for (const params of [
     height: 768,
   }
 ]) {
-  browserTest(`should produce screencast frames ${params.id}`, async ({ video, contextFactory, browserName, platform, headless }, testInfo) => {
+  browserTest(`should produce screencast frames ${params.id}`, async ({ video, contextFactory, browserName, platform, headless, isHeadlessShell }, testInfo) => {
     browserTest.skip(browserName === 'chromium' && video === 'on', 'Same screencast resolution conflicts');
-    browserTest.fixme(browserName === 'chromium' && (!headless || !!process.env.PLAYWRIGHT_CHROMIUM_USE_HEADLESS_NEW), 'Chromium screencast on headed has a min width issue');
+    browserTest.fixme(browserName === 'chromium' && !isHeadlessShell, 'Chromium (but not headless-shell) screencast has a min width issue');
     browserTest.fixme(params.id === 'fit' && browserName === 'chromium' && platform === 'darwin', 'High DPI maxes image at 600x600');
     browserTest.fixme(params.id === 'fit' && browserName === 'webkit' && platform === 'linux', 'Image size is flaky');
     browserTest.fixme(browserName === 'firefox' && !headless, 'Image size is different');
@@ -426,7 +446,7 @@ for (const params of [
     // Make sure we have a chance to paint.
     for (let i = 0; i < 10; ++i) {
       await page.setContent('<body style="box-sizing: border-box; width: 100%; height: 100%; margin:0; background: red; border: 50px solid blue"></body>');
-      await page.evaluate(() => new Promise(requestAnimationFrame));
+      await page.evaluate(() => new Promise(window.builtins.requestAnimationFrame));
     }
     await context.tracing.stop({ path: testInfo.outputPath('trace.zip') });
 
@@ -709,7 +729,7 @@ test('should not flush console events', async ({ context, page, mode }, testInfo
   });
 
   await page.evaluate(() => {
-    setTimeout(() => {
+    window.builtins.setTimeout(() => {
       for (let i = 0; i < 100; ++i)
         console.log('hello ' + i);
     }, 10);
@@ -749,7 +769,7 @@ test('should flush console events on tracing stop', async ({ context, page }, te
     });
   });
   await page.evaluate(() => {
-    setTimeout(() => {
+    window.builtins.setTimeout(() => {
       for (let i = 0; i < 100; ++i)
         console.log('hello ' + i);
     });

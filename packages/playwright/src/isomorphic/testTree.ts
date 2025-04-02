@@ -17,6 +17,8 @@
 export type TestItemStatus = 'none' | 'running' | 'scheduled' | 'passed' | 'failed' | 'skipped';
 import type * as reporterTypes from '../../types/testReporter';
 
+// -- Reuse boundary -- Everything below this line is reused in the vscode extension.
+
 export type TreeItemBase = {
   kind: 'root' | 'group' | 'case' | 'test',
   id: string;
@@ -77,14 +79,19 @@ export class TestTree {
 
     const visitSuite = (project: reporterTypes.FullProject, parentSuite: reporterTypes.Suite, parentGroup: GroupItem) => {
       for (const suite of parentSuite.suites) {
-        const title = suite.title || '<anonymous>';
-        let group = parentGroup.children.find(item => item.kind === 'group' && item.title === title) as GroupItem | undefined;
+        if (!suite.title) {
+          // Flatten anonymous describes.
+          visitSuite(project, suite, parentGroup);
+          continue;
+        }
+
+        let group = parentGroup.children.find(item => item.kind === 'group' && item.title === suite.title) as GroupItem | undefined;
         if (!group) {
           group = {
             kind: 'group',
             subKind: 'describe',
-            id: 'suite:' + parentSuite.titlePath().join('\x1e') + '\x1e' + title,  // account for anonymous suites
-            title,
+            id: 'suite:' + parentSuite.titlePath().join('\x1e') + '\x1e' + suite.title,  // account for anonymous suites
+            title: suite.title,
             location: suite.location!,
             duration: 0,
             parent: parentGroup,
@@ -295,20 +302,7 @@ export class TestTree {
   }
 
   collectTestIds(treeItem?: TreeItem): Set<string> {
-    const testIds = new Set<string>();
-    if (!treeItem)
-      return testIds;
-
-    const visit = (treeItem: TreeItem) => {
-      if (treeItem.kind === 'case')
-        treeItem.tests.map(t => t.id).forEach(id => testIds.add(id));
-      else if (treeItem.kind === 'test')
-        testIds.add(treeItem.id);
-      else
-        treeItem.children?.forEach(visit);
-    };
-    visit(treeItem);
-    return testIds;
+    return treeItem ? collectTestIds(treeItem) : new Set();
   }
 }
 
@@ -347,6 +341,20 @@ export function sortAndPropagateStatus(treeItem: TreeItem) {
     treeItem.status = 'skipped';
   else if (allPassed)
     treeItem.status = 'passed';
+}
+
+export function collectTestIds(treeItem: TreeItem): Set<string> {
+  const testIds = new Set<string>();
+  const visit = (treeItem: TreeItem) => {
+    if (treeItem.kind === 'case')
+      treeItem.tests.map(t => t.id).forEach(id => testIds.add(id));
+    else if (treeItem.kind === 'test')
+      testIds.add(treeItem.id);
+    else
+      treeItem.children?.forEach(visit);
+  };
+  visit(treeItem);
+  return testIds;
 }
 
 export const statusEx = Symbol('statusEx');

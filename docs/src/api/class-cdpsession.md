@@ -1,6 +1,5 @@
 # class: CDPSession
 * since: v1.8
-* extends: [EventEmitter]
 
 The `CDPSession` instances are used to talk raw Chrome Devtools Protocol:
 * protocol methods can be called with `session.send` method.
@@ -30,7 +29,7 @@ client.on("Animation.animationCreated", lambda: print("animation created!"))
 response = await client.send("Animation.getPlaybackRate")
 print("playback rate is " + str(response["playbackRate"]))
 await client.send("Animation.setPlaybackRate", {
-    playbackRate: response["playbackRate"] / 2
+    "playbackRate": response["playbackRate"] / 2
 })
 ```
 
@@ -41,7 +40,7 @@ client.on("Animation.animationCreated", lambda: print("animation created!"))
 response = client.send("Animation.getPlaybackRate")
 print("playback rate is " + str(response["playbackRate"]))
 client.send("Animation.setPlaybackRate", {
-    playbackRate: response["playbackRate"] / 2
+    "playbackRate": response["playbackRate"] / 2
 })
 ```
 ```csharp

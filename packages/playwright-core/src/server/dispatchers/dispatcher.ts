@@ -15,16 +15,21 @@
  */
 
 import { EventEmitter } from 'events';
-import type * as channels from '@protocol/channels';
-import { findValidator, ValidationError, createMetadataValidator, type ValidatorContext } from '../../protocol/validator';
-import { LongStandingScope, assert, isUnderTest, monotonicTime, rewriteErrorMessage } from '../../utils';
+
+import { eventsHelper } from '../utils/eventsHelper';
+import { ValidationError, createMetadataValidator, findValidator  } from '../../protocol/validator';
+import { LongStandingScope, assert, monotonicTime, rewriteErrorMessage } from '../../utils';
+import { isUnderTest } from '../utils/debug';
 import { TargetClosedError, isTargetClosedError, serializeError } from '../errors';
-import type { CallMetadata } from '../instrumentation';
 import { SdkObject } from '../instrumentation';
-import type { PlaywrightDispatcher } from './playwrightDispatcher';
-import { eventsHelper } from '../..//utils/eventsHelper';
-import type { RegisteredListener } from '../..//utils/eventsHelper';
 import { isProtocolError } from '../protocolError';
+import { compressCallLog } from '../callLog';
+
+import type { CallMetadata } from '../instrumentation';
+import type { PlaywrightDispatcher } from './playwrightDispatcher';
+import type { RegisteredListener } from '../utils/eventsHelper';
+import type { ValidatorContext } from '../../protocol/validator';
+import type * as channels from '@protocol/channels';
 
 export const dispatcherSymbol = Symbol('dispatcher');
 const metadataValidator = createMetadataValidator();
@@ -201,13 +206,13 @@ export class DispatcherConnection {
 
   sendEvent(dispatcher: DispatcherScope, event: string, params: any) {
     const validator = findValidator(dispatcher._type, event, 'Event');
-    params = validator(params, '', { tChannelImpl: this._tChannelImplToWire.bind(this), binary: this._isLocal ? 'buffer' : 'toBase64' });
+    params = validator(params, '', this._validatorToWireContext());
     this.onmessage({ guid: dispatcher._guid, method: event, params });
   }
 
   sendCreate(parent: DispatcherScope, type: string, guid: string, initializer: any) {
     const validator = findValidator(type, '', 'Initializer');
-    initializer = validator(initializer, '', { tChannelImpl: this._tChannelImplToWire.bind(this), binary: this._isLocal ? 'buffer' : 'toBase64' });
+    initializer = validator(initializer, '', this._validatorToWireContext());
     this.onmessage({ guid: parent._guid, method: '__create__', params: { type, initializer, guid } });
   }
 
@@ -217,6 +222,22 @@ export class DispatcherConnection {
 
   sendDispose(dispatcher: DispatcherScope, reason?: 'gc') {
     this.onmessage({ guid: dispatcher._guid, method: '__dispose__', params: { reason } });
+  }
+
+  private _validatorToWireContext(): ValidatorContext {
+    return {
+      tChannelImpl: this._tChannelImplToWire.bind(this),
+      binary: this._isLocal ? 'buffer' : 'toBase64',
+      isUnderTest,
+    };
+  }
+
+  private _validatorFromWireContext(): ValidatorContext {
+    return {
+      tChannelImpl: this._tChannelImplFromWire.bind(this),
+      binary: this._isLocal ? 'buffer' : 'fromBase64',
+      isUnderTest,
+    };
   }
 
   private _tChannelImplFromWire(names: '*' | string[], arg: any, path: string, context: ValidatorContext): any {
@@ -280,8 +301,9 @@ export class DispatcherConnection {
     let validMetadata: channels.Metadata;
     try {
       const validator = findValidator(dispatcher._type, method, 'Params');
-      validParams = validator(params, '', { tChannelImpl: this._tChannelImplFromWire.bind(this), binary: this._isLocal ? 'buffer' : 'fromBase64' });
-      validMetadata = metadataValidator(metadata, '', { tChannelImpl: this._tChannelImplFromWire.bind(this), binary: this._isLocal ? 'buffer' : 'fromBase64' });
+      const validatorContext = this._validatorFromWireContext();
+      validParams = validator(params, '', validatorContext);
+      validMetadata = metadataValidator(metadata, '', validatorContext);
       if (typeof (dispatcher as any)[method] !== 'function')
         throw new Error(`Mismatching dispatcher: "${dispatcher._type}" does not implement "${method}"`);
     } catch (e) {
@@ -292,10 +314,10 @@ export class DispatcherConnection {
     const sdkObject = dispatcher._object instanceof SdkObject ? dispatcher._object : undefined;
     const callMetadata: CallMetadata = {
       id: `call@${id}`,
-      wallTime: validMetadata.wallTime || Date.now(),
       location: validMetadata.location,
       apiName: validMetadata.apiName,
       internal: validMetadata.internal,
+      stepId: validMetadata.stepId,
       objectId: sdkObject?.guid,
       pageId: sdkObject?.attribution?.page?.guid,
       frameId: sdkObject?.attribution?.frame?.guid,
@@ -339,7 +361,7 @@ export class DispatcherConnection {
     try {
       const result = await dispatcher._handleCommand(callMetadata, method, validParams);
       const validator = findValidator(dispatcher._type, method, 'Result');
-      response.result = validator(result, '', { tChannelImpl: this._tChannelImplToWire.bind(this), binary: this._isLocal ? 'buffer' : 'toBase64' });
+      response.result = validator(result, '', this._validatorToWireContext());
       callMetadata.result = result;
     } catch (e) {
       if (isTargetClosedError(e) && sdkObject) {
@@ -355,7 +377,7 @@ export class DispatcherConnection {
         }
       }
       response.error = serializeError(e);
-      // The command handler could have set error in the metada, do not reset it if there was no exception.
+      // The command handler could have set error in the metadata, do not reset it if there was no exception.
       callMetadata.error = response.error;
     } finally {
       callMetadata.endTime = monotonicTime();
@@ -363,7 +385,7 @@ export class DispatcherConnection {
     }
 
     if (response.error)
-      response.log = callMetadata.log;
+      response.log = compressCallLog(callMetadata.log);
     this.onmessage(response);
   }
 }

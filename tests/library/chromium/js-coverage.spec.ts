@@ -43,11 +43,14 @@ it('should ignore eval() scripts by default', async function({ page, server }) {
 });
 
 it('shouldn\'t ignore eval() scripts if reportAnonymousScripts is true', async function({ page, server }) {
+  it.skip(!!process.env.PW_CLOCK);
   await page.coverage.startJSCoverage({ reportAnonymousScripts: true });
   await page.goto(server.PREFIX + '/jscoverage/eval.html');
   const coverage = await page.coverage.stopJSCoverage();
-  expect(coverage.find(entry => entry.url === '').source).toBe('console.log("foo")');
-  expect(coverage.length).toBe(2);
+  expect(coverage).toContainEqual(expect.objectContaining({
+    url: '',
+    source: 'console.log("foo")',
+  }));
 });
 
 it('should report multiple scripts', async function({ page, server }) {

@@ -15,9 +15,10 @@
  * limitations under the License.
  */
 
-import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from './transport';
 import { makeWaitForNextTask } from '../utils';
-import { debugLogger } from '../utils/debugLogger';
+import { debugLogger } from './utils/debugLogger';
+
+import type { ConnectionTransport, ProtocolRequest, ProtocolResponse } from './transport';
 
 export class PipeTransport implements ConnectionTransport {
   private _pipeRead: NodeJS.ReadableStream;
@@ -25,7 +26,7 @@ export class PipeTransport implements ConnectionTransport {
   private _pendingBuffers: Buffer[] = [];
   private _waitForNextTask = makeWaitForNextTask();
   private _closed = false;
-  private _onclose?: () => void;
+  private _onclose?: (reason?: string) => void;
 
   onmessage?: (message: ProtocolResponse) => void;
 
@@ -47,7 +48,7 @@ export class PipeTransport implements ConnectionTransport {
     return this._onclose;
   }
 
-  set onclose(onclose: undefined | (() => void)) {
+  set onclose(onclose: undefined | ((reason?: string) => void)) {
     this._onclose = onclose;
     if (onclose && !this._pipeRead.readable)
       onclose();

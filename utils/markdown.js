@@ -46,11 +46,11 @@
  *    lines: string[],
  *    codeLang: string,
  *    title?: string,
+ *    highlight?: string,
  *  }} MarkdownCodeNode */
 
 /** @typedef {MarkdownBaseNode & {
  *    type: 'note',
- *    text: string,
  *    noteType: string,
  *  }} MarkdownNoteNode */
 
@@ -66,8 +66,9 @@
 /** @typedef {{
  * maxColumns?: number,
  * omitLastCR?: boolean,
- * flattenText?: boolean
- * renderCodeBlockTitlesInHeader?: boolean
+ * flattenText?: boolean,
+ * renderCodeBlockTitlesInHeader?: boolean,
+ * noteMode?: 'docusaurus' | 'compact',
  * }} RenderOptions
  */
 
@@ -124,7 +125,7 @@ function buildTree(lines) {
   const headerStack = [root];
 
   /** @type {{ indent: string, node: MarkdownNode }[]} */
-  let sectionStack = [];
+  const sectionStack = [];
 
   /**
    * @param {string} indent
@@ -133,7 +134,7 @@ function buildTree(lines) {
   const appendNode = (indent, node) => {
     while (sectionStack.length && sectionStack[0].indent.length >= indent.length)
       sectionStack.shift();
-    const parentNode = sectionStack.length ? sectionStack[0].node :headerStack[0];
+    const parentNode = sectionStack.length ? sectionStack[0].node : headerStack[0];
     if (!parentNode.children)
       parentNode.children = [];
     parentNode.children.push(node);
@@ -165,18 +166,19 @@ function buildTree(lines) {
     // Remaining items respect indent-based nesting.
     const [, indent, content] = /** @type {string[]} */ (line.match('^([ ]*)(.*)'));
     if (content.startsWith('```')) {
-      const [codeLang, title] = parseCodeBlockMetadata(content);
+      const [codeLang, title, highlight] = parseCodeBlockMetadata(content);
       /** @type {MarkdownNode} */
       const node = {
         type: 'code',
         lines: [],
         codeLang,
         title,
+        highlight,
       };
       line = lines[++i];
       while (!line.trim().startsWith('```')) {
         if (line && !line.startsWith(indent)) {
-          const from = Math.max(0, i - 5)
+          const from = Math.max(0, i - 5);
           const to = Math.min(lines.length, from + 10);
           const snippet = lines.slice(from, to);
           throw new Error(`Bad code block: ${snippet.join('\n')}`);
@@ -200,7 +202,7 @@ function buildTree(lines) {
       const tokens = [];
       while (!line.trim().startsWith(':::')) {
         if (!line.startsWith(indent)) {
-          const from = Math.max(0, i - 5)
+          const from = Math.max(0, i - 5);
           const to = Math.min(lines.length, from + 10);
           const snippet = lines.slice(from, to);
           throw new Error(`Bad comment block: ${snippet.join('\n')}`);
@@ -208,7 +210,7 @@ function buildTree(lines) {
         tokens.push(line.substring(indent.length));
         line = lines[++i];
       }
-      node.text = tokens.join('↵');
+      node.children = parse(tokens.join('\n'));
       appendNode(indent, node);
       continue;
     }
@@ -254,15 +256,19 @@ function buildTree(lines) {
 }
 
 /**
- * @param {String} firstLine 
- * @returns {[string, string|undefined]}
+ * @param {String} firstLine
+ * @returns {[string, string|undefined, string|undefined]}
  */
 function parseCodeBlockMetadata(firstLine) {
   const withoutBackticks = firstLine.substring(3);
-  const match = withoutBackticks.match(/ title="(.+)"$/);
-  if (match)
-    return [withoutBackticks.substring(0, match.index), match[1]];
-  return [withoutBackticks, undefined];
+  const titleMatch = withoutBackticks.match(/ title="(.+)"/);
+  const highlightMatch = withoutBackticks.match(/\{.*\}/);
+
+  let codeLang = withoutBackticks;
+  if (titleMatch || highlightMatch)
+    codeLang = withoutBackticks.substring(0, titleMatch?.index ?? highlightMatch?.index);
+
+  return [codeLang, titleMatch?.[1], highlightMatch?.[0]];
 }
 
 /**
@@ -279,7 +285,7 @@ function parse(content) {
 function render(nodes, options) {
   const result = [];
   let lastNode;
-  for (let node of nodes) {
+  for (const node of nodes) {
     if (node.type === 'null')
       continue;
     innerRenderMdNode('', node, /** @type {MarkdownNode} */ (lastNode), result, options);
@@ -322,13 +328,13 @@ function innerRenderMdNode(indent, node, lastNode, result, options) {
     const bothLinks = node.text.match(/\[[^\]]+\]:/) && lastNode && lastNode.type === 'text' && lastNode.text.match(/\[[^\]]+\]:/);
     if (!bothTables && !bothGen && !bothComments && !bothLinks && lastNode && lastNode.text)
       newLine();
-      result.push(wrapText(node.text, options, indent));
+    result.push(wrapText(node.text, options, indent));
     return;
   }
 
   if (node.type === 'code') {
     newLine();
-    result.push(`${indent}\`\`\`${node.codeLang}${(options?.renderCodeBlockTitlesInHeader && node.title) ? ' title="' + node.title + '"' : ''}`);
+    result.push(`${indent}\`\`\`${node.codeLang}${(options?.renderCodeBlockTitlesInHeader && node.title) ? ' title="' + node.title + '"' : ''}${node.highlight ? ' ' + node.highlight : ''}`);
     if (!options?.renderCodeBlockTitlesInHeader && node.title)
       result.push(`${indent}// ${node.title}`);
     for (const line of node.lines)
@@ -340,9 +346,21 @@ function innerRenderMdNode(indent, node, lastNode, result, options) {
 
   if (node.type === 'note') {
     newLine();
-    result.push(`${indent}:::${node.noteType}`);
-    result.push(wrapText(node.text, options, indent));
-    result.push(`${indent}:::`);
+    if (options?.noteMode !== 'compact')
+      result.push(`${indent}:::${node.noteType}`);
+    const children = node.children ?? [];
+    if (options?.noteMode === 'compact') {
+      children[0] = {
+        type: 'text',
+        text: `**NOTE** ${children[0].text}`,
+      }
+    }
+    for (const child of children) {
+      innerRenderMdNode(indent, child, lastNode, result, options);
+      lastNode = child;
+    }
+    if (options?.noteMode !== 'compact')
+      result.push(`${indent}:::`);
     newLine();
     return;
   }
@@ -391,15 +409,15 @@ function tokenizeNoBreakLinks(text) {
  * @param {string} prefix
  * @returns {string}
  */
- function wrapText(text, options, prefix) {
+function wrapText(text, options, prefix) {
   if (options?.flattenText)
     text = text.replace(/↵/g, ' ');
   const lines = text.split(/[\n↵]/);
   const result = /** @type {string[]} */([]);
   const indent = ' '.repeat(prefix.length);
-  for (const line of lines) {
+  for (const line of lines)
     result.push(wrapLine(line, options?.maxColumns, result.length ? indent : prefix));
-  }
+
   return result.join('\n');
 }
 
@@ -463,24 +481,6 @@ function visit(node, visitor, depth = 0) {
 
 /**
  * @param {MarkdownNode[]} nodes
- * @param {boolean=} h3
- * @returns {string}
- */
-function generateToc(nodes, h3) {
-  const result = [];
-  visitAll(nodes, (node, depth) => {
-    if (node.type === 'h1' || node.type === 'h2' || (h3 && node.type === 'h3')) {
-      let link = node.text.toLowerCase();
-      link = link.replace(/[ ]+/g, '-');
-      link = link.replace(/[^\w-_]/g, '');
-      result.push(`${' '.repeat(depth * 2)}- [${node.text}](#${link})`);
-    }
-  });
-  return result.join('\n');
-}
-
-/**
- * @param {MarkdownNode[]} nodes
  * @param {string} language
  * @return {MarkdownNode[]}
  */
@@ -509,4 +509,4 @@ function filterNodesForLanguage(nodes, language) {
   return result;
 }
 
-module.exports = { parse, render, clone, visitAll, visit, generateToc, filterNodesForLanguage, wrapText };
+module.exports = { parse, render, clone, visitAll, visit, filterNodesForLanguage, wrapText };

@@ -16,20 +16,22 @@
 
 import { artifactsFolderName } from '@testIsomorphic/folders';
 import type { TreeItem } from '@testIsomorphic/testTree';
-import type { ActionTraceEvent } from '@trace/trace';
 import '@web/common.css';
 import '@web/third_party/vscode/codicon.css';
 import type * as reporterTypes from 'playwright/types/testReporter';
 import React from 'react';
-import type { ContextEntry } from '../entries';
+import type { ContextEntry } from '../types/entries';
 import type { SourceLocation } from './modelUtil';
-import { idForAction, MultiTraceModel } from './modelUtil';
+import { MultiTraceModel } from './modelUtil';
 import { Workbench } from './workbench';
 
 export const TraceView: React.FC<{
   item: { treeItem?: TreeItem, testFile?: SourceLocation, testCase?: reporterTypes.TestCase },
   rootDir?: string,
-}> = ({ item, rootDir }) => {
+  onOpenExternally?: (location: SourceLocation) => void,
+  revealSource?: boolean,
+  pathSeparator: string,
+}> = ({ item, rootDir, onOpenExternally, revealSource, pathSeparator }) => {
   const [model, setModel] = React.useState<{ model: MultiTraceModel, isLive: boolean } | undefined>();
   const [counter, setCounter] = React.useState(0);
   const pollTimer = React.useRef<NodeJS.Timeout | null>(null);
@@ -38,12 +40,6 @@ export const TraceView: React.FC<{
     const outputDir = item.testCase ? outputDirForTestCase(item.testCase) : undefined;
     return { outputDir };
   }, [item]);
-
-  // Preserve user selection upon live-reloading trace model by persisting the action id.
-  // This avoids auto-selection of the last action every time we reload the model.
-  const [selectedActionId, setSelectedActionId] = React.useState<string | undefined>();
-  const onSelectionChanged = React.useCallback((action: ActionTraceEvent) => setSelectedActionId(idForAction(action)), [setSelectedActionId]);
-  const initialSelection = selectedActionId ? model?.model.actions.find(a => idForAction(a) === selectedActionId) : undefined;
 
   React.useEffect(() => {
     if (pollTimer.current)
@@ -67,7 +63,12 @@ export const TraceView: React.FC<{
       return;
     }
 
-    const traceLocation = `${outputDir}/${artifactsFolderName(result!.workerIndex)}/traces/${item.testCase?.id}.json`;
+    const traceLocation = [
+      outputDir,
+      artifactsFolderName(result!.workerIndex),
+      'traces',
+      `${item.testCase?.id}.json`
+    ].join(pathSeparator);
     // Start polling running test.
     pollTimer.current = setTimeout(async () => {
       try {
@@ -83,18 +84,22 @@ export const TraceView: React.FC<{
       if (pollTimer.current)
         clearTimeout(pollTimer.current);
     };
-  }, [outputDir, item, setModel, counter, setCounter]);
+  }, [outputDir, item, setModel, counter, setCounter, pathSeparator]);
+
+  const annotations = item.testCase ? [...item.testCase.annotations, ...(item.testCase.results[0]?.annotations ?? [])] : [];
 
   return <Workbench
     key='workbench'
     model={model?.model}
     showSourcesFirst={true}
     rootDir={rootDir}
-    initialSelection={initialSelection}
-    onSelectionChanged={onSelectionChanged}
     fallbackLocation={item.testFile}
     isLive={model?.isLive}
-    status={item.treeItem?.status} />;
+    status={item.treeItem?.status}
+    annotations={annotations}
+    onOpenExternally={onOpenExternally}
+    revealSource={revealSource}
+  />;
 };
 
 const outputDirForTestCase = (testCase: reporterTypes.TestCase): string | undefined => {
@@ -108,6 +113,7 @@ const outputDirForTestCase = (testCase: reporterTypes.TestCase): string | undefi
 async function loadSingleTraceFile(url: string): Promise<MultiTraceModel> {
   const params = new URLSearchParams();
   params.set('trace', url);
+  params.set('limit', '1');
   const response = await fetch(`contexts?${params.toString()}`);
   const contextEntries = await response.json() as ContextEntry[];
   return new MultiTraceModel(contextEntries);

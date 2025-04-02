@@ -14,18 +14,20 @@
  * limitations under the License.
  */
 
-import type * as contexts from './browserContext';
-import type * as pages from './page';
-import type * as frames from './frames';
-import type * as types from './types';
-import type * as channels from '@protocol/channels';
 import { assert } from '../utils';
-import { ManualPromise } from '../utils/manualPromise';
-import { SdkObject } from './instrumentation';
-import type { HeadersArray, NameValue } from '../common/types';
-import { APIRequestContext } from './fetch';
-import type { NormalizedContinueOverrides } from './types';
 import { BrowserContext } from './browserContext';
+import { APIRequestContext } from './fetch';
+import { SdkObject } from './instrumentation';
+import { ManualPromise } from '../utils/isomorphic/manualPromise';
+
+import type * as contexts from './browserContext';
+import type * as frames from './frames';
+import type * as pages from './page';
+import type * as types from './types';
+import type { NormalizedContinueOverrides } from './types';
+import type { HeadersArray, NameValue } from '../utils/isomorphic/types';
+import type * as channels from '@protocol/channels';
+
 
 export function filterCookies(cookies: channels.NetworkCookie[], urls: string[]): channels.NetworkCookie[] {
   const parsedURLs = urls.map(s => new URL(s));
@@ -74,7 +76,7 @@ export function rewriteCookies(cookies: channels.SetNetworkCookie[]): channels.S
   });
 }
 
-export function parsedURL(url: string): URL | null {
+export function parseURL(url: string): URL | null {
   try {
     return new URL(url);
   } catch (e) {
@@ -108,6 +110,7 @@ export class Request extends SdkObject {
   private _waitForResponsePromise = new ManualPromise<Response | null>();
   _responseEndTiming = -1;
   private _overrides: NormalizedContinueOverrides | undefined;
+  private _bodySize: number | undefined;
 
   constructor(context: contexts.BrowserContext, frame: frames.Frame | null, serviceWorker: pages.Worker | null, redirectedFrom: Request | null, documentId: string | undefined,
     url: string, resourceType: string, method: string, postData: Buffer | null, headers: HeadersArray) {
@@ -223,8 +226,13 @@ export class Request extends SdkObject {
     };
   }
 
+  // TODO(bidi): remove once post body is available.
+  _setBodySize(size: number) {
+    this._bodySize = size;
+  }
+
   bodySize(): number {
-    return this.postDataBuffer()?.length || 0;
+    return this._bodySize || this.postDataBuffer()?.length || 0;
   }
 
   async requestHeadersSize(): Promise<number> {
@@ -321,10 +329,12 @@ export class Route extends SdkObject {
       if (oldUrl.protocol !== newUrl.protocol)
         throw new Error('New URL must have same protocol as overridden URL');
     }
+    if (overrides.headers)
+      overrides.headers = overrides.headers?.filter(header => header.name.toLowerCase() !== 'cookie');
     this._request._setOverrides(overrides);
     if (!overrides.isFallback)
       this._request._context.emit(BrowserContext.Events.RequestContinued, this._request);
-    await this._delegate.continue(this._request, overrides);
+    await this._delegate.continue(overrides);
     this._endHandling();
   }
 
@@ -612,11 +622,11 @@ export class WebSocket extends SdkObject {
 export interface RouteDelegate {
   abort(errorCode: string): Promise<void>;
   fulfill(response: types.NormalizedFulfillResponse): Promise<void>;
-  continue(request: Request, overrides: types.NormalizedContinueOverrides): Promise<void>;
+  continue(overrides: types.NormalizedContinueOverrides): Promise<void>;
 }
 
 // List taken from https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml with extra 306 and 418 codes.
-export const STATUS_TEXTS: { [status: string]: string } = {
+const STATUS_TEXTS: { [status: string]: string } = {
   '100': 'Continue',
   '101': 'Switching Protocols',
   '102': 'Processing',
@@ -681,6 +691,10 @@ export const STATUS_TEXTS: { [status: string]: string } = {
   '510': 'Not Extended',
   '511': 'Network Authentication Required',
 };
+
+export function statusText(status: number): string {
+  return STATUS_TEXTS[String(status)] || 'Unknown';
+}
 
 export function singleHeader(name: string, value: string): HeadersArray {
   return [{ name, value }];

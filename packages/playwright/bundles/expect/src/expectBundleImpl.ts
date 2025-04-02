@@ -14,10 +14,35 @@
  * limitations under the License.
  */
 
-import expectLibrary from 'expect';
+import * as mu from 'jest-matcher-utils';
+
+import * as am from '../third_party/asymmetricMatchers';
+import expectLibrary from '../third_party/index';
+
 export const expect = expectLibrary;
+export * as mock from 'jest-mock';
+
+export const asymmetricMatchers = {
+  any: am.any,
+  anything: am.anything,
+  arrayContaining: am.arrayContaining,
+  arrayNotContaining: am.arrayNotContaining,
+  closeTo: am.closeTo,
+  notCloseTo: am.notCloseTo,
+  objectContaining: am.objectContaining,
+  objectNotContaining: am.objectNotContaining,
+  stringContaining: am.stringContaining,
+  stringMatching: am.stringMatching,
+  stringNotContaining: am.stringNotContaining,
+  stringNotMatching: am.stringNotMatching,
+};
+
+export const matcherUtils = {
+  stringify: mu.stringify,
+};
 
 export {
+  EXPECTED_COLOR,
   INVERTED_COLOR,
   RECEIVED_COLOR,
   printReceived,

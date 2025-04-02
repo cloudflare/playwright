@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+import { attachFrame } from 'tests/config/utils';
 import { browserTest as it, expect } from '../config/browserTest';
 import fs from 'fs';
 
@@ -80,14 +81,34 @@ it('should round-trip through the file', async ({ contextFactory }, testInfo) =>
     route.fulfill({ body: '<html></html>' }).catch(() => {});
   });
   await page1.goto('https://www.example.com');
-  await page1.evaluate(() => {
+  await page1.evaluate(async () => {
     localStorage['name1'] = 'value1';
     document.cookie = 'username=John Doe';
+
+    await new Promise((resolve, reject) => {
+      const openRequest = indexedDB.open('db', 42);
+      openRequest.onupgradeneeded = () => {
+        openRequest.result.createObjectStore('store', { keyPath: 'name' });
+        openRequest.result.createObjectStore('store2');
+      };
+      openRequest.onsuccess = () => {
+        const transaction = openRequest.result.transaction(['store', 'store2'], 'readwrite');
+        transaction
+            .objectStore('store')
+            .put({ name: 'foo', date: new Date(0), null: null });
+        transaction
+            .objectStore('store2')
+            .put(new TextEncoder().encode('bar'), 'foo');
+        transaction.addEventListener('complete', resolve);
+        transaction.addEventListener('error', reject);
+      };
+    });
+
     return document.cookie;
   });
 
   const path = testInfo.outputPath('storage-state.json');
-  const state = await context.storageState({ path });
+  const state = await context.storageState({ path, indexedDB: true });
   const written = await fs.promises.readFile(path, 'utf8');
   expect(JSON.stringify(state, undefined, 2)).toBe(written);
 
@@ -101,6 +122,27 @@ it('should round-trip through the file', async ({ contextFactory }, testInfo) =>
   expect(localStorage).toEqual({ name1: 'value1' });
   const cookie = await page2.evaluate('document.cookie');
   expect(cookie).toEqual('username=John Doe');
+  const idbValues = await page2.evaluate(() => new Promise((resolve, reject) => {
+    const openRequest = indexedDB.open('db', 42);
+    openRequest.addEventListener('success', async () => {
+      const db = openRequest.result;
+      const transaction = db.transaction(['store', 'store2'], 'readonly');
+      const request1 = transaction.objectStore('store').get('foo');
+      const request2 = transaction.objectStore('store2').get('foo');
+
+      const [result1, result2] = await Promise.all([request1, request2].map(request => new Promise((resolve, reject) => {
+        request.addEventListener('success', () => resolve(request.result));
+        request.addEventListener('error', () => reject(request.error));
+      })));
+
+      resolve([result1, new TextDecoder().decode(result2 as any)]);
+    });
+    openRequest.addEventListener('error', () => reject(openRequest.error));
+  }));
+  expect(idbValues).toEqual([
+    { name: 'foo', date: new Date(0), null: null },
+    'bar'
+  ]);
   await context2.close();
 });
 
@@ -203,13 +245,13 @@ it('should handle missing file', async ({ contextFactory }, testInfo) => {
   expect(error.message).toContain(`Error reading storage state from ${file}:\nENOENT`);
 });
 
-it('should handle malformed file', async ({ contextFactory }, testInfo) => {
+it('should handle malformed file', async ({ contextFactory, nodeVersion }, testInfo) => {
   const file = testInfo.outputPath('state.json');
   fs.writeFileSync(file, 'not-json', 'utf-8');
   const error = await contextFactory({
     storageState: file,
   }).catch(e => e);
-  if (+process.versions.node.split('.')[0] > 18)
+  if (nodeVersion.major > 18)
     expect(error.message).toContain(`Error reading storage state from ${file}:\nUnexpected token 'o', \"not-json\" is not valid JSON`);
   else
     expect(error.message).toContain(`Error reading storage state from ${file}:\nUnexpected token o in JSON at position 1`);
@@ -223,9 +265,9 @@ it('should serialize storageState with lone surrogates', async ({ page, context,
   expect(storageState.origins[0].localStorage[0].value).toBe(String.fromCharCode(55934));
 });
 
-it('should work when service worker is intefering', async ({ page, context, server, isAndroid, isElectron }) => {
+it('should work when service worker is intefering', async ({ page, context, server, isAndroid, isElectron, electronMajorVersion }) => {
   it.skip(isAndroid);
-  it.skip(isElectron);
+  it.skip(isElectron && electronMajorVersion < 30, 'error: Browser context management is not supported.');
 
   server.setRoute('/', (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
@@ -274,4 +316,137 @@ it('should work when service worker is intefering', async ({ page, context, serv
 
   const storageState = await context.storageState();
   expect(storageState.origins[0].localStorage[0]).toEqual({ name: 'foo', value: 'bar' });
+});
+
+it('should set local storage in third-party context', async ({ contextFactory, server }) => {
+  const context = await contextFactory({
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: server.CROSS_PROCESS_PREFIX,
+          localStorage: [{
+            name: 'name1',
+            value: 'value1'
+          }]
+        },
+      ]
+    }
+  });
+  const page = await context.newPage();
+  await page.goto(server.EMPTY_PAGE);
+  const frame = await attachFrame(page, 'frame1', server.CROSS_PROCESS_PREFIX + '/empty.html');
+
+  const localStorage = await frame.evaluate('window.localStorage');
+  expect(localStorage).toEqual({ name1: 'value1' });
+  await context.close();
+});
+
+it('should roundtrip local storage in third-party context', async ({ page, contextFactory, server }) => {
+  await page.goto(server.EMPTY_PAGE);
+  const frame = await attachFrame(page, 'frame1', server.CROSS_PROCESS_PREFIX + '/empty.html');
+  await frame.evaluate(() => window.localStorage.setItem('name1', 'value1'));
+  const storageState = await page.context().storageState();
+
+  const context2 = await contextFactory({ storageState });
+  const page2 = await context2.newPage();
+  await page2.goto(server.EMPTY_PAGE);
+  const frame2 = await attachFrame(page2, 'frame1', server.CROSS_PROCESS_PREFIX + '/empty.html');
+
+  const localStorage = await frame2.evaluate('window.localStorage');
+  expect(localStorage).toEqual({ name1: 'value1' });
+  await context2.close();
+});
+
+it('should support IndexedDB', async ({ page, server, contextFactory }) => {
+  await page.goto(server.PREFIX + '/to-do-notifications/index.html');
+  await page.getByLabel('Task title').fill('Pet the cat');
+  await page.getByLabel('Hours').fill('1');
+  await page.getByLabel('Mins').fill('1');
+  await page.getByText('Add Task').click();
+
+  const storageState = await page.context().storageState({ indexedDB: true });
+  expect(storageState.origins).toEqual([
+    {
+      origin: server.PREFIX,
+      localStorage: [],
+      indexedDB: [
+        {
+          name: 'toDoList',
+          version: 4,
+          stores: [
+            {
+              name: 'toDoList',
+              autoIncrement: false,
+              keyPath: 'taskTitle',
+              records: [
+                {
+                  value: {
+                    day: '01',
+                    hours: '1',
+                    minutes: '1',
+                    month: 'January',
+                    notified: 'no',
+                    taskTitle: 'Pet the cat',
+                    year: '2025',
+                  },
+                },
+              ],
+              indexes: [
+                {
+                  name: 'day',
+                  keyPath: 'day',
+                  multiEntry: false,
+                  unique: false,
+                },
+                {
+                  name: 'hours',
+                  keyPath: 'hours',
+                  multiEntry: false,
+                  unique: false,
+                },
+                {
+                  name: 'minutes',
+                  keyPath: 'minutes',
+                  multiEntry: false,
+                  unique: false,
+                },
+                {
+                  name: 'month',
+                  keyPath: 'month',
+                  multiEntry: false,
+                  unique: false,
+                },
+                {
+                  name: 'notified',
+                  keyPath: 'notified',
+                  multiEntry: false,
+                  unique: false,
+                },
+                {
+                  name: 'year',
+                  keyPath: 'year',
+                  multiEntry: false,
+                  unique: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+
+  const context = await contextFactory({ storageState });
+  expect(await context.storageState({ indexedDB: true })).toEqual(storageState);
+
+  const recreatedPage = await context.newPage();
+  await recreatedPage.goto(server.PREFIX + '/to-do-notifications/index.html');
+  await expect(recreatedPage.locator('#task-list')).toMatchAriaSnapshot(`
+    - list:
+      - listitem:
+        - text: /Pet the cat/
+  `);
+
+  expect(await context.storageState()).toEqual({ cookies: [], origins: [] });
 });

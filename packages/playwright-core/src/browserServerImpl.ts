@@ -14,24 +14,24 @@
  * limitations under the License.
  */
 
-import type { LaunchServerOptions, Logger } from './client/types';
-import { ws } from './utilsBundle';
-import type { WebSocketEventEmitter } from './utilsBundle';
-import type { BrowserServerLauncher, BrowserServer } from './client/browserType';
-import { envObjectToArray } from './client/clientHelper';
-import { createGuid } from './utils';
-import type { ProtocolLogger } from './server/types';
-import { serverSideCallMetadata } from './server/instrumentation';
-import { createPlaywright } from './server/playwright';
+import { SocksProxy } from './server/utils/socksProxy';
 import { PlaywrightServer } from './remote/playwrightServer';
 import { helper } from './server/helper';
-import { rewriteErrorMessage } from './utils/stackTrace';
-import { SocksProxy } from './common/socksProxy';
+import { serverSideCallMetadata } from './server/instrumentation';
+import { createPlaywright } from './server/playwright';
+import { createGuid } from './server/utils/crypto';
+import { rewriteErrorMessage } from './utils/isomorphic/stackTrace';
+import { ws } from './utilsBundle';
+
+import type { BrowserServer, BrowserServerLauncher } from './client/browserType';
+import type { LaunchServerOptions, Logger, Env } from './client/types';
+import type { ProtocolLogger } from './server/types';
+import type { WebSocketEventEmitter } from './utilsBundle';
 
 export class BrowserServerLauncherImpl implements BrowserServerLauncher {
-  private _browserName: 'chromium' | 'firefox' | 'webkit';
+  private _browserName: 'chromium' | 'firefox' | 'webkit' | 'bidiFirefox' | 'bidiChromium';
 
-  constructor(browserName: 'chromium' | 'firefox' | 'webkit') {
+  constructor(browserName: 'chromium' | 'firefox' | 'webkit' | 'bidiFirefox' | 'bidiChromium') {
     this._browserName = browserName;
   }
 
@@ -58,7 +58,7 @@ export class BrowserServerLauncherImpl implements BrowserServerLauncher {
 
     // 2. Start the server
     const server = new PlaywrightServer({ mode: 'launchServer', path, maxConnections: Infinity, preLaunchedBrowser: browser, preLaunchedSocksProxy: socksProxy });
-    const wsEndpoint = await server.listen(options.port);
+    const wsEndpoint = await server.listen(options.port, options.host);
 
     // 3. Return the BrowserServer interface
     const browserServer = new ws.EventEmitter() as (BrowserServer & WebSocketEventEmitter);
@@ -83,4 +83,13 @@ function toProtocolLogger(logger: Logger | undefined): ProtocolLogger | undefine
     if (logger.isEnabled('protocol', 'verbose'))
       logger.log('protocol', 'verbose', (direction === 'send' ? 'SEND ► ' : '◀ RECV ') + JSON.stringify(message), [], {});
   } : undefined;
+}
+
+function envObjectToArray(env: Env): { name: string, value: string }[] {
+  const result: { name: string, value: string }[] = [];
+  for (const name in env) {
+    if (!Object.is(env[name], undefined))
+      result.push({ name, value: String(env[name]) });
+  }
+  return result;
 }

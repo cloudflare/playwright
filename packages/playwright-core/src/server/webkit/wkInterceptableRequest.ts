@@ -15,12 +15,14 @@
  * limitations under the License.
  */
 
-import type * as frames from '../frames';
+import { assert, headersArrayToObject, headersObjectToArray } from '../../utils';
 import * as network from '../network';
+
+import type * as frames from '../frames';
 import type * as types from '../types';
 import type { Protocol } from './protocol';
 import type { WKSession } from './wkConnection';
-import { assert, headersObjectToArray, headersArrayToObject } from '../../utils';
+
 
 const errorReasons: { [reason: string]: Protocol.Network.ResourceErrorType } = {
   'aborted': 'Cancellation',
@@ -40,9 +42,9 @@ const errorReasons: { [reason: string]: Protocol.Network.ResourceErrorType } = {
 };
 
 export class WKInterceptableRequest {
-  private readonly _session: WKSession;
+  private _session: WKSession;
+  private _requestId: string;
   readonly request: network.Request;
-  readonly _requestId: string;
   _timestamp: number;
   _wallTime: number;
 
@@ -57,6 +59,11 @@ export class WKInterceptableRequest {
       postDataBuffer = Buffer.from(event.request.postData, 'base64');
     this.request = new network.Request(frame._page._browserContext, frame, null, redirectedFrom?.request || null, documentId, event.request.url,
         resourceType, event.request.method, postDataBuffer, headersObjectToArray(event.request.headers));
+  }
+
+  adoptRequestFromNewProcess(newSession: WKSession, requestId: string) {
+    this._session = newSession;
+    this._requestId = requestId;
   }
 
   createResponse(responsePayload: Protocol.Network.Response): network.Response {
@@ -75,7 +82,7 @@ export class WKInterceptableRequest {
       requestStart: timingPayload ? wkMillisToRoundishMillis(timingPayload.requestStart) : -1,
       responseStart: timingPayload ? wkMillisToRoundishMillis(timingPayload.responseStart) : -1,
     };
-    const setCookieSeparator = process.platform === 'darwin' ? ',' : '\n';
+    const setCookieSeparator = process.platform === 'darwin' ? ',' : 'playwright-set-cookie-separator';
     const response = new network.Response(this.request, responsePayload.status, responsePayload.statusText, headersObjectToArray(responsePayload.headers, ',', setCookieSeparator), timing, getResponseBody, responsePayload.source === 'service-worker');
 
     // No raw response headers in WebKit, use "provisional" ones.
@@ -128,7 +135,7 @@ export class WKRouteImpl implements network.RouteDelegate {
     await this._session.sendMayFail('Network.interceptRequestWithResponse', {
       requestId: this._requestId,
       status: response.status,
-      statusText: network.STATUS_TEXTS[String(response.status)],
+      statusText: network.statusText(response.status),
       mimeType,
       headers,
       base64Encoded: response.isBase64,
@@ -136,7 +143,7 @@ export class WKRouteImpl implements network.RouteDelegate {
     });
   }
 
-  async continue(request: network.Request, overrides: types.NormalizedContinueOverrides) {
+  async continue(overrides: types.NormalizedContinueOverrides) {
     // In certain cases, protocol will return error if the request was already canceled
     // or the page was closed. We should tolerate these errors.
     await this._session.sendMayFail('Network.interceptWithRequest', {

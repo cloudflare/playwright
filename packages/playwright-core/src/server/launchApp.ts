@@ -16,14 +16,17 @@
 
 import fs from 'fs';
 import path from 'path';
-import type { Page } from './page';
-import { findChromiumChannel } from './registry';
+
 import { isUnderTest } from '../utils';
 import { serverSideCallMetadata } from './instrumentation';
-import type * as types from './types';
+import { findChromiumChannel } from './registry';
+import { registryDirectory } from './registry';
+
 import type { BrowserType } from './browserType';
 import type { CRPage } from './chromium/crPage';
-import { registryDirectory } from './registry';
+import type { Page } from './page';
+import type * as types from './types';
+
 
 export async function launchApp(browserType: BrowserType, options: {
   sdkLanguage: string,
@@ -43,12 +46,12 @@ export async function launchApp(browserType: BrowserType, options: {
   }
 
   const context = await browserType.launchPersistentContext(serverSideCallMetadata(), '', {
-    channel: findChromiumChannel(options.sdkLanguage),
-    noDefaultViewport: true,
     ignoreDefaultArgs: ['--enable-automation'],
-    colorScheme: 'no-override',
-    acceptDownloads: isUnderTest() ? 'accept' : 'internal-browser-default',
     ...options?.persistentContextOptions,
+    channel: options.persistentContextOptions?.channel ?? (!options.persistentContextOptions?.executablePath ? findChromiumChannel(options.sdkLanguage) : undefined),
+    noDefaultViewport: options.persistentContextOptions?.noDefaultViewport ?? true,
+    acceptDownloads: options?.persistentContextOptions?.acceptDownloads ?? (isUnderTest() ? 'accept' : 'internal-browser-default'),
+    colorScheme: options?.persistentContextOptions?.colorScheme ?? 'no-override',
     args,
   });
   const [page] = context.pages();
@@ -89,6 +92,8 @@ export async function syncLocalStorageWithSettings(page: Page, appName: string) 
       `(${String((settings: any) => {
         // iframes w/ snapshots, etc.
         if (location && location.protocol === 'data:')
+          return;
+        if (window.top !== window)
           return;
         Object.entries(settings).map(([k, v]) => localStorage[k] = v);
         (window as any).saveSettings = () => {

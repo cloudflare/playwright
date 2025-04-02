@@ -58,7 +58,8 @@ test('should work with non-txt extensions', async ({ runInlineTest }) => {
     `
   });
   expect(result.exitCode).toBe(1);
-  expect(result.output).toContain(`1,2,34`);
+  expect(result.rawOutput).toContain(colors.red('-1,2,3'));
+  expect(result.rawOutput).toContain(colors.green('+1,2,4'));
 });
 
 
@@ -113,49 +114,49 @@ test('should generate separate actual results for repeating names', async ({ run
   const outputText = result.output;
   const attachments = outputText.split('\n').filter(l => l.startsWith('## ')).map(l => l.substring(3)).map(l => JSON.parse(l))[0];
   for (const attachment of attachments) {
-    attachment.path = attachment.path.replace(/\\/g, '/').replace(/.*test-results\//, '');
+    attachment.path = attachment.path.replace(testInfo.outputDir, '').substring(1).replace(/\\/g, '/');
     attachment.name = attachment.name.replace(/\\/g, '/');
   }
   expect(attachments).toEqual([
     {
       'name': 'foo-expected.txt',
       'contentType': 'text/plain',
-      'path': 'golden-should-generate-separate-actual-results-for-repeating-names-playwright-test/a.spec.js-snapshots/foo.txt'
+      'path': 'a.spec.js-snapshots/foo.txt'
     },
     {
       'name': 'foo-actual.txt',
       'contentType': 'text/plain',
-      'path': 'a-is-a-test/foo-actual.txt'
+      'path': 'test-results/a-is-a-test/foo-actual.txt'
     },
     {
       'name': 'foo-1-expected.txt',
       'contentType': 'text/plain',
-      'path': 'golden-should-generate-separate-actual-results-for-repeating-names-playwright-test/a.spec.js-snapshots/foo.txt'
+      'path': 'a.spec.js-snapshots/foo.txt'
     },
     {
       'name': 'foo-1-actual.txt',
       'contentType': 'text/plain',
-      'path': 'a-is-a-test/foo-1-actual.txt'
+      'path': 'test-results/a-is-a-test/foo-1-actual.txt'
     },
     {
       'name': 'bar/baz-expected.txt',
       'contentType': 'text/plain',
-      'path': 'golden-should-generate-separate-actual-results-for-repeating-names-playwright-test/a.spec.js-snapshots/bar/baz.txt'
+      'path': 'a.spec.js-snapshots/bar/baz.txt'
     },
     {
       'name': 'bar/baz-actual.txt',
       'contentType': 'text/plain',
-      'path': 'a-is-a-test/bar-baz-actual.txt'
+      'path': 'test-results/a-is-a-test/bar/baz-actual.txt'
     },
     {
       'name': 'bar/baz-1-expected.txt',
       'contentType': 'text/plain',
-      'path': 'golden-should-generate-separate-actual-results-for-repeating-names-playwright-test/a.spec.js-snapshots/bar/baz.txt'
+      'path': 'a.spec.js-snapshots/bar/baz.txt'
     },
     {
       'name': 'bar/baz-1-actual.txt',
       'contentType': 'text/plain',
-      'path': 'a-is-a-test/bar-baz-1-actual.txt'
+      'path': 'test-results/a-is-a-test/bar/baz-1-actual.txt'
     }
   ]);
 });
@@ -202,8 +203,8 @@ Line7`,
   });
   expect(result.exitCode).toBe(1);
   expect(result.output).toContain('Line1');
-  expect(result.rawOutput).toContain('Line2' + colors.green('2'));
-  expect(result.rawOutput).toContain('line' + colors.reset(colors.strikethrough(colors.red('1'))) + colors.green('2'));
+  expect(result.rawOutput).toContain(colors.red('-Line2'));
+  expect(result.rawOutput).toContain(colors.green('+Line22'));
   expect(result.output).toContain('Line3');
   expect(result.output).toContain('Line5');
   expect(result.output).toContain('Line7');
@@ -223,7 +224,7 @@ test('should write detailed failure result to an output folder', async ({ runInl
 
   expect(result.exitCode).toBe(1);
   const outputText = result.output;
-  expect(outputText).toContain('Snapshot comparison failed:');
+  expect(outputText).toContain('Error: expect(string).toMatchSnapshot(expected)');
   const expectedSnapshotArtifactPath = testInfo.outputPath('test-results', 'a-is-a-test', 'snapshot-expected.txt');
   const actualSnapshotArtifactPath = testInfo.outputPath('test-results', 'a-is-a-test', 'snapshot-actual.txt');
   expect(outputText).toMatch(/Expected:.*a\.spec\.js-snapshots.snapshot\.txt/);
@@ -339,6 +340,36 @@ test('should update snapshot with the update-snapshots flag', async ({ runInline
   const data = fs.readFileSync(snapshotOutputPath);
   expect(data.toString()).toBe(ACTUAL_SNAPSHOT);
 });
+
+for (const updateSnapshots of ['all', 'changed', 'missing', 'none']) {
+  test(`should update snapshot with the update-snapshots=${updateSnapshots} (config)`, async ({ runInlineTest }, testInfo) => {
+    const result = await runInlineTest({
+      'playwright.config.ts': `export default { updateSnapshots: '${updateSnapshots}' };`,
+      ...files,
+      'a.spec.js-snapshots/snapshot.txt': 'Hello world',
+      'a.spec.js': `
+        const { test, expect } = require('./helper');
+        test('is a test', ({}) => {
+          expect('Hello world updated').toMatchSnapshot('snapshot.txt');
+        });
+      `
+    });
+
+    const rebase = updateSnapshots === 'all' || updateSnapshots === 'changed';
+    expect(result.exitCode).toBe(rebase ? 0 : 1);
+    if (rebase) {
+      const snapshotOutputPath = testInfo.outputPath('a.spec.js-snapshots/snapshot.txt');
+      if (updateSnapshots === 'all')
+        expect(result.output).toContain(`${snapshotOutputPath} is not the same, writing actual.`);
+      if (updateSnapshots === 'changed')
+        expect(result.output).toContain(`${snapshotOutputPath} does not match, writing actual.`);
+      const data = fs.readFileSync(snapshotOutputPath);
+      expect(data.toString()).toBe('Hello world updated');
+    } else {
+      expect(result.output).toContain(`toMatchSnapshot`);
+    }
+  });
+}
 
 test('should ignore text snapshot with the ignore-snapshots flag', async ({ runInlineTest }, testInfo) => {
   const EXPECTED_SNAPSHOT = 'Hello world';
@@ -635,7 +666,8 @@ test('should compare different PNG images', async ({ runInlineTest }, testInfo) 
 
   const outputText = result.output;
   expect(result.exitCode).toBe(1);
-  expect(outputText).toContain('Screenshot comparison failed:');
+  expect(outputText).toContain('Error: expect(Buffer).toMatchSnapshot(expected)');
+  expect(outputText).toContain('1 pixels (ratio 1.00 of all image pixels) are different.');
   const expectedSnapshotArtifactPath = testInfo.outputPath('test-results', 'a-is-a-test', 'snapshot-expected.png');
   const actualSnapshotArtifactPath = testInfo.outputPath('test-results', 'a-is-a-test', 'snapshot-actual.png');
   const diffSnapshotArtifactPath = testInfo.outputPath('test-results', 'a-is-a-test', 'snapshot-diff.png');
@@ -977,12 +1009,12 @@ test('should attach expected/actual/diff with snapshot path', async ({ runInline
     {
       name: 'test/path/snapshot-actual.png',
       contentType: 'image/png',
-      path: 'a-is-a-test/test-path-snapshot-actual.png'
+      path: 'a-is-a-test/test/path/snapshot-actual.png'
     },
     {
       name: 'test/path/snapshot-diff.png',
       contentType: 'image/png',
-      path: 'a-is-a-test/test-path-snapshot-diff.png'
+      path: 'a-is-a-test/test/path/snapshot-diff.png'
     }
   ]);
 });
@@ -1047,22 +1079,22 @@ test('should attach expected/actual/diff for different sizes', async ({ runInlin
   expect(outputText).toContain('4 pixels (ratio 1.00 of all image pixels) are different.');
   const attachments = outputText.split('\n').filter(l => l.startsWith('## ')).map(l => l.substring(3)).map(l => JSON.parse(l))[0];
   for (const attachment of attachments)
-    attachment.path = attachment.path.replace(/\\/g, '/').replace(/.*test-results\//, '');
+    attachment.path = attachment.path.replace(testInfo.outputDir, '').substring(1).replace(/\\/g, '/');
   expect(attachments).toEqual([
     {
       name: 'snapshot-expected.png',
       contentType: 'image/png',
-      path: 'golden-should-attach-expected-actual-diff-for-different-sizes-playwright-test/a.spec.js-snapshots/snapshot.png'
+      path: 'a.spec.js-snapshots/snapshot.png'
     },
     {
       name: 'snapshot-actual.png',
       contentType: 'image/png',
-      path: 'a-is-a-test/snapshot-actual.png'
+      path: 'test-results/a-is-a-test/snapshot-actual.png'
     },
     {
       name: 'snapshot-diff.png',
       contentType: 'image/png',
-      path: 'a-is-a-test/snapshot-diff.png'
+      path: 'test-results/a-is-a-test/snapshot-diff.png'
     },
   ]);
 });
@@ -1137,4 +1169,26 @@ test('should throw if a Promise was passed to toMatchSnapshot', async ({ runInli
   });
   expect(result.exitCode).toBe(0);
   expect(result.passed).toBe(1);
+});
+
+
+test('should respect update snapshot option from config', async ({ runInlineTest }, testInfo) => {
+  const EXPECTED_SNAPSHOT = 'Hello world';
+  const ACTUAL_SNAPSHOT = 'Hello world updated';
+  const result = await runInlineTest({
+    ...files,
+    'a.spec.js-snapshots/snapshot.txt': EXPECTED_SNAPSHOT,
+    'a.spec.js': `
+      const { test, expect } = require('./helper');
+      test('is a test', ({}) => {
+        expect('${ACTUAL_SNAPSHOT}').toMatchSnapshot('snapshot.txt');
+      });
+    `
+  }, { 'update-snapshots': true });
+
+  expect(result.exitCode).toBe(0);
+  const snapshotOutputPath = testInfo.outputPath('a.spec.js-snapshots/snapshot.txt');
+  expect(result.output).toContain(`${snapshotOutputPath} does not match, writing actual.`);
+  const data = fs.readFileSync(snapshotOutputPath);
+  expect(data.toString()).toBe(ACTUAL_SNAPSHOT);
 });

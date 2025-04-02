@@ -16,12 +16,9 @@
  */
 
 import type { Page } from '@playwright/test';
-import { test as it, expect } from './pageTest';
+import { test as it, expect, rafraf } from './pageTest';
 
-async function giveItAChanceToResolve(page: Page) {
-  for (let i = 0; i < 5; i++)
-    await page.evaluate(() => new Promise(f => requestAnimationFrame(() => requestAnimationFrame(f))));
-}
+const giveItAChanceToResolve = (page: Page) => rafraf(page, 5);
 
 it('element state checks should work as expected for label with zero-sized input', async ({ page, server }) => {
   await page.setContent(`
@@ -112,6 +109,7 @@ it('enabled/disabled retargeting', async ({ page, asset }) => {
     { dom: domInButton(`<input id=target>`), enabled: true, locator: 'input' },
     { dom: domInLink(`<input id=target>`), enabled: true, locator: 'input' },
     { dom: domInButton(`<input id=target>`, { disabled: true }), enabled: true, locator: 'input' },
+    { dom: domInLabel(`<li role=menuitem id=target aria-disabled=false></li>`), enabled: true, locator: 'li' },
 
     { dom: domInLabel(`<input id=target disabled>`), enabled: false, locator: 'label' },
     { dom: domLabelFor(`<input id=target disabled>`), enabled: false, locator: 'label' },
@@ -119,6 +117,7 @@ it('enabled/disabled retargeting', async ({ page, asset }) => {
     { dom: domInButton(`<input id=target disabled>`), enabled: false, locator: 'input' },
     { dom: domInLink(`<input id=target disabled>`), enabled: false, locator: 'input' },
     { dom: domInButton(`<input id=target disabled>`, { disabled: true }), enabled: false, locator: 'input' },
+    { dom: domInLabel(`<li role=menuitem id=target aria-disabled=true></li>`), enabled: false, locator: 'li' },
   ];
   for (const { dom, enabled, locator } of cases) {
     await it.step(`"${locator}" in "${dom}" should be enabled=${enabled}`, async () => {
@@ -250,7 +249,7 @@ it('input value retargeting', async ({ page, browserName }) => {
   }
 });
 
-it.fixme('selection retargeting', async ({ page, browserName }) => {
+it('selection retargeting', async ({ page, browserName }) => {
   const cases = [
     { dom: domStandalone(`<div contenteditable id=target>content</div>`), locator: 'div' },
     { dom: domInButton(`<div contenteditable id=target>content</div>`), locator: 'div' },
@@ -379,4 +378,19 @@ it('check retargeting', async ({ page, asset }) => {
       expect(await page.$eval('input', (input: HTMLInputElement) => input.checked)).toBe(false);
     });
   }
+});
+
+it('should not retarget anchor into parent label', async ({ page }) => {
+  await page.setContent(`
+    <label disabled>Text<a href='#' onclick='window.__clicked=1'>Target</a></label>
+  `);
+  await page.locator('a').click();
+  expect(await page.evaluate('window.__clicked')).toBe(1);
+
+  await page.setContent(`
+    <input type="radio" id="input-id" checked disabled />
+    <label for="input-id">Text<a href='#' onclick='window.__clicked=2'>Target</a></label>
+  `);
+  await page.locator('a').click();
+  expect(await page.evaluate('window.__clicked')).toBe(2);
 });

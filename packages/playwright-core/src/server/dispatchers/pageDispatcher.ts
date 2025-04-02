@@ -14,33 +14,37 @@
  * limitations under the License.
  */
 
-import type { BrowserContext } from '../browserContext';
-import type { Frame } from '../frames';
 import { Page, Worker } from '../page';
-import type * as channels from '@protocol/channels';
 import { Dispatcher, existingDispatcher } from './dispatcher';
 import { parseError } from '../errors';
+import { ArtifactDispatcher } from './artifactDispatcher';
+import { ElementHandleDispatcher } from './elementHandlerDispatcher';
 import { FrameDispatcher } from './frameDispatcher';
+import { parseArgument, serializeResult } from './jsHandleDispatcher';
 import { RequestDispatcher } from './networkDispatchers';
 import { ResponseDispatcher } from './networkDispatchers';
 import { RouteDispatcher, WebSocketDispatcher } from './networkDispatchers';
-import { serializeResult, parseArgument } from './jsHandleDispatcher';
-import { ElementHandleDispatcher } from './elementHandlerDispatcher';
-import type { FileChooser } from '../fileChooser';
-import type { CRCoverage } from '../chromium/crCoverage';
-import type { JSHandle } from '../javascript';
-import type { CallMetadata } from '../instrumentation';
+import { WebSocketRouteDispatcher } from './webSocketRouteDispatcher';
+import { createGuid } from '../utils/crypto';
+import { urlMatches } from '../../utils/isomorphic/urlMatch';
+
 import type { Artifact } from '../artifact';
-import { ArtifactDispatcher } from './artifactDispatcher';
+import type { BrowserContext } from '../browserContext';
+import type { CRCoverage } from '../chromium/crCoverage';
 import type { Download } from '../download';
-import { createGuid, urlMatches } from '../../utils';
+import type { FileChooser } from '../fileChooser';
+import type { CallMetadata } from '../instrumentation';
+import type { JSHandle } from '../javascript';
 import type { BrowserContextDispatcher } from './browserContextDispatcher';
+import type { Frame } from '../frames';
+import type * as channels from '@protocol/channels';
 
 export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, BrowserContextDispatcher> implements channels.PageChannel {
   _type_EventTarget = true;
   _type_Page = true;
   private _page: Page;
   _subscriptions = new Set<channels.PageUpdateSubscriptionParams['event']>();
+  _webSocketInterceptionPatterns: channels.PageSetWebSocketInterceptionPatternsParams['patterns'] = [];
 
   static from(parentScope: BrowserContextDispatcher, page: Page): PageDispatcher {
     return PageDispatcher.fromNullable(parentScope, page)!;
@@ -137,13 +141,21 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
     return { response: ResponseDispatcher.fromNullable(this.parentScope(), await this._page.goForward(metadata, params)) };
   }
 
+  async requestGC(params: channels.PageRequestGCParams, metadata: CallMetadata): Promise<channels.PageRequestGCResult> {
+    await this._page.requestGC();
+  }
+
   async registerLocatorHandler(params: channels.PageRegisterLocatorHandlerParams, metadata: CallMetadata): Promise<channels.PageRegisterLocatorHandlerResult> {
-    const uid = this._page.registerLocatorHandler(params.selector);
+    const uid = this._page.registerLocatorHandler(params.selector, params.noWaitAfter);
     return { uid };
   }
 
   async resolveLocatorHandlerNoReply(params: channels.PageResolveLocatorHandlerNoReplyParams, metadata: CallMetadata): Promise<void> {
-    this._page.resolveLocatorHandler(params.uid);
+    this._page.resolveLocatorHandler(params.uid, params.remove);
+  }
+
+  async unregisterLocatorHandler(params: channels.PageUnregisterLocatorHandlerParams, metadata: CallMetadata): Promise<void> {
+    this._page.unregisterLocatorHandler(params.uid);
   }
 
   async emulateMedia(params: channels.PageEmulateMediaParams, metadata: CallMetadata): Promise<void> {
@@ -152,6 +164,7 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
       colorScheme: params.colorScheme,
       reducedMotion: params.reducedMotion,
       forcedColors: params.forcedColors,
+      contrast: params.contrast,
     });
   }
 
@@ -176,6 +189,12 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
       this._dispatchEvent('route', { route: RouteDispatcher.from(RequestDispatcher.from(this.parentScope(), request), route) });
       return true;
     });
+  }
+
+  async setWebSocketInterceptionPatterns(params: channels.PageSetWebSocketInterceptionPatternsParams, metadata: CallMetadata): Promise<void> {
+    this._webSocketInterceptionPatterns = params.patterns;
+    if (params.patterns.length)
+      await WebSocketRouteDispatcher.installIfNeeded(this._page);
   }
 
   async expectScreenshot(params: channels.PageExpectScreenshotParams, metadata: CallMetadata): Promise<channels.PageExpectScreenshotResult> {

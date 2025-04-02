@@ -14,18 +14,22 @@
  * limitations under the License.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { gracefullyProcessExitDoNotHang, isRegExp } from 'playwright-core/lib/utils';
-import type { ConfigCLIOverrides, SerializedConfig } from './ipc';
-import { requireOrImport } from '../transform/transform';
-import type { Config, Project } from '../../types/test';
+import fs from 'fs';
+import path from 'path';
+
+import { gracefullyProcessExitDoNotHang } from 'playwright-core/lib/utils';
+import { isRegExp } from 'playwright-core/lib/utils';
+
+import { requireOrImport, setSingleTSConfig, setTransformConfig } from '../transform/transform';
 import { errorWithFile, fileIsModule } from '../util';
-import type { ConfigLocation } from './config';
 import { FullConfigInternal } from './config';
+import { configureESMLoader, configureESMLoaderTransformConfig, registerESMLoader } from './esmLoaderHost';
 import { addToCompilationCache } from '../transform/compilationCache';
-import { initializeEsmLoader, registerESMLoader } from './esmLoaderHost';
 import { execArgvWithExperimentalLoaderOptions, execArgvWithoutExperimentalLoaderOptions } from '../transform/esmUtils';
+
+import type { ConfigLocation } from './config';
+import type { ConfigCLIOverrides, SerializedConfig } from './ipc';
+import type { Config, Project } from '../../types/test';
 
 const kDefineConfigWasUsed = Symbol('defineConfigWasUsed');
 export const defineConfig = (...configs: any[]) => {
@@ -87,10 +91,7 @@ export const defineConfig = (...configs: any[]) => {
 export async function deserializeConfig(data: SerializedConfig): Promise<FullConfigInternal> {
   if (data.compilationCache)
     addToCompilationCache(data.compilationCache);
-
-  const config = await loadConfig(data.location, data.configCLIOverrides);
-  await initializeEsmLoader();
-  return config;
+  return await loadConfig(data.location, data.configCLIOverrides, undefined, data.metadata ? JSON.parse(data.metadata) : undefined);
 }
 
 async function loadUserConfig(location: ConfigLocation): Promise<Config> {
@@ -100,10 +101,15 @@ async function loadUserConfig(location: ConfigLocation): Promise<Config> {
   return object as Config;
 }
 
-export async function loadConfig(location: ConfigLocation, overrides?: ConfigCLIOverrides, ignoreProjectDependencies = false): Promise<FullConfigInternal> {
+export async function loadConfig(location: ConfigLocation, overrides?: ConfigCLIOverrides, ignoreProjectDependencies = false, metadata?: Config['metadata']): Promise<FullConfigInternal> {
+  // 1. Setup tsconfig; configure ESM loader with tsconfig and compilation cache.
+  setSingleTSConfig(overrides?.tsconfig);
+  await configureESMLoader();
+
+  // 2. Load and validate playwright config.
   const userConfig = await loadUserConfig(location);
   validateConfig(location.resolvedConfigFile || '<default config>', userConfig);
-  const fullConfig = new FullConfigInternal(location, userConfig, overrides || {});
+  const fullConfig = new FullConfigInternal(location, userConfig, overrides || {}, metadata);
   fullConfig.defineConfigWasUsed = !!(userConfig as any)[kDefineConfigWasUsed];
   if (ignoreProjectDependencies) {
     for (const project of fullConfig.projects) {
@@ -111,6 +117,17 @@ export async function loadConfig(location: ConfigLocation, overrides?: ConfigCLI
       project.teardown = undefined;
     }
   }
+
+  // 3. Load transform options from the playwright config.
+  const babelPlugins = (userConfig as any)['@playwright/test']?.babelPlugins || [];
+  const external = userConfig.build?.external || [];
+  setTransformConfig({ babelPlugins, external });
+  if (!overrides?.tsconfig)
+    setSingleTSConfig(fullConfig?.singleTSConfigPath);
+
+  // 4. Send transform options to ESM loader.
+  await configureESMLoaderTransformConfig();
+
   return fullConfig;
 }
 
@@ -126,13 +143,25 @@ function validateConfig(file: string, config: Config) {
   }
 
   if ('globalSetup' in config && config.globalSetup !== undefined) {
-    if (typeof config.globalSetup !== 'string')
+    if (Array.isArray(config.globalSetup)) {
+      config.globalSetup.forEach((item, index) => {
+        if (typeof item !== 'string')
+          throw errorWithFile(file, `config.globalSetup[${index}] must be a string`);
+      });
+    } else if (typeof config.globalSetup !== 'string') {
       throw errorWithFile(file, `config.globalSetup must be a string`);
+    }
   }
 
   if ('globalTeardown' in config && config.globalTeardown !== undefined) {
-    if (typeof config.globalTeardown !== 'string')
+    if (Array.isArray(config.globalTeardown)) {
+      config.globalTeardown.forEach((item, index) => {
+        if (typeof item !== 'string')
+          throw errorWithFile(file, `config.globalTeardown[${index}] must be a string`);
+      });
+    } else if (typeof config.globalTeardown !== 'string') {
       throw errorWithFile(file, `config.globalTeardown must be a string`);
+    }
   }
 
   if ('globalTimeout' in config && config.globalTimeout !== undefined) {
@@ -214,21 +243,16 @@ function validateConfig(file: string, config: Config) {
       throw errorWithFile(file, `config.shard.current must be a positive number, not greater than config.shard.total`);
   }
 
-  if ('ignoreSnapshots' in config && config.ignoreSnapshots !== undefined) {
-    if (typeof config.ignoreSnapshots !== 'boolean')
-      throw errorWithFile(file, `config.ignoreSnapshots must be a boolean`);
-  }
-
   if ('updateSnapshots' in config && config.updateSnapshots !== undefined) {
-    if (typeof config.updateSnapshots !== 'string' || !['all', 'none', 'missing'].includes(config.updateSnapshots))
-      throw errorWithFile(file, `config.updateSnapshots must be one of "all", "none" or "missing"`);
+    if (typeof config.updateSnapshots !== 'string' || !['all', 'changed', 'missing', 'none'].includes(config.updateSnapshots))
+      throw errorWithFile(file, `config.updateSnapshots must be one of "all", "changed", "missing" or "none"`);
   }
 
-  if ('workers' in config && config.workers !== undefined) {
-    if (typeof config.workers === 'number' && config.workers <= 0)
-      throw errorWithFile(file, `config.workers must be a positive number`);
-    else if (typeof config.workers === 'string' && !config.workers.endsWith('%'))
-      throw errorWithFile(file, `config.workers must be a number or percentage`);
+  if ('tsconfig' in config && config.tsconfig !== undefined) {
+    if (typeof config.tsconfig !== 'string')
+      throw errorWithFile(file, `config.tsconfig must be a string`);
+    if (!fs.existsSync(path.resolve(file, '..', config.tsconfig)))
+      throw errorWithFile(file, `config.tsconfig does not exist`);
   }
 }
 
@@ -284,9 +308,30 @@ function validateProject(file: string, project: Project, title: string) {
     if (!project.use || typeof project.use !== 'object')
       throw errorWithFile(file, `${title}.use must be an object`);
   }
+
+  if ('ignoreSnapshots' in project && project.ignoreSnapshots !== undefined) {
+    if (typeof project.ignoreSnapshots !== 'boolean')
+      throw errorWithFile(file, `${title}.ignoreSnapshots must be a boolean`);
+  }
+
+  if ('workers' in project && project.workers !== undefined) {
+    if (typeof project.workers === 'number' && project.workers <= 0)
+      throw errorWithFile(file, `${title}.workers must be a positive number`);
+    else if (typeof project.workers === 'string' && !project.workers.endsWith('%'))
+      throw errorWithFile(file, `${title}.workers must be a number or percentage`);
+  }
 }
 
-export function resolveConfigFile(configFileOrDirectory: string): string | undefined {
+export function resolveConfigLocation(configFile: string | undefined): ConfigLocation {
+  const configFileOrDirectory = configFile ? path.resolve(process.cwd(), configFile) : process.cwd();
+  const resolvedConfigFile = resolveConfigFile(configFileOrDirectory);
+  return {
+    resolvedConfigFile,
+    configDir: resolvedConfigFile ? path.dirname(resolvedConfigFile) : configFileOrDirectory,
+  };
+}
+
+function resolveConfigFile(configFileOrDirectory: string): string | undefined {
   const resolveConfig = (configFile: string) => {
     if (fs.existsSync(configFile))
       return configFile;
@@ -309,22 +354,15 @@ export function resolveConfigFile(configFileOrDirectory: string): string | undef
       return configFile;
     // If there is no config, assume this as a root testing directory.
     return undefined;
-  } else {
-    // When passed a file, it must be a config file.
-    const configFile = resolveConfig(configFileOrDirectory);
-    return configFile!;
   }
+  // When passed a file, it must be a config file.
+  return configFileOrDirectory!;
 }
 
 export async function loadConfigFromFileRestartIfNeeded(configFile: string | undefined, overrides?: ConfigCLIOverrides, ignoreDeps?: boolean): Promise<FullConfigInternal | null> {
-  const configFileOrDirectory = configFile ? path.resolve(process.cwd(), configFile) : process.cwd();
-  const resolvedConfigFile = resolveConfigFile(configFileOrDirectory);
-  if (restartWithExperimentalTsEsm(resolvedConfigFile))
+  const location = resolveConfigLocation(configFile);
+  if (restartWithExperimentalTsEsm(location.resolvedConfigFile))
     return null;
-  const location: ConfigLocation = {
-    configDir: resolvedConfigFile ? path.dirname(resolvedConfigFile) : configFileOrDirectory,
-    resolvedConfigFile,
-  };
   return await loadConfig(location, overrides, ignoreDeps);
 }
 
@@ -351,11 +389,6 @@ export function restartWithExperimentalTsEsm(configFile: string | undefined, for
 
   // Now check for the newer API presence.
   if (!require('node:module').register) {
-    // Older API is experimental, only supported on Node 16+.
-    const nodeVersion = +process.versions.node.split('.')[0];
-    if (nodeVersion < 16)
-      return false;
-
     // With older API requiring a process restart, do so conditionally on the config.
     const configIsModule = !!configFile && fileIsModule(configFile);
     if (!force && !configIsModule)

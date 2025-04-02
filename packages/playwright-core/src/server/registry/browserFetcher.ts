@@ -15,16 +15,19 @@
  * limitations under the License.
  */
 
+import * as childProcess from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import childProcess from 'child_process';
-import { existsAsync } from '../../utils/fileUtils';
-import { debugLogger } from '../../utils/debugLogger';
-import { ManualPromise } from '../../utils/manualPromise';
-import { colors, progress as ProgressBar } from '../../utilsBundle';
+
+import { debugLogger } from '../utils/debugLogger';
+import { ManualPromise } from '../../utils/isomorphic/manualPromise';
+import { getUserAgent } from '../utils/userAgent';
+import { progress as ProgressBar, colors } from '../../utilsBundle';
+import { existsAsync } from '../utils/fileUtils';
+
 import { browserDirectoryToMarkerFilePath } from '.';
-import { getUserAgent } from '../../utils/userAgent';
+
 import type { DownloadParams } from './oopDownloadBrowserMain';
 
 export async function downloadBrowserWithProgressBar(title: string, browserDirectory: string, executablePath: string | undefined, downloadURLs: string[], downloadFileName: string, downloadConnectionTimeout: number): Promise<boolean> {
@@ -36,7 +39,7 @@ export async function downloadBrowserWithProgressBar(title: string, browserDirec
 
   const zipPath = path.join(os.tmpdir(), downloadFileName);
   try {
-    const retryCount = 3;
+    const retryCount = 5;
     for (let attempt = 1; attempt <= retryCount; ++attempt) {
       debugLogger.log('install', `downloading ${title} - attempt #${attempt}`);
       const url = downloadURLs[(attempt - 1) % downloadURLs.length];

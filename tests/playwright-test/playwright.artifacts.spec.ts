@@ -130,12 +130,13 @@ test('should work with screenshot: on', async ({ runInlineTest }, testInfo) => {
     'playwright.config.ts': `
       module.exports = { use: { screenshot: 'on' } };
     `,
-  }, { workers: 1 });
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(5);
   expect(result.failed).toBe(5);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-failing',
     '  test-failed-1.png',
     'artifacts-own-context-failing',
@@ -150,10 +151,8 @@ test('should work with screenshot: on', async ({ runInlineTest }, testInfo) => {
     '  test-finished-1.png',
     'artifacts-shared-shared-failing',
     '  test-failed-1.png',
-    '  test-failed-2.png',
     'artifacts-shared-shared-passing',
     '  test-finished-1.png',
-    '  test-finished-2.png',
     'artifacts-two-contexts',
     '  test-finished-1.png',
     '  test-finished-2.png',
@@ -169,12 +168,13 @@ test('should work with screenshot: only-on-failure', async ({ runInlineTest }, t
     'playwright.config.ts': `
       module.exports = { use: { screenshot: 'only-on-failure' } };
     `,
-  }, { workers: 1 });
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(5);
   expect(result.failed).toBe(5);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-failing',
     '  test-failed-1.png',
     'artifacts-own-context-failing',
@@ -183,10 +183,36 @@ test('should work with screenshot: only-on-failure', async ({ runInlineTest }, t
     '  test-failed-1.png',
     'artifacts-shared-shared-failing',
     '  test-failed-1.png',
-    '  test-failed-2.png',
     'artifacts-two-contexts-failing',
     '  test-failed-1.png',
     '  test-failed-2.png',
+  ]);
+});
+
+test('should work with screenshot: on-first-failure', async ({ runInlineTest }, testInfo) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      import { test, expect } from '@playwright/test';
+      test('fails', async ({ page }) => {
+        await page.setContent('I am the page');
+        expect(1).toBe(2);
+      });
+    `,
+    'playwright.config.ts': `
+      module.exports = {
+        retries: 1,
+        use: { screenshot: 'on-first-failure' }
+      };
+    `,
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
+
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(0);
+  expect(result.failed).toBe(1);
+  expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
+    'a-fails',
+    '  test-failed-1.png',
   ]);
 });
 
@@ -204,11 +230,12 @@ test('should work with screenshot: only-on-failure & fullPage', async ({ runInli
     'playwright.config.ts': `
       module.exports = { use: { screenshot: { mode: 'only-on-failure', fullPage: true } } };
     `,
-  }, { workers: 1 });
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(0);
   expect(result.failed).toBe(1);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-should-fail-and-take-fullPage-screenshots',
     '  test-failed-1.png',
   ]);
@@ -218,18 +245,50 @@ test('should work with screenshot: only-on-failure & fullPage', async ({ runInli
   expect.soft(screenshotFailure).toMatchSnapshot('screenshot-grid-fullpage.png');
 });
 
+test('should capture a single screenshot on failure when afterAll fails', async ({ runInlineTest }, testInfo) => {
+  const result = await runInlineTest({
+    'a.spec.ts': `
+      import { test, expect } from '@playwright/test';
+      let page;
+      test.use({ screenshot: 'only-on-failure' });
+      test.beforeAll(async ({ browser }) => {
+        page = await browser.newPage();
+      });
+      test.afterAll(async () => {
+        await page.setContent('this is afterAll');
+        expect(1).toBe(2);
+        await page.close();
+      });
+      test('passes', async () => {
+        await page.setContent('this is test');
+      });
+    `,
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
+
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(0);
+  expect(result.failed).toBe(1);
+  expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
+    'a-passes',
+    '  test-failed-1.png',
+  ]);
+});
+
+
 test('should work with trace: on', async ({ runInlineTest }, testInfo) => {
   const result = await runInlineTest({
     ...testFiles,
     'playwright.config.ts': `
       module.exports = { use: { trace: 'on' } };
     `,
-  }, { workers: 1 });
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(5);
   expect(result.failed).toBe(5);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-failing',
     '  trace.zip',
     'artifacts-own-context-failing',
@@ -259,12 +318,13 @@ test('should work with trace: retain-on-failure', async ({ runInlineTest }, test
     'playwright.config.ts': `
       module.exports = { use: { trace: 'retain-on-failure' } };
     `,
-  }, { workers: 1 });
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(5);
   expect(result.failed).toBe(5);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-failing',
     '  trace.zip',
     'artifacts-own-context-failing',
@@ -284,12 +344,13 @@ test('should work with trace: on-first-retry', async ({ runInlineTest }, testInf
     'playwright.config.ts': `
       module.exports = { use: { trace: 'on-first-retry' } };
     `,
-  }, { workers: 1, retries: 1 });
+  }, { workers: 1, retries: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(5);
   expect(result.failed).toBe(5);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-failing-retry1',
     '  trace.zip',
     'artifacts-own-context-failing-retry1',
@@ -309,12 +370,13 @@ test('should work with trace: on-all-retries', async ({ runInlineTest }, testInf
     'playwright.config.ts': `
       module.exports = { use: { trace: 'on-all-retries' } };
     `,
-  }, { workers: 1, retries: 2 });
+  }, { workers: 1, retries: 2 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(5);
   expect(result.failed).toBe(5);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-failing-retry1',
     '  trace.zip',
     'artifacts-failing-retry2',
@@ -344,12 +406,13 @@ test('should work with trace: retain-on-first-failure', async ({ runInlineTest }
     'playwright.config.ts': `
       module.exports = { use: { trace: 'retain-on-first-failure' } };
     `,
-  }, { workers: 1, retries: 2 });
+  }, { workers: 1, retries: 2 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.passed).toBe(5);
   expect(result.failed).toBe(5);
   expect(listFiles(testInfo.outputPath('test-results'))).toEqual([
+    '.last-run.json',
     'artifacts-failing',
     '  trace.zip',
     'artifacts-own-context-failing',
@@ -379,7 +442,7 @@ test('should take screenshot when page is closed in afterEach', async ({ runInli
         expect(1).toBe(2);
       });
     `,
-  }, { workers: 1 });
+  }, { workers: 1 }, { PLAYWRIGHT_NO_COPY_PROMPT: 'true' });
 
   expect(result.exitCode).toBe(1);
   expect(result.failed).toBe(1);

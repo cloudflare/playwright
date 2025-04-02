@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { hostPlatform } from '../../packages/playwright-core/src/server/utils/hostPlatform';
 import { browserTest as it, expect } from '../config/browserTest';
 import fs from 'fs';
 import os from 'os';
@@ -21,7 +22,7 @@ import os from 'os';
 async function checkFeatures(name: string, context: any, server: any) {
   try {
     const page = await context.newPage();
-    await page.goto(server.PREFIX + '/modernizr.html');
+    await page.goto(server.PREFIX + '/modernizr/index.html');
     const actual = await page.evaluate('window.report');
     const expected = JSON.parse(fs.readFileSync(require.resolve(`../assets/modernizr/${name}.json`), 'utf-8'));
     return { actual, expected };
@@ -30,61 +31,72 @@ async function checkFeatures(name: string, context: any, server: any) {
   }
 }
 
-it('safari-14-1', async ({ browser, browserName, platform, server, headless, isMac }) => {
+it('Safari Desktop', async ({ browser, browserName, platform, server, headless }) => {
   it.skip(browserName !== 'webkit');
-  it.skip(browserName === 'webkit' && parseInt(os.release(), 10) < 20, 'WebKit for macOS 10.15 is frozen.');
+  it.skip(browserName === 'webkit' && platform === 'darwin' && os.arch() === 'x64', 'Modernizr uses WebGL which is not available on Intel macOS - https://bugs.webkit.org/show_bug.cgi?id=278277');
+  it.skip(browserName === 'webkit' && hostPlatform.startsWith('ubuntu20.04'), 'Ubuntu 20.04 is frozen');
   const context = await browser.newContext({
     deviceScaleFactor: 2
   });
-  const { actual, expected } = await checkFeatures('safari-14-1', context, server);
+  const { actual, expected } = await checkFeatures('safari-18', context, server);
+
+  expected.pushmanager = false;
+  expected.devicemotion2 = false;
+  expected.devicemotion = false;
+  expected.deviceorientation = false;
+  expected.deviceorientation3 = false;
+
+  delete expected.webglextensions;
+  delete actual.webglextensions;
+  expected.audio = !!expected.audio;
+  actual.audio = !!actual.audio;
+  expected.video = !!expected.video;
+  actual.video = !!actual.video;
 
   if (platform === 'linux') {
-    expected.subpixelfont = false;
+    expected.speechrecognition = false;
+    expected.publickeycredential = false;
+    expected.mediastream = false;
     if (headless)
-      expected.todataurljpeg = false;
+      expected.todataurlwebp = true;
 
     // GHA
     delete actual.variablefonts;
     delete expected.variablefonts;
-
-    if (isDocker()) {
-      delete actual.unicode;
-      delete expected.unicode;
-    }
   }
 
   if (platform === 'win32') {
-    expected.datalistelem = false;
-    expected.fileinputdirectory = false;
     expected.getusermedia = false;
     expected.peerconnection = false;
     expected.speechrecognition = false;
     expected.speechsynthesis = false;
     expected.todataurljpeg = false;
-    expected.unicode = false;
     expected.webaudio = false;
+    expected.gamepads = false;
 
-    expected.input.list = false;
+    delete expected.datalistelem;
+
+    expected.publickeycredential = false;
+    expected.mediastream = false;
+    expected.mediasource = false;
+    expected.datachannel = false;
+
     expected.inputtypes.color = false;
     expected.inputtypes.date = false;
     expected.inputtypes['datetime-local'] = false;
     expected.inputtypes.time = false;
   }
 
-  if (isMac && parseInt(os.release(), 10) > 20) {
-    expected.applicationcache = false;
-    expected.inputsearchevent = false;
-  }
-
   expect(actual).toEqual(expected);
 });
 
-it('mobile-safari-14-1', async ({ playwright, browser, browserName, platform, isMac, server, headless }) => {
+it('Mobile Safari', async ({ playwright, browser, browserName, platform, server, headless }) => {
   it.skip(browserName !== 'webkit');
-  it.skip(browserName === 'webkit' && parseInt(os.release(), 10) < 20, 'WebKit for macOS 10.15 is frozen.');
+  it.skip(browserName === 'webkit' && platform === 'darwin' && os.arch() === 'x64', 'Modernizr uses WebGL which is not available on Intel macOS - https://bugs.webkit.org/show_bug.cgi?id=278277');
+  it.skip(browserName === 'webkit' && hostPlatform.startsWith('ubuntu20.04'), 'Ubuntu 20.04 is frozen');
   const iPhone = playwright.devices['iPhone 12'];
   const context = await browser.newContext(iPhone);
-  const { actual, expected } = await checkFeatures('mobile-safari-14-1', context, server);
+  const { actual, expected } = await checkFeatures('mobile-safari-18', context, server);
 
   {
     // All platforms.
@@ -93,61 +105,50 @@ it('mobile-safari-14-1', async ({ playwright, browser, browserName, platform, is
     expected.cssvhunit = true;
     expected.cssvmaxunit = true;
     expected.overflowscrolling = false;
+    expected.mediasource = true;
+    expected.scrolltooptions = false;
+
+    delete expected.webglextensions;
+    delete actual.webglextensions;
+    expected.audio = !!expected.audio;
+    actual.audio = !!actual.audio;
+    expected.video = !!expected.video;
+    actual.video = !!actual.video;
   }
 
   if (platform === 'linux') {
-    expected.subpixelfont = false;
+    expected.speechrecognition = false;
+    expected.publickeycredential = false;
+    expected.mediastream = false;
     if (headless)
-      expected.todataurljpeg = false;
+      expected.todataurlwebp = true;
 
     // GHA
     delete actual.variablefonts;
     delete expected.variablefonts;
-
-    if (isDocker()) {
-      delete actual.unicode;
-      delete expected.unicode;
-    }
   }
 
   if (platform === 'win32') {
-    expected.datalistelem = false;
-    expected.fileinputdirectory = false;
     expected.getusermedia = false;
     expected.peerconnection = false;
     expected.speechrecognition = false;
     expected.speechsynthesis = false;
     expected.todataurljpeg = false;
-    expected.unicode = false;
     expected.webaudio = false;
+    expected.gamepads = false;
 
-    expected.input.list = false;
+    delete expected.datalistelem;
+
+    expected.publickeycredential = false;
+    expected.mediastream = false;
+    expected.mediasource = false;
+    expected.datachannel = false;
+
     expected.inputtypes.color = false;
-    expected.inputtypes.month = false;
-    expected.inputtypes.week = false;
     expected.inputtypes.date = false;
-    expected.inputtypes.time = false;
     expected.inputtypes['datetime-local'] = false;
     expected.inputtypes.time = false;
   }
 
-  if (isMac && parseInt(os.release(), 10) > 20) {
-    expected.applicationcache = false;
-    expected.inputsearchevent = false;
-  }
-
   expect(actual).toEqual(expected);
 });
-
-function isDocker() {
-  try {
-    fs.statSync('/.dockerenv');
-    return true;
-  } catch {
-  }
-  try {
-    return fs.readFileSync('/proc/self/cgroup', 'utf8').includes('docker');
-  } catch {
-  }
-  return false;
-}

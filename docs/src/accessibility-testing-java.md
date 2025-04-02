@@ -14,8 +14,6 @@ A few examples of problems this can catch include:
 
 The following examples rely on the [`com.deque.html.axe-core/playwright`](https://mvnrepository.com/artifact/com.deque.html.axe-core/playwright) Maven package which adds support for running the [axe accessibility testing engine](https://www.deque.com/axe/) as part of your Playwright tests.
 
-<!-- TOC -->
-
 ## Disclaimer
 
 Automated accessibility tests can detect some common accessibility problems such as missing or invalid properties. But many accessibility problems can only be discovered through manual testing. We recommend using a combination of automated testing, manual accessibility assessments, and inclusive user testing.
@@ -72,22 +70,24 @@ For example, you can use [`AxeBuilder.include()`](https://github.com/dequelabs/a
 `AxeBuilder.analyze()` will scan the page *in its current state* when you call it. To scan parts of a page that are revealed based on UI interactions, use [Locators](./locators.md) to interact with the page before invoking `analyze()`:
 
 ```java
-@Test
-void navigationMenuFlyoutShouldNotHaveAutomaticallyDetectableAccessibilityViolations() throws Exception {
-  page.navigate("https://your-site.com/");
+public class HomepageTests {
+  @Test
+  void navigationMenuFlyoutShouldNotHaveAutomaticallyDetectableAccessibilityViolations() throws Exception {
+    page.navigate("https://your-site.com/");
 
-  page.locator("button[aria-label=\"Navigation Menu\"]").click();
+    page.locator("button[aria-label=\"Navigation Menu\"]").click();
 
-  // It is important to waitFor() the page to be in the desired
-  // state *before* running analyze(). Otherwise, axe might not
-  // find all the elements your test expects it to scan.
-  page.locator("#navigation-menu-flyout").waitFor();
+    // It is important to waitFor() the page to be in the desired
+    // state *before* running analyze(). Otherwise, axe might not
+    // find all the elements your test expects it to scan.
+    page.locator("#navigation-menu-flyout").waitFor();
 
-  AxeResults accessibilityScanResults = new AxeBuilder(page)
-    .include(Arrays.asList("#navigation-menu-flyout"))
-    .analyze();
+    AxeResults accessibilityScanResults = new AxeBuilder(page)
+      .include(Arrays.asList("#navigation-menu-flyout"))
+      .analyze();
 
-  assertEquals(Collections.emptyList(), accessibilityScanResults.getViolations());
+    assertEquals(Collections.emptyList(), accessibilityScanResults.getViolations());
+  }
 }
 ```
 
@@ -107,7 +107,7 @@ AxeResults accessibilityScanResults = new AxeBuilder(page)
 assertEquals(Collections.emptyList(), accessibilityScanResults.getViolations());
 ```
 
-You can find a complete listing of the rule tags axe-core supports in [the "Axe-core Tags" section of the axe API documentation](https://www.deque.com/axe/core-documentation/api-documentation/#axe-core-tags).
+You can find a complete listing of the rule tags axe-core supports in [the "Axe-core Tags" section of the axe API documentation](https://www.deque.com/axe/core-documentation/api-documentation/#axecore-tags).
 
 ## Handling known issues
 
@@ -135,7 +135,7 @@ If the element in question is used repeatedly in many pages, consider [using a t
 
 ### Disabling individual scan rules
 
-If your application contains many different pre-existing violations of a specific rule, you can use [`AxeBuilder.disableRules()`](https://github.com/dequelabs/axe-core-maven-html/blob/develop/playwright/README.md#axebuilderdisablerulesliststring-rules) to temporarily disable individual rules until you're able to fix the issues.
+If your application contains many different preexisting violations of a specific rule, you can use [`AxeBuilder.disableRules()`](https://github.com/dequelabs/axe-core-maven-html/blob/develop/playwright/README.md#axebuilderdisablerulesliststring-rules) to temporarily disable individual rules until you're able to fix the issues.
 
 You can find the rule IDs to pass to `disableRules()` in the `id` property of the violations you want to suppress. A [complete list of axe's rules](https://github.com/dequelabs/axe-core/blob/master/doc/rule-descriptions.md) can be found in `axe-core`'s documentation.
 
@@ -160,38 +160,40 @@ This approach avoids the downsides of using `AxeBuilder.exclude()` at the cost o
 Here is an example of using fingerprints based on only rule IDs and "target" selectors pointing to each violation:
 
 ```java
-@Test
-shouldOnlyHaveAccessibilityViolationsMatchingKnownFingerprints() throws Exception {
-  page.navigate("https://your-site.com/");
+public class HomepageTests {
+  @Test
+  shouldOnlyHaveAccessibilityViolationsMatchingKnownFingerprints() throws Exception {
+    page.navigate("https://your-site.com/");
 
-  AxeResults accessibilityScanResults = new AxeBuilder(page).analyze();
+    AxeResults accessibilityScanResults = new AxeBuilder(page).analyze();
 
-  List<ViolationFingerprint> violationFingerprints = fingerprintsFromScanResults(accessibilityScanResults);
+    List<ViolationFingerprint> violationFingerprints = fingerprintsFromScanResults(accessibilityScanResults);
 
-  assertEquals(Arrays.asList(
-    new ViolationFingerprint("aria-roles", "[span[role=\"invalid\"]]"),
-    new ViolationFingerprint("color-contrast", "[li:nth-child(2) > span]"),
-    new ViolationFingerprint("label", "[input]")
-  ), violationFingerprints);
-}
+    assertEquals(Arrays.asList(
+      new ViolationFingerprint("aria-roles", "[span[role=\"invalid\"]]"),
+      new ViolationFingerprint("color-contrast", "[li:nth-child(2) > span]"),
+      new ViolationFingerprint("label", "[input]")
+    ), violationFingerprints);
+  }
 
-// You can make your "fingerprint" as specific as you like. This one considers a violation to be
-// "the same" if it corresponds the same Axe rule on the same element.
-//
-// Using a record type makes it easy to compare fingerprints with assertEquals
-public record ViolationFingerprint(String ruleId, String target) { }
+  // You can make your "fingerprint" as specific as you like. This one considers a violation to be
+  // "the same" if it corresponds the same Axe rule on the same element.
+  //
+  // Using a record type makes it easy to compare fingerprints with assertEquals
+  public record ViolationFingerprint(String ruleId, String target) { }
 
-public List<ViolationFingerprint> fingerprintsFromScanResults(AxeResults results) {
-  return results.getViolations().stream()
-    // Each violation refers to one rule and multiple "nodes" which violate it
-    .flatMap(violation -> violation.getNodes().stream()
-      .map(node -> new ViolationFingerprint(
-        violation.getId(),
-        // Each node contains a "target", which is a CSS selector that uniquely identifies it
-        // If the page involves iframes or shadow DOMs, it may be a chain of CSS selectors
-        node.getTarget().toString()
-      )))
-    .collect(Collectors.toList());
+  public List<ViolationFingerprint> fingerprintsFromScanResults(AxeResults results) {
+    return results.getViolations().stream()
+      // Each violation refers to one rule and multiple "nodes" which violate it
+      .flatMap(violation -> violation.getNodes().stream()
+        .map(node -> new ViolationFingerprint(
+          violation.getId(),
+          // Each node contains a "target", which is a CSS selector that uniquely identifies it
+          // If the page involves iframes or shadow DOMs, it may be a chain of CSS selectors
+          node.getTarget().toString()
+        )))
+      .collect(Collectors.toList());
+  }
 }
 ```
 
@@ -210,11 +212,11 @@ This example fixture creates an `AxeBuilder` object which is pre-configured with
 
 ```java
 class AxeTestFixtures extends TestFixtures {
-  AxeBuilder makeAxeBuilder() {
-    return new AxeBuilder(page)
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .exclude('#commonly-reused-element-with-known-issue');
-  }
+ AxeBuilder makeAxeBuilder() {
+   return new AxeBuilder(page)
+     .withTags(new String[]{"wcag2a", "wcag2aa", "wcag21a", "wcag21aa"})
+     .exclude("#commonly-reused-element-with-known-issue");
+ }
 }
 ```
 
@@ -231,7 +233,7 @@ public class HomepageTests extends AxeTestFixtures {
     AxeResults accessibilityScanResults = makeAxeBuilder()
       // Automatically uses the shared AxeBuilder configuration,
       // but supports additional test-specific configuration too
-      .include('#specific-element-under-test')
+      .include("#specific-element-under-test")
       .analyze();
 
     assertEquals(Collections.emptyList(), accessibilityScanResults.getViolations());

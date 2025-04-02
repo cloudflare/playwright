@@ -20,7 +20,7 @@ import '@web/third_party/vscode/codicon.css';
 import { settings } from '@web/uiUtils';
 import React from 'react';
 import './uiModeFiltersView.css';
-import type { TestModel } from './uiModeModel';
+import type { TeleSuiteUpdaterTestModel } from '@testIsomorphic/teleSuiteUpdater';
 
 export const FiltersView: React.FC<{
   filterText: string;
@@ -29,7 +29,7 @@ export const FiltersView: React.FC<{
   setStatusFilters: (filters: Map<string, boolean>) => void;
   projectFilters: Map<string, boolean>;
   setProjectFilters: (filters: Map<string, boolean>) => void;
-  testModel: TestModel | undefined,
+  testModel: TeleSuiteUpdaterTestModel | undefined,
   runTests: () => void;
 }> = ({ filterText, setFilterText, statusFilters, setStatusFilters, projectFilters, setProjectFilters, testModel, runTests }) => {
   const [expanded, setExpanded] = React.useState(false);
@@ -58,11 +58,11 @@ export const FiltersView: React.FC<{
       <span className='filter-label'>Projects:</span> {projectsLine}
     </div>
     {expanded && <div className='hbox' style={{ marginLeft: 14, maxHeight: 200, overflowY: 'auto' }}>
-      <div className='filter-list'>
+      <div className='filter-list' role='list' data-testid='status-filters'>
         {[...statusFilters.entries()].map(([status, value]) => {
-          return <div className='filter-entry'>
+          return <div className='filter-entry' key={status} role='listitem'>
             <label>
-              <input type='checkbox' checked={value} onClick={() => {
+              <input type='checkbox' checked={value} onChange={() => {
                 const copy = new Map(statusFilters);
                 copy.set(status, !copy.get(status));
                 setStatusFilters(copy);
@@ -72,11 +72,11 @@ export const FiltersView: React.FC<{
           </div>;
         })}
       </div>
-      <div className='filter-list'>
+      <div className='filter-list' role='list' data-testid='project-filters'>
         {[...projectFilters.entries()].map(([projectName, value]) => {
-          return <div className='filter-entry'>
+          return <div className='filter-entry' key={projectName}  role='listitem'>
             <label>
-              <input type='checkbox' checked={value} onClick={() => {
+              <input type='checkbox' checked={value} onChange={() => {
                 const copy = new Map(projectFilters);
                 copy.set(projectName, !copy.get(projectName));
                 setProjectFilters(copy);

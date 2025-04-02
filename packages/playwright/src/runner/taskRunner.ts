@@ -14,31 +14,35 @@
  * limitations under the License.
  */
 
-import { debug } from 'playwright-core/lib/utilsBundle';
 import { ManualPromise, monotonicTime } from 'playwright-core/lib/utils';
-import type { FullResult, TestError } from '../../types/testReporter';
+import { colors } from 'playwright-core/lib/utils';
+import { debug } from 'playwright-core/lib/utilsBundle';
+
+
 import { SigIntWatcher } from './sigIntWatcher';
 import { serializeError } from '../util';
-import type { ReporterV2 } from '../reporters/reporterV2';
+
+import type { FullResult, TestError } from '../../types/testReporter';
+import type { InternalReporter } from '../reporters/internalReporter';
 
 type TaskPhase<Context> = (context: Context, errors: TestError[], softErrors: TestError[]) => Promise<void> | void;
-export type Task<Context> = { setup?: TaskPhase<Context>, teardown?: TaskPhase<Context> };
+export type Task<Context> = { title: string, setup?: TaskPhase<Context>, teardown?: TaskPhase<Context> };
 
 export class TaskRunner<Context> {
-  private _tasks: { name: string, task: Task<Context> }[] = [];
-  private _reporter: ReporterV2;
+  private _tasks: Task<Context>[] = [];
+  private _reporter: InternalReporter;
   private _hasErrors = false;
   private _interrupted = false;
   private _isTearDown = false;
   private _globalTimeoutForError: number;
 
-  constructor(reporter: ReporterV2, globalTimeoutForError: number) {
+  constructor(reporter: InternalReporter, globalTimeoutForError: number) {
     this._reporter = reporter;
     this._globalTimeoutForError = globalTimeoutForError;
   }
 
-  addTask(name: string, task: Task<Context>) {
-    this._tasks.push({ name, task });
+  addTask(task: Task<Context>) {
+    this._tasks.push(task);
   }
 
   async run(context: Context, deadline: number, cancelPromise?: ManualPromise<void>): Promise<FullResult['status']> {
@@ -56,18 +60,18 @@ export class TaskRunner<Context> {
     let currentTaskName: string | undefined;
 
     const taskLoop = async () => {
-      for (const { name, task } of this._tasks) {
-        currentTaskName = name;
+      for (const task of this._tasks) {
+        currentTaskName = task.title;
         if (this._interrupted)
           break;
-        debug('pw:test:task')(`"${name}" started`);
+        debug('pw:test:task')(`"${task.title}" started`);
         const errors: TestError[] = [];
         const softErrors: TestError[] = [];
         try {
-          teardownRunner._tasks.unshift({ name: `teardown for ${name}`, task: { setup: task.teardown } });
+          teardownRunner._tasks.unshift({ title: `teardown for ${task.title}`, setup: task.teardown });
           await task.setup?.(context, errors, softErrors);
         } catch (e) {
-          debug('pw:test:task')(`error in "${name}": `, e);
+          debug('pw:test:task')(`error in "${task.title}": `, e);
           errors.push(serializeError(e));
         } finally {
           for (const error of [...softErrors, ...errors])
@@ -78,7 +82,7 @@ export class TaskRunner<Context> {
             this._hasErrors = true;
           }
         }
-        debug('pw:test:task')(`"${name}" finished`);
+        debug('pw:test:task')(`"${task.title}" finished`);
       }
     };
 
@@ -99,7 +103,7 @@ export class TaskRunner<Context> {
     if (sigintWatcher.hadSignal() || cancelPromise?.isDone()) {
       status = 'interrupted';
     } else if (timeoutWatcher.timedOut()) {
-      this._reporter.onError?.({ message: `Timed out waiting ${this._globalTimeoutForError / 1000}s for the ${currentTaskName} to run` });
+      this._reporter.onError?.({ message: colors.red(`Timed out waiting ${this._globalTimeoutForError / 1000}s for the ${currentTaskName} to run`) });
       status = 'timedout';
     } else if (this._hasErrors) {
       status = 'failed';

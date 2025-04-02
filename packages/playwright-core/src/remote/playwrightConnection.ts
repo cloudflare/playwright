@@ -14,24 +14,27 @@
  * limitations under the License.
  */
 
-import type { WebSocket } from '../utilsBundle';
-import type { DispatcherScope, Playwright } from '../server';
-import type * as channels from '@protocol/channels';
-import { createPlaywright, DispatcherConnection, RootDispatcher, PlaywrightDispatcher } from '../server';
-import { Browser } from '../server/browser';
-import { serverSideCallMetadata } from '../server/instrumentation';
-import { SocksProxy } from '../common/socksProxy';
-import { assert, isUnderTest } from '../utils';
-import type { LaunchOptions } from '../server/types';
+import { SocksProxy } from '../server/utils/socksProxy';
+import { DispatcherConnection, PlaywrightDispatcher, RootDispatcher, createPlaywright } from '../server';
 import { AndroidDevice } from '../server/android/android';
+import { Browser } from '../server/browser';
 import { DebugControllerDispatcher } from '../server/dispatchers/debugControllerDispatcher';
-import { startProfiling, stopProfiling } from '../utils';
+import { serverSideCallMetadata } from '../server/instrumentation';
+import { assert } from '../utils/isomorphic/assert';
+import { isUnderTest } from '../server/utils/debug';
+import { startProfiling, stopProfiling } from '../server/utils/profiler';
 import { monotonicTime } from '../utils';
-import { debugLogger } from '../utils/debugLogger';
+import { debugLogger } from '../server/utils/debugLogger';
+
+import type { DispatcherScope, Playwright } from '../server';
+import type { LaunchOptions } from '../server/types';
+import type { WebSocket } from '../utilsBundle';
+import type * as channels from '@protocol/channels';
 
 export type ClientType = 'controller' | 'launch-browser' | 'reuse-browser' | 'pre-launched-browser-or-android';
 
 type Options = {
+  allowFSPaths: boolean,
   socksProxyPattern: string | undefined,
   browserName: string | null,
   launchOptions: LaunchOptions,
@@ -60,7 +63,7 @@ export class PlaywrightConnection {
     this._ws = ws;
     this._preLaunched = preLaunched;
     this._options = options;
-    options.launchOptions = filterLaunchOptions(options.launchOptions);
+    options.launchOptions = filterLaunchOptions(options.launchOptions, options.allowFSPaths);
     if (clientType === 'reuse-browser' || clientType === 'pre-launched-browser-or-android')
       assert(preLaunched.playwright);
     if (clientType === 'pre-launched-browser-or-android')
@@ -117,7 +120,14 @@ export class PlaywrightConnection {
     const playwright = createPlaywright({ sdkLanguage: options.sdkLanguage, isServer: true });
 
     const ownedSocksProxy = await this._createOwnedSocksProxy(playwright);
-    const browser = await playwright[this._options.browserName as 'chromium'].launch(serverSideCallMetadata(), this._options.launchOptions);
+    let browserName = this._options.browserName;
+    if ('bidi' === browserName) {
+      if (this._options.launchOptions?.channel?.toLocaleLowerCase().includes('firefox'))
+        browserName = 'bidiFirefox';
+      else
+        browserName = 'bidiChromium';
+    }
+    const browser = await playwright[browserName as 'chromium'].launch(serverSideCallMetadata(), this._options.launchOptions);
 
     this._cleanups.push(async () => {
       for (const browser of playwright.allBrowsers())
@@ -284,7 +294,7 @@ function launchOptionsHash(options: LaunchOptions) {
   return JSON.stringify(copy);
 }
 
-function filterLaunchOptions(options: LaunchOptions): LaunchOptions {
+function filterLaunchOptions(options: LaunchOptions, allowFSPaths: boolean): LaunchOptions {
   return {
     channel: options.channel,
     args: options.args,
@@ -296,7 +306,8 @@ function filterLaunchOptions(options: LaunchOptions): LaunchOptions {
     chromiumSandbox: options.chromiumSandbox,
     firefoxUserPrefs: options.firefoxUserPrefs,
     slowMo: options.slowMo,
-    executablePath: isUnderTest() ? options.executablePath : undefined,
+    executablePath: (isUnderTest() || allowFSPaths) ? options.executablePath : undefined,
+    downloadsPath: allowFSPaths ? options.downloadsPath : undefined,
   };
 }
 

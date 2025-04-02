@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import type { RootDispatcher } from './dispatcher';
-import { Dispatcher, existingDispatcher } from './dispatcher';
-import type { Android, SocketBackend } from '../android/android';
-import { AndroidDevice } from '../android/android';
-import type * as channels from '@protocol/channels';
 import { BrowserContextDispatcher } from './browserContextDispatcher';
+import { Dispatcher, existingDispatcher } from './dispatcher';
+import { AndroidDevice } from '../android/android';
+
+import type { RootDispatcher } from './dispatcher';
+import type { Android, SocketBackend } from '../android/android';
 import type { CallMetadata } from '../instrumentation';
+import type * as channels from '@protocol/channels';
 
 export class AndroidDispatcher extends Dispatcher<Android, channels.AndroidChannel, RootDispatcher> implements channels.AndroidChannel {
   _type_Android = true;
@@ -103,7 +104,9 @@ export class AndroidDeviceDispatcher extends Dispatcher<AndroidDevice, channels.
   }
 
   async info(params: channels.AndroidDeviceTapParams): Promise<channels.AndroidDeviceInfoResult> {
-    return { info: await this._object.send('info', params) };
+    const info = await this._object.send('info', params);
+    fixupAndroidElementInfo(info);
+    return { info };
   }
 
   async inputType(params: channels.AndroidDeviceInputTypeParams) {
@@ -297,9 +300,22 @@ const keyMap = new Map<string, number>([
   ['Menu', 82],
   ['Notification', 83],
   ['Search', 84],
+  ['ChannelUp', 166],
+  ['ChannelDown', 167],
   ['AppSwitch', 187],
   ['Assist', 219],
   ['Cut', 277],
   ['Copy', 278],
   ['Paste', 279],
 ]);
+
+function fixupAndroidElementInfo(info: channels.AndroidElementInfo) {
+  // Some of the properties are nullable, see https://developer.android.com/reference/androidx/test/uiautomator/UiObject2.
+  info.clazz = info.clazz || '';
+  info.pkg = info.pkg || '';
+  info.res = info.res || '';
+  info.desc = info.desc || '';
+  info.text = info.text || '';
+  for (const child of info.children || [])
+    fixupAndroidElementInfo(child);
+}

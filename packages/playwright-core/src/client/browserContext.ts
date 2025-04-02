@@ -15,49 +15,56 @@
  * limitations under the License.
  */
 
-import { Page, BindingCall } from './page';
-import { Frame } from './frame';
-import * as network from './network';
-import type * as channels from '@protocol/channels';
-import fs from 'fs';
-import path from 'path';
+import { Artifact } from './artifact';
+import { Browser } from './browser';
+import { CDPSession } from './cdpSession';
 import { ChannelOwner } from './channelOwner';
 import { evaluationScript } from './clientHelper';
-import { Browser } from './browser';
-import { Worker } from './worker';
-import { Events } from './events';
-import { TimeoutSettings } from '../common/timeoutSettings';
-import { Waiter } from './waiter';
-import type { URLMatch, Headers, WaitForEventOptions, BrowserContextOptions, StorageState, LaunchOptions } from './types';
-import { headersObjectToArray, isRegExp, isString, urlMatchesEqual } from '../utils';
-import { mkdirIfNeeded } from '../utils/fileUtils';
-import type * as api from '../../types/types';
-import type * as structs from '../../types/structs';
-import { CDPSession } from './cdpSession';
-import { Tracing } from './tracing';
-import type { BrowserType } from './browserType';
-import { Artifact } from './artifact';
-import { APIRequestContext } from './fetch';
-import { rewriteErrorMessage } from '../utils/stackTrace';
-import { HarRouter } from './harRouter';
+import { Clock } from './clock';
 import { ConsoleMessage } from './consoleMessage';
 import { Dialog } from './dialog';
-import { WebError } from './webError';
 import { TargetClosedError, parseError } from './errors';
+import { Events } from './events';
+import { APIRequestContext } from './fetch';
+import { Frame } from './frame';
+import { HarRouter } from './harRouter';
+import * as network from './network';
+import { BindingCall, Page } from './page';
+import { Tracing } from './tracing';
+import { Waiter } from './waiter';
+import { WebError } from './webError';
+import { Worker } from './worker';
+import { TimeoutSettings } from './timeoutSettings';
+import { mkdirIfNeeded } from './fileUtils';
+import { headersObjectToArray } from '../utils/isomorphic/headers';
+import { urlMatchesEqual } from '../utils/isomorphic/urlMatch';
+import { isRegExp, isString } from '../utils/isomorphic/rtti';
+import { rewriteErrorMessage } from '../utils/isomorphic/stackTrace';
+
+import type { BrowserType } from './browserType';
+import type { BrowserContextOptions, Headers, LaunchOptions, StorageState, WaitForEventOptions } from './types';
+import type * as structs from '../../types/structs';
+import type * as api from '../../types/types';
+import type { URLMatch } from '../utils/isomorphic/urlMatch';
+import type { Platform } from './platform';
+import type * as channels from '@protocol/channels';
 
 export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel> implements api.BrowserContext {
   _pages = new Set<Page>();
   _routes: network.RouteHandler[] = [];
+  _webSocketRoutes: network.WebSocketRouteHandler[] = [];
   readonly _browser: Browser | null = null;
   _browserType: BrowserType | undefined;
   readonly _bindings = new Map<string, (source: structs.BindingSource, ...args: any[]) => any>();
-  _timeoutSettings = new TimeoutSettings();
+  _timeoutSettings: TimeoutSettings;
   _ownerPage: Page | undefined;
   private _closedPromise: Promise<void>;
   _options: channels.BrowserNewContextParams = { };
 
   readonly request: APIRequestContext;
   readonly tracing: Tracing;
+  readonly clock: Clock;
+
   readonly _backgroundPages = new Set<Page>();
   readonly _serviceWorkers = new Set<Worker>();
   readonly _isChromium: boolean;
@@ -76,17 +83,20 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
 
   constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.BrowserContextInitializer) {
     super(parent, type, guid, initializer);
+    this._timeoutSettings = new TimeoutSettings(this._platform);
     if (parent instanceof Browser)
       this._browser = parent;
     this._browser?._contexts.add(this);
     this._isChromium = this._browser?._name === 'chromium';
     this.tracing = Tracing.from(initializer.tracing);
     this.request = APIRequestContext.from(initializer.requestContext);
+    this.clock = new Clock(this);
 
     this._channel.on('bindingCall', ({ binding }) => this._onBinding(BindingCall.from(binding)));
     this._channel.on('close', () => this._onClose());
     this._channel.on('page', ({ page }) => this._onPage(Page.from(page)));
     this._channel.on('route', ({ route }) => this._onRoute(network.Route.from(route)));
+    this._channel.on('webSocketRoute', ({ webSocketRoute }) => this._onWebSocketRoute(network.WebSocketRoute.from(webSocketRoute)));
     this._channel.on('backgroundPage', ({ page }) => {
       const backgroundPage = Page.from(page);
       this._backgroundPages.add(backgroundPage);
@@ -99,7 +109,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       this.emit(Events.BrowserContext.ServiceWorker, serviceWorker);
     });
     this._channel.on('console', event => {
-      const consoleMessage = new ConsoleMessage(event);
+      const consoleMessage = new ConsoleMessage(this._platform, event);
       this.emit(Events.BrowserContext.Console, consoleMessage);
       const page = consoleMessage.page();
       if (page)
@@ -215,7 +225,15 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     }
     // If the page is closed or unrouteAll() was called without waiting and interception disabled,
     // the method will throw an error - silence it.
-    await route._innerContinue(true).catch(() => {});
+    await route._innerContinue(true /* isFallback */).catch(() => {});
+  }
+
+  async _onWebSocketRoute(webSocketRoute: network.WebSocketRoute) {
+    const routeHandler = this._webSocketRoutes.find(route => route.matches(webSocketRoute.url()));
+    if (routeHandler)
+      await routeHandler.handle(webSocketRoute);
+    else
+      webSocketRoute.connectToServer();
   }
 
   async _onBinding(bindingCall: BindingCall) {
@@ -228,15 +246,15 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   setDefaultNavigationTimeout(timeout: number | undefined) {
     this._timeoutSettings.setDefaultNavigationTimeout(timeout);
     this._wrapApiCall(async () => {
-      this._channel.setDefaultNavigationTimeoutNoReply({ timeout }).catch(() => {});
-    }, true);
+      await this._channel.setDefaultNavigationTimeoutNoReply({ timeout });
+    }, true).catch(() => {});
   }
 
   setDefaultTimeout(timeout: number | undefined) {
     this._timeoutSettings.setDefaultTimeout(timeout);
     this._wrapApiCall(async () => {
-      this._channel.setDefaultTimeoutNoReply({ timeout }).catch(() => {});
-    }, true);
+      await this._channel.setDefaultTimeoutNoReply({ timeout });
+    }, true).catch(() => {});
   }
 
   browser(): Browser | null {
@@ -305,7 +323,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   async addInitScript(script: Function | string | { path?: string, content?: string }, arg?: any): Promise<void> {
-    const source = await evaluationScript(script, arg);
+    const source = await evaluationScript(this._platform, script, arg);
     await this._channel.addInitScript({ source });
   }
 
@@ -321,8 +339,13 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   async route(url: URLMatch, handler: network.RouteHandlerCallback, options: { times?: number } = {}): Promise<void> {
-    this._routes.unshift(new network.RouteHandler(this._options.baseURL, url, handler, options.times));
+    this._routes.unshift(new network.RouteHandler(this._platform, this._options.baseURL, url, handler, options.times));
     await this._updateInterceptionPatterns();
+  }
+
+  async routeWebSocket(url: URLMatch, handler: network.WebSocketRouteHandlerCallback): Promise<void> {
+    this._webSocketRoutes.unshift(new network.WebSocketRouteHandler(this._options.baseURL, url, handler));
+    await this._updateWebSocketInterceptionPatterns();
   }
 
   async _recordIntoHAR(har: string, page: Page | null, options: { url?: string | RegExp, notFound?: 'abort' | 'fallback', update?: boolean, updateContent?: 'attach' | 'embed', updateMode?: 'minimal' | 'full'} = {}): Promise<void> {
@@ -339,11 +362,14 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   async routeFromHAR(har: string, options: { url?: string | RegExp, notFound?: 'abort' | 'fallback', update?: boolean, updateContent?: 'attach' | 'embed', updateMode?: 'minimal' | 'full' } = {}): Promise<void> {
+    const localUtils = this._connection.localUtils();
+    if (!localUtils)
+      throw new Error('Route from har is not supported in thin clients');
     if (options.update) {
       await this._recordIntoHAR(har, null, options);
       return;
     }
-    const harRouter = await HarRouter.create(this._connection.localUtils(), har, options.notFound || 'abort', { urlMatch: options.url });
+    const harRouter = await HarRouter.create(localUtils, har, options.notFound || 'abort', { urlMatch: options.url });
     this._harRouters.push(harRouter);
     await harRouter.addContextRoute(this);
   }
@@ -384,6 +410,11 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     await this._channel.setNetworkInterceptionPatterns({ patterns });
   }
 
+  private async _updateWebSocketInterceptionPatterns() {
+    const patterns = network.WebSocketRouteHandler.prepareInterceptionPatterns(this._webSocketRoutes);
+    await this._channel.setWebSocketInterceptionPatterns({ patterns });
+  }
+
   _effectiveCloseReason(): string | undefined {
     return this._closeReason || this._browser?._closeReason;
   }
@@ -402,11 +433,11 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     });
   }
 
-  async storageState(options: { path?: string } = {}): Promise<StorageState> {
-    const state = await this._channel.storageState();
+  async storageState(options: { path?: string, indexedDB?: boolean } = {}): Promise<StorageState> {
+    const state = await this._channel.storageState({ indexedDB: options.indexedDB });
     if (options.path) {
-      await mkdirIfNeeded(options.path);
-      await fs.promises.writeFile(options.path, JSON.stringify(state, undefined, 2), 'utf8');
+      await mkdirIfNeeded(this._platform, options.path);
+      await this._platform.fs().promises.writeFile(options.path, JSON.stringify(state, undefined, 2), 'utf8');
     }
     return state;
   }
@@ -432,6 +463,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       this._browser._contexts.delete(this);
     this._browserType?._contexts?.delete(this);
     this._disposeHarRouters();
+    this.tracing._resetStackCounter();
     this.emit(Events.BrowserContext.Close, this);
   }
 
@@ -445,6 +477,9 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     this._closeReason = options.reason;
     this._closeWasCalled = true;
     await this._wrapApiCall(async () => {
+      await this.request.dispose(options);
+    }, true);
+    await this._wrapApiCall(async () => {
       await this._browserType?._willCloseContext(this);
       for (const [harId, harParams] of this._harRecorders) {
         const har = await this._channel.harExport({ harId });
@@ -453,8 +488,11 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
         const isCompressed = harParams.content === 'attach' || harParams.path.endsWith('.zip');
         const needCompressed = harParams.path.endsWith('.zip');
         if (isCompressed && !needCompressed) {
+          const localUtils = this._connection.localUtils();
+          if (!localUtils)
+            throw new Error('Uncompressed har is not supported in thin clients');
           await artifact.saveAs(harParams.path + '.tmp');
-          await this._connection.localUtils()._channel.harUnzip({ zipFile: harParams.path + '.tmp', harFile: harParams.path });
+          await localUtils.harUnzip({ zipFile: harParams.path + '.tmp', harFile: harParams.path });
         } else {
           await artifact.saveAs(harParams.path);
         }
@@ -465,26 +503,16 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     await this._closedPromise;
   }
 
-  async _enableRecorder(params: {
-      language: string,
-      launchOptions?: LaunchOptions,
-      contextOptions?: BrowserContextOptions,
-      device?: string,
-      saveStorage?: string,
-      mode?: 'recording' | 'inspecting',
-      testIdAttributeName?: string,
-      outputFile?: string,
-      handleSIGINT?: boolean,
-  }) {
-    await this._channel.recorderSupplementEnable(params);
+  async _enableRecorder(params: channels.BrowserContextEnableRecorderParams) {
+    await this._channel.enableRecorder(params);
   }
 }
 
-async function prepareStorageState(options: BrowserContextOptions): Promise<channels.BrowserNewContextParams['storageState']> {
+async function prepareStorageState(platform: Platform, options: BrowserContextOptions): Promise<channels.BrowserNewContextParams['storageState']> {
   if (typeof options.storageState !== 'string')
-    return options.storageState;
+    return options.storageState as any;
   try {
-    return JSON.parse(await fs.promises.readFile(options.storageState, 'utf8'));
+    return JSON.parse(await platform.fs().promises.readFile(options.storageState, 'utf8'));
   } catch (e) {
     rewriteErrorMessage(e, `Error reading storage state from ${options.storageState}:\n` + e.message);
     throw e;
@@ -504,7 +532,7 @@ function prepareRecordHarOptions(options: BrowserContextOptions['recordHar']): c
   };
 }
 
-export async function prepareBrowserContextParams(options: BrowserContextOptions): Promise<channels.BrowserNewContextParams> {
+export async function prepareBrowserContextParams(platform: Platform, options: BrowserContextOptions): Promise<channels.BrowserNewContextParams> {
   if (options.videoSize && !options.videosPath)
     throw new Error(`"videoSize" option requires "videosPath" to be specified`);
   if (options.extraHTTPHeaders)
@@ -514,13 +542,15 @@ export async function prepareBrowserContextParams(options: BrowserContextOptions
     viewport: options.viewport === null ? undefined : options.viewport,
     noDefaultViewport: options.viewport === null,
     extraHTTPHeaders: options.extraHTTPHeaders ? headersObjectToArray(options.extraHTTPHeaders) : undefined,
-    storageState: await prepareStorageState(options),
+    storageState: await prepareStorageState(platform, options),
     serviceWorkers: options.serviceWorkers,
     recordHar: prepareRecordHarOptions(options.recordHar),
     colorScheme: options.colorScheme === null ? 'no-override' : options.colorScheme,
     reducedMotion: options.reducedMotion === null ? 'no-override' : options.reducedMotion,
     forcedColors: options.forcedColors === null ? 'no-override' : options.forcedColors,
+    contrast: options.contrast === null ? 'no-override' : options.contrast,
     acceptDownloads: toAcceptDownloadsProtocol(options.acceptDownloads),
+    clientCertificates: await toClientCertificatesProtocol(platform, options.clientCertificates),
   };
   if (!contextParams.recordVideo && options.videosPath) {
     contextParams.recordVideo = {
@@ -529,7 +559,7 @@ export async function prepareBrowserContextParams(options: BrowserContextOptions
     };
   }
   if (contextParams.recordVideo && contextParams.recordVideo.dir)
-    contextParams.recordVideo.dir = path.resolve(process.cwd(), contextParams.recordVideo.dir);
+    contextParams.recordVideo.dir = platform.path().resolve(contextParams.recordVideo.dir);
   return contextParams;
 }
 
@@ -539,4 +569,24 @@ function toAcceptDownloadsProtocol(acceptDownloads?: boolean) {
   if (acceptDownloads)
     return 'accept';
   return 'deny';
+}
+
+export async function toClientCertificatesProtocol(platform: Platform, certs?: BrowserContextOptions['clientCertificates']): Promise<channels.PlaywrightNewRequestParams['clientCertificates']> {
+  if (!certs)
+    return undefined;
+
+  const bufferizeContent = async (value?: Buffer, path?: string): Promise<Buffer | undefined> => {
+    if (value)
+      return value;
+    if (path)
+      return await platform.fs().promises.readFile(path);
+  };
+
+  return await Promise.all(certs.map(async cert => ({
+    origin: cert.origin,
+    cert: await bufferizeContent(cert.cert, cert.certPath),
+    key: await bufferizeContent(cert.key, cert.keyPath),
+    pfx: await bufferizeContent(cert.pfx, cert.pfxPath),
+    passphrase: cert.passphrase,
+  })));
 }

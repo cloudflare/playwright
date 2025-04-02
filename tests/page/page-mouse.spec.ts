@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import { test as it, expect } from './pageTest';
+import { test as it, expect, rafraf } from './pageTest';
 
 function dimensions() {
   const rect = document.querySelector('textarea').getBoundingClientRect();
@@ -72,6 +72,33 @@ it('should dblclick the div', async ({ page, server }) => {
   const event = await page.evaluate(() => window['dblclickPromise']);
   expect(event.type).toBe('dblclick');
   expect(event.detail).toBe(2);
+  expect(event.clientX).toBe(50);
+  expect(event.clientY).toBe(60);
+  expect(event.isTrusted).toBe(true);
+  expect(event.button).toBe(0);
+});
+
+it('down and up should generate click', async ({ page, server }) => {
+  await page.evaluate(() => {
+    window['clickPromise'] = new Promise(resolve => {
+      document.addEventListener('click', event => {
+        resolve({
+          type: event.type,
+          detail: event.detail,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          isTrusted: event.isTrusted,
+          button: event.button
+        });
+      });
+    });
+  });
+  await page.mouse.move(50, 60);
+  await page.mouse.down();
+  await page.mouse.up();
+  const event = await page.evaluate(() => window['clickPromise']);
+  expect(event.type).toBe('click');
+  expect(event.detail).toBe(1);
   expect(event.clientX).toBe(50);
   expect(event.clientY).toBe(60);
   expect(event.isTrusted).toBe(true);
@@ -150,7 +177,7 @@ it('should select the text with mouse', async ({ page, server }) => {
   const text = 'This is the text that we are going to try to select. Let\'s see how it goes.';
   await page.keyboard.type(text);
   // Firefox needs an extra frame here after typing or it will fail to set the scrollTop
-  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await rafraf(page);
   await page.evaluate(() => document.querySelector('textarea').scrollTop = 0);
   const { x, y } = await page.evaluate(dimensions);
   await page.mouse.move(x + 2, y + 2);
@@ -163,7 +190,9 @@ it('should select the text with mouse', async ({ page, server }) => {
   })).toBe(text);
 });
 
-it('should trigger hover state', async ({ page, server }) => {
+it('should trigger hover state', async ({ page, server, headless }) => {
+  it.skip(!headless, 'headed messes up with hover');
+
   await page.goto(server.PREFIX + '/input/scrollable.html');
   await page.hover('#button-6');
   expect(await page.evaluate(() => document.querySelector('button:hover').id)).toBe('button-6');
@@ -173,24 +202,18 @@ it('should trigger hover state', async ({ page, server }) => {
   expect(await page.evaluate(() => document.querySelector('button:hover').id)).toBe('button-91');
 });
 
-it('hover should support noWaitAfter', async ({ page, server }) => {
-  await page.goto(server.EMPTY_PAGE);
-  await page.setContent(`<button onmouseover='location.href="${server.PREFIX}/next"'>GO</button>`);
-  await Promise.all([
-    new Promise(fulfill => server.setRoute('/next', fulfill)),
-    page.hover('button', { noWaitAfter: true })
-  ]);
-  expect(page.url()).toBe(server.EMPTY_PAGE);
-});
+it('should trigger hover state on disabled button', async ({ page, server, headless }) => {
+  it.skip(!headless, 'headed messes up with hover');
 
-it('should trigger hover state on disabled button', async ({ page, server }) => {
   await page.goto(server.PREFIX + '/input/scrollable.html');
   await page.$eval('#button-6', (button: HTMLButtonElement) => button.disabled = true);
   await page.hover('#button-6', { timeout: 5000 });
   expect(await page.evaluate(() => document.querySelector('button:hover').id)).toBe('button-6');
 });
 
-it('should trigger hover state with removed window.Node', async ({ page, server }) => {
+it('should trigger hover state with removed window.Node', async ({ page, server, headless }) => {
+  it.skip(!headless, 'headed messes up with hover');
+
   await page.goto(server.PREFIX + '/input/scrollable.html');
   await page.evaluate(() => delete window.Node);
   await page.hover('#button-6');
@@ -266,8 +289,7 @@ it('should not crash on mouse drag with any button', async ({ page }) => {
 
 it('should dispatch mouse move after context menu was opened', async ({ page, browserName, isWindows }) => {
   it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/20823' });
-  it.fixme(browserName === 'firefox');
-  it.skip(browserName === 'chromium' && isWindows, 'context menu support is best-effort for Linux and MacOS');
+  it.fixme(browserName === 'chromium' && isWindows, 'context menu support is best-effort for Linux and MacOS');
   await page.evaluate(() => {
     window['contextMenuPromise'] = new Promise(x => {
       window.addEventListener('contextmenu', x, false);
@@ -287,4 +309,3 @@ it('should dispatch mouse move after context menu was opened', async ({ page, br
     }
   }
 });
-

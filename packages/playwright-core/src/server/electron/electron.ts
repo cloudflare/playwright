@@ -17,35 +17,39 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type { CRBrowserContext } from '../chromium/crBrowser';
-import { CRBrowser } from '../chromium/crBrowser';
-import type { CRSession } from '../chromium/crConnection';
-import { CRConnection } from '../chromium/crConnection';
-import type { CRPage } from '../chromium/crPage';
-import { CRExecutionContext } from '../chromium/crExecutionContext';
-import type { Protocol } from '../chromium/protocol';
-import * as js from '../javascript';
-import type { Page } from '../page';
-import { TimeoutSettings } from '../../common/timeoutSettings';
-import { ManualPromise, wrapInASCIIBox } from '../../utils';
-import { WebSocketTransport } from '../transport';
-import { launchProcess, envArrayToObject } from '../../utils/processLauncher';
-import type { BrowserContext } from '../browserContext';
-import { validateBrowserContextOptions } from '../browserContext';
-import type { BrowserWindow } from 'electron';
-import type { Progress } from '../progress';
-import { ProgressController } from '../progress';
-import { helper } from '../helper';
-import { eventsHelper } from '../../utils/eventsHelper';
-import type { BrowserOptions, BrowserProcess } from '../browser';
-import type { Playwright } from '../playwright';
-import type * as childProcess from 'child_process';
 import * as readline from 'readline';
-import { RecentLogsCollector } from '../../utils/debugLogger';
-import { serverSideCallMetadata, SdkObject } from '../instrumentation';
-import type * as channels from '@protocol/channels';
+
+import { TimeoutSettings } from '../timeoutSettings';
+import { ManualPromise } from '../../utils';
+import { wrapInASCIIBox } from '../utils/ascii';
+import { RecentLogsCollector } from '../utils/debugLogger';
+import { eventsHelper } from '../utils/eventsHelper';
+import { validateBrowserContextOptions } from '../browserContext';
+import { CRBrowser } from '../chromium/crBrowser';
+import { CRConnection } from '../chromium/crConnection';
+import { createHandle, CRExecutionContext } from '../chromium/crExecutionContext';
 import { toConsoleMessageLocation } from '../chromium/crProtocolHelper';
 import { ConsoleMessage } from '../console';
+import { helper } from '../helper';
+import { SdkObject, serverSideCallMetadata } from '../instrumentation';
+import * as js from '../javascript';
+import { envArrayToObject, launchProcess } from '../utils/processLauncher';
+import { ProgressController } from '../progress';
+import { WebSocketTransport } from '../transport';
+
+import type { BrowserOptions, BrowserProcess } from '../browser';
+import type { BrowserContext } from '../browserContext';
+import type { CRBrowserContext } from '../chromium/crBrowser';
+import type { CRSession } from '../chromium/crConnection';
+import type { CRPage } from '../chromium/crPage';
+import type { Protocol } from '../chromium/protocol';
+import type { Page } from '../page';
+import type { Playwright } from '../playwright';
+import type { Progress } from '../progress';
+import type * as types from '../types';
+import type * as channels from '@protocol/channels';
+import type * as childProcess from 'child_process';
+import type { BrowserWindow } from 'electron';
 
 const ARTIFACTS_FOLDER = path.join(os.tmpdir(), 'playwright-artifacts-');
 
@@ -112,7 +116,7 @@ export class ElectronApplication extends SdkObject {
     }
     if (!this._nodeExecutionContext)
       return;
-    const args = event.args.map(arg => this._nodeExecutionContext!.createHandle(arg));
+    const args = event.args.map(arg => createHandle(this._nodeExecutionContext!, arg));
     const message = new ConsoleMessage(null, event.type, undefined, args, toConsoleMessageLocation(event.stackTrace));
     this.emit(ElectronApplication.Events.Console, message);
   }
@@ -161,7 +165,7 @@ export class Electron extends SdkObject {
     return controller.run(async progress => {
       let app: ElectronApplication | undefined = undefined;
       // --remote-debugging-port=0 must be the last playwright's argument, loader.ts relies on it.
-      const electronArguments = ['--inspect=0', '--remote-debugging-port=0', ...args];
+      let electronArguments = ['--inspect=0', '--remote-debugging-port=0', ...args];
 
       if (os.platform() === 'linux') {
         const runningAsRoot = process.geteuid && process.geteuid() === 0;
@@ -195,6 +199,16 @@ export class Electron extends SdkObject {
         // Packaged apps might have their own command line handling.
         electronArguments.unshift('-r', require.resolve('./loader'));
       }
+      let shell = false;
+      if (process.platform === 'win32') {
+        // On Windows in order to run .cmd files, shell: true is required.
+        // https://github.com/nodejs/node/issues/52554
+        shell = true;
+        // On Windows, we need to quote the executable path due to shell: true.
+        command = `"${command}"`;
+        // On Windows, we need to quote the arguments due to shell: true.
+        electronArguments = electronArguments.map(arg => `"${arg}"`);
+      }
 
       // When debugging Playwright test that runs Electron, NODE_OPTIONS
       // will make the debugger attach to Electron's Node. But Playwright
@@ -208,6 +222,7 @@ export class Electron extends SdkObject {
           progress.log(message);
           browserLogsCollector.log(message);
         },
+        shell,
         stdio: 'pipe',
         cwd: options.cwd,
         tempDirectories: [artifactsDir],
@@ -218,6 +233,8 @@ export class Electron extends SdkObject {
         onExit: () => app?.emit(ElectronApplication.Events.Close),
       });
 
+      // All waitForLines must be started immediately.
+      // Otherwise the lines might come before we are ready.
       const waitForXserverError = new Promise(async (resolve, reject) => {
         waitForLine(progress, launchedProcess, /Unable to open X display/).then(() => reject(new Error([
           'Unable to open X display!',
@@ -229,17 +246,20 @@ export class Electron extends SdkObject {
           progress.metadata.log
         ].join('\n')))).catch(() => {});
       });
+      const nodeMatchPromise = waitForLine(progress, launchedProcess, /^Debugger listening on (ws:\/\/.*)$/);
+      const chromeMatchPromise = waitForLine(progress, launchedProcess, /^DevTools listening on (ws:\/\/.*)$/);
+      const debuggerDisconnectPromise = waitForLine(progress, launchedProcess, /Waiting for the debugger to disconnect\.\.\./);
 
-      const nodeMatch = await waitForLine(progress, launchedProcess, /^Debugger listening on (ws:\/\/.*)$/);
+      const nodeMatch = await nodeMatchPromise;
       const nodeTransport = await WebSocketTransport.connect(progress, nodeMatch[1]);
       const nodeConnection = new CRConnection(nodeTransport, helper.debugProtocolLogger(), browserLogsCollector);
 
       // Immediately release exiting process under debug.
-      waitForLine(progress, launchedProcess, /Waiting for the debugger to disconnect\.\.\./).then(() => {
+      debuggerDisconnectPromise.then(() => {
         nodeTransport.close();
       }).catch(() => {});
       const chromeMatch = await Promise.race([
-        waitForLine(progress, launchedProcess, /^DevTools listening on (ws:\/\/.*)$/),
+        chromeMatchPromise,
         waitForXserverError,
       ]) as RegExpMatchArray;
       const chromeTransport = await WebSocketTransport.connect(progress, chromeMatch[1]);
@@ -249,7 +269,7 @@ export class Electron extends SdkObject {
         close: gracefullyClose,
         kill
       };
-      const contextOptions: channels.BrowserNewContextParams = {
+      const contextOptions: types.BrowserContextOptions = {
         ...options,
         noDefaultViewport: true,
       };

@@ -15,9 +15,11 @@
  * limitations under the License.
  */
 
+import { devices } from '@playwright/test';
 import { contextTest as it, expect } from '../config/browserTest';
 import { browserTest } from '../config/browserTest';
 import { verifyViewport } from '../config/utils';
+import { deviceDescriptors } from 'packages/playwright-core/lib/server/deviceDescriptors';
 
 it('should get the proper default viewport size', async ({ page, server }) => {
   await verifyViewport(page, 1280, 720);
@@ -43,6 +45,14 @@ it('should return correct outerWidth and outerHeight', async ({ page }) => {
   expect(size.innerHeight).toBe(420);
   expect(size.outerWidth >= size.innerWidth).toBeTruthy();
   expect(size.outerHeight >= size.innerHeight).toBeTruthy();
+});
+
+it('landscape viewport should have width larger than height', async () => {
+  for (const device in deviceDescriptors) {
+    const configuration = deviceDescriptors[device];
+    if (device.includes('landscape') || device.includes('Landscape'))
+      expect(configuration.viewport.width).toBeGreaterThan(configuration.viewport.height);
+  }
 });
 
 it('should emulate device width', async ({ page, server }) => {
@@ -91,11 +101,9 @@ it('should emulate availWidth and availHeight', async ({ page }) => {
   expect(await page.evaluate(() => window.screen.availHeight)).toBe(600);
 });
 
-it('should not have touch by default', async ({ page, server }) => {
+it('should not have touch by default', async ({ page, server, browserName, platform }) => {
   await page.goto(server.PREFIX + '/mobile.html');
   expect(await page.evaluate(() => 'ontouchstart' in window)).toBe(false);
-  await page.goto(server.PREFIX + '/detect-touch.html');
-  expect(await page.evaluate(() => document.body.textContent.trim())).toBe('NO');
 });
 
 it('should throw on tap if hasTouch is not enabled', async ({ page }) => {
@@ -140,7 +148,9 @@ browserTest('should report null viewportSize when given null viewport', async ({
   await context.close();
 });
 
-browserTest('should drag with high dpi', async ({ browser, server }) => {
+browserTest('should drag with high dpi', async ({ browser, server, headless }) => {
+  browserTest.fixme(!headless, 'Flaky on all browser in headed');
+
   const page = await browser.newPage({ deviceScaleFactor: 2 });
   await page.goto(server.PREFIX + '/drag-n-drop.html');
   await page.hover('#source');
@@ -173,5 +183,15 @@ browserTest('should be able to get correct orientation angle on non-mobile devic
   expect(await page.evaluate(() => window.screen.orientation.angle)).toBe(0);
   await page.setViewportSize({ width: 400, height: 300 });
   expect(await page.evaluate(() => window.screen.orientation.angle)).toBe(0);
+  await context.close();
+});
+
+it('should set window.screen.orientation.type for mobile devices', async ({ contextFactory, browserName, server }) => {
+  it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/31151' });
+  it.skip(browserName === 'firefox', 'Firefox does not support mobile emulation');
+  const context = await contextFactory(devices['iPhone 14']);
+  const page = await context.newPage();
+  await page.goto(server.PREFIX + '/index.html');
+  expect(await page.evaluate(() => window.screen.orientation.type)).toBe('portrait-primary');
   await context.close();
 });

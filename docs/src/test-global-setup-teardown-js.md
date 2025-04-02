@@ -115,6 +115,12 @@ teardown('delete database', async ({ }) => {
 });
 ```
 
+### Test filtering
+
+All test filtering options, such as `--grep`/`--grep-invert`, `--shard`, filtering directly by location in the command line, or using [`test.only()`](./api/class-test.md#test-only), directly select the primary tests to be run. If those tests belong to a project with dependencies, all tests from those dependencies will also run.
+
+You can pass `--no-deps` command line option to ignore all dependencies and teardowns. Only your directly selected projects will run.
+
 ### More examples
 
 For more detailed examples check out:
@@ -129,7 +135,13 @@ You can use the `globalSetup` option in the [configuration file](./test-configur
 Similarly, use `globalTeardown` to run something once after all the tests. Alternatively, let `globalSetup` return a function that will be used as a global teardown. You can pass data such as port number, authentication tokens, etc. from your global setup to your tests using environment variables.
 
 :::note
-Using `globalSetup` and `globalTeardown` will not produce traces or artifacts. If you want to produce traces and artifacts, use [project dependencies](#option-1-project-dependencies).
+Beware of `globalSetup` and `globalTeardown` caveats:
+
+- These methods will not produce traces or artifacts unless explictly enabled, as described in [Capturing trace of failures during global setup](#capturing-trace-of-failures-during-global-setup).
+- Options such as `headless` or `testIdAttribute` specified in the config file are not applied.
+- An uncaught exception thrown in `globalSetup` will prevent Playwright from running tests, and no test results will appear in reporters.
+
+Consider using [project dependencies](#option-1-project-dependencies) to produce traces, artifacts, respect config options and get test results in reporters even in case of a setup failure.
 :::
 
 ```js title="playwright.config.ts"

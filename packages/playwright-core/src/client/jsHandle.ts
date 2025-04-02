@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-import type * as channels from '@protocol/channels';
 import { ChannelOwner } from './channelOwner';
-import { parseSerializedValue, serializeValue } from '../protocol/serializers';
-import type * as api from '../../types/types';
-import type * as structs from '../../types/structs';
 import { isTargetClosedError } from './errors';
+import { parseSerializedValue, serializeValue } from '../protocol/serializers';
+
+import type * as structs from '../../types/structs';
+import type * as api from '../../types/types';
+import type * as channels from '@protocol/channels';
+
 
 export class JSHandle<T = any> extends ChannelOwner<channels.JSHandleChannel> implements api.JSHandle {
   private _preview: string;
@@ -76,13 +78,6 @@ export class JSHandle<T = any> extends ChannelOwner<channels.JSHandleChannel> im
         return;
       throw e;
     }
-  }
-
-  async _objectCount() {
-    return await this._wrapApiCall(async () => {
-      const { count } = await this._channel.objectCount();
-      return count;
-    });
   }
 
   override toString(): string {

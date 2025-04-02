@@ -15,33 +15,31 @@
  * limitations under the License.
  */
 
-import type { BrowserOptions } from '../browser';
-import { Browser } from '../browser';
-import { assertBrowserContextIsNotOwned, BrowserContext, verifyGeolocation } from '../browserContext';
-import type { RegisteredListener } from '../../utils/eventsHelper';
 import { assert } from '../../utils';
-import { eventsHelper } from '../../utils/eventsHelper';
+import { Browser } from '../browser';
+import { BrowserContext, assertBrowserContextIsNotOwned, verifyGeolocation } from '../browserContext';
 import * as network from '../network';
-import type { Page, PageBinding, PageDelegate } from '../page';
-import type { ConnectionTransport } from '../transport';
-import type * as types from '../types';
-import type * as channels from '@protocol/channels';
-import type { Protocol } from './protocol';
-import type { PageProxyMessageReceivedPayload } from './wkConnection';
-import { kPageProxyMessageReceived, WKConnection, WKSession } from './wkConnection';
+import { WKConnection, WKSession, kPageProxyMessageReceived } from './wkConnection';
 import { WKPage } from './wkPage';
 import { TargetClosedError } from '../errors';
-import type { SdkObject } from '../instrumentation';
 
-const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15';
-const BROWSER_VERSION = '17.4';
+import type { BrowserOptions } from '../browser';
+import type { SdkObject } from '../instrumentation';
+import type { InitScript, Page } from '../page';
+import type { ConnectionTransport } from '../transport';
+import type * as types from '../types';
+import type { Protocol } from './protocol';
+import type { PageProxyMessageReceivedPayload } from './wkConnection';
+import type * as channels from '@protocol/channels';
+
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15';
+const BROWSER_VERSION = '18.4';
 
 export class WKBrowser extends Browser {
   private readonly _connection: WKConnection;
   readonly _browserSession: WKSession;
   readonly _contexts = new Map<string, WKBrowserContext>();
   readonly _wkPages = new Map<string, WKPage>();
-  private readonly _eventListeners: RegisteredListener[];
 
   static async connect(parent: SdkObject, transport: ConnectionTransport, options: BrowserOptions): Promise<WKBrowser> {
     const browser = new WKBrowser(parent, transport, options);
@@ -63,17 +61,15 @@ export class WKBrowser extends Browser {
     super(parent, options);
     this._connection = new WKConnection(transport, this._onDisconnect.bind(this), options.protocolLogger, options.browserLogsCollector);
     this._browserSession = this._connection.browserSession;
-    this._eventListeners = [
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.pageProxyCreated', this._onPageProxyCreated.bind(this)),
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.pageProxyDestroyed', this._onPageProxyDestroyed.bind(this)),
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.provisionalLoadFailed', event => this._onProvisionalLoadFailed(event)),
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.windowOpen', event => this._onWindowOpen(event)),
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.downloadCreated', this._onDownloadCreated.bind(this)),
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.downloadFilenameSuggested', this._onDownloadFilenameSuggested.bind(this)),
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.downloadFinished', this._onDownloadFinished.bind(this)),
-      eventsHelper.addEventListener(this._browserSession, 'Playwright.screencastFinished', this._onScreencastFinished.bind(this)),
-      eventsHelper.addEventListener(this._browserSession, kPageProxyMessageReceived, this._onPageProxyMessageReceived.bind(this)),
-    ];
+    this._browserSession.on('Playwright.pageProxyCreated', this._onPageProxyCreated.bind(this));
+    this._browserSession.on('Playwright.pageProxyDestroyed', this._onPageProxyDestroyed.bind(this));
+    this._browserSession.on('Playwright.provisionalLoadFailed', event => this._onProvisionalLoadFailed(event));
+    this._browserSession.on('Playwright.windowOpen', event => this._onWindowOpen(event));
+    this._browserSession.on('Playwright.downloadCreated', this._onDownloadCreated.bind(this));
+    this._browserSession.on('Playwright.downloadFilenameSuggested', this._onDownloadFilenameSuggested.bind(this));
+    this._browserSession.on('Playwright.downloadFinished', this._onDownloadFinished.bind(this));
+    this._browserSession.on('Playwright.screencastFinished', this._onScreencastFinished.bind(this));
+    this._browserSession.on(kPageProxyMessageReceived, this._onPageProxyMessageReceived.bind(this));
   }
 
   _onDisconnect() {
@@ -86,12 +82,13 @@ export class WKBrowser extends Browser {
     this._didClose();
   }
 
-  async doCreateNewContext(options: channels.BrowserNewContextParams): Promise<BrowserContext> {
-    const createOptions = options.proxy ? {
-      // Enable socks5 hostname resolution on Windows. Workaround can be removed once fixed upstream.
+  async doCreateNewContext(options: types.BrowserContextOptions): Promise<BrowserContext> {
+    const proxy = options.proxyOverride || options.proxy;
+    const createOptions = proxy ? {
+      // Enable socks5 hostname resolution on Windows.
       // See https://github.com/microsoft/playwright/issues/20451
-      proxyServer: process.platform === 'win32' ? options.proxy.server.replace(/^socks5:\/\//, 'socks5h://') : options.proxy.server,
-      proxyBypassList: options.proxy.bypass
+      proxyServer: process.platform === 'win32' ? proxy.server.replace(/^socks5:\/\//, 'socks5h://') : proxy.server,
+      proxyBypassList: proxy.bypass
     } : undefined;
     const { browserContextId } = await this._browserSession.send('Playwright.createContext', createOptions);
     options.userAgent = options.userAgent || DEFAULT_USER_AGENT;
@@ -125,14 +122,14 @@ export class WKBrowser extends Browser {
     // abort navigation that is still running. We should be able to fix this by
     // instrumenting policy decision start/proceed/cancel.
     page._page._frameManager.frameAbortedNavigation(payload.frameId, 'Download is starting');
-    let originPage = page._initializedPage;
+    let originPage = page._page.initializedOrUndefined();
     // If it's a new window download, report it on the opener page.
     if (!originPage) {
       // Resume the page creation with an error. The page will automatically close right
       // after the download begins.
       page._firstNonInitialNavigationCommittedReject(new Error('Starting new page download'));
       if (page._opener)
-        originPage = page._opener._initializedPage;
+        originPage = page._opener._page.initializedOrUndefined();
     }
     if (!originPage)
       return;
@@ -211,7 +208,7 @@ export class WKBrowser extends Browser {
 export class WKBrowserContext extends BrowserContext {
   declare readonly _browser: WKBrowser;
 
-  constructor(browser: WKBrowser, browserContextId: string | undefined, options: channels.BrowserNewContextParams) {
+  constructor(browser: WKBrowser, browserContextId: string | undefined, options: types.BrowserContextOptions) {
     super(browser, options, browserContextId);
     this._validateEmulatedViewport(options.viewport);
     this._authenticateProxyViaHeader();
@@ -226,7 +223,7 @@ export class WKBrowserContext extends BrowserContext {
       downloadPath: this._browser.options.downloadsPath,
       browserContextId
     }));
-    if (this._options.ignoreHTTPSErrors)
+    if (this._options.ignoreHTTPSErrors || this._options.internalIgnoreHTTPSErrors)
       promises.push(this._browser._browserSession.send('Playwright.setIgnoreCertificateErrors', { browserContextId, ignore: true }));
     if (this._options.locale)
       promises.push(this._browser._browserSession.send('Playwright.setLanguages', { browserContextId, languages: [this._options.locale] }));
@@ -243,14 +240,14 @@ export class WKBrowserContext extends BrowserContext {
     return Array.from(this._browser._wkPages.values()).filter(wkPage => wkPage._browserContext === this);
   }
 
-  pages(): Page[] {
-    return this._wkPages().map(wkPage => wkPage._initializedPage).filter(pageOrNull => !!pageOrNull) as Page[];
+  override possiblyUninitializedPages(): Page[] {
+    return this._wkPages().map(wkPage => wkPage._page);
   }
 
-  async newPageDelegate(): Promise<PageDelegate> {
+  override async doCreateNewPage(): Promise<Page> {
     assertBrowserContextIsNotOwned(this);
     const { pageProxyId } = await this._browser._browserSession.send('Playwright.createPage', { browserContextId: this._browserContextId });
-    return this._browser._wkPages.get(pageProxyId)!;
+    return this._browser._wkPages.get(pageProxyId)!._page;
   }
 
   async doGetCookies(urls: string[]): Promise<channels.NetworkCookie[]> {
@@ -267,7 +264,7 @@ export class WKBrowserContext extends BrowserContext {
     const cc = network.rewriteCookies(cookies).map(c => ({
       ...c,
       session: c.expires === -1 || c.expires === undefined,
-      expires: c.expires && c.expires !== -1 ? c.expires * 1000 : c.expires
+      expires: c.expires && c.expires !== -1 ? c.expires * 1000 : c.expires,
     })) as Protocol.Playwright.SetCookieParam[];
     await this._browser._browserSession.send('Playwright.setCookies', { cookies: cc, browserContextId: this._browserContextId });
   }
@@ -315,24 +312,14 @@ export class WKBrowserContext extends BrowserContext {
       await (page._delegate as WKPage).updateHttpCredentials();
   }
 
-  async doAddInitScript(source: string) {
+  async doAddInitScript(initScript: InitScript) {
     for (const page of this.pages())
       await (page._delegate as WKPage)._updateBootstrapScript();
   }
 
-  async doRemoveInitScripts() {
+  async doRemoveNonInternalInitScripts() {
     for (const page of this.pages())
       await (page._delegate as WKPage)._updateBootstrapScript();
-  }
-
-  async doExposeBinding(binding: PageBinding) {
-    for (const page of this.pages())
-      await (page._delegate as WKPage).exposeBinding(binding);
-  }
-
-  async doRemoveExposedBindings() {
-    for (const page of this.pages())
-      await (page._delegate as WKPage).removeExposedBindings();
   }
 
   async doUpdateRequestInterception(): Promise<void> {

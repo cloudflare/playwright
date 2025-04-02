@@ -14,23 +14,36 @@
  * limitations under the License.
  */
 
-import { serializeAsCallArgument, parseEvaluationResultValue } from '../isomorphic/utilityScriptSerializers';
+import { ensureBuiltins } from '../isomorphic/builtins';
+import { source } from '../isomorphic/utilityScriptSerializers';
+
+import type { Builtins } from '../isomorphic/builtins';
 
 export class UtilityScript {
-  serializeAsCallArgument = serializeAsCallArgument;
-  parseEvaluationResultValue = parseEvaluationResultValue;
+  constructor(isUnderTest: boolean) {
+    // eslint-disable-next-line no-restricted-globals
+    this.builtins = ensureBuiltins(globalThis);
+    if (isUnderTest) {
+      // eslint-disable-next-line no-restricted-globals
+      (globalThis as any).builtins = this.builtins;
+    }
+    const result = source(this.builtins);
+    this.serializeAsCallArgument = result.serializeAsCallArgument;
+    this.parseEvaluationResultValue = result.parseEvaluationResultValue;
+  }
 
-  evaluate(isFunction: boolean | undefined, returnByValue: boolean, exposeUtilityScript: boolean | undefined, expression: string, argCount: number, ...argsAndHandles: any[]) {
+  readonly builtins: Builtins;
+  readonly serializeAsCallArgument;
+  readonly parseEvaluationResultValue;
+
+  evaluate(isFunction: boolean | undefined, returnByValue: boolean, expression: string, argCount: number, ...argsAndHandles: any[]) {
     const args = argsAndHandles.slice(0, argCount);
     const handles = argsAndHandles.slice(argCount);
     const parameters = [];
     for (let i = 0; i < args.length; i++)
       parameters[i] = this.parseEvaluationResultValue(args[i], handles);
-    if (exposeUtilityScript)
-      parameters.unshift(this);
 
-    // eslint-disable-next-line no-restricted-globals
-    let result = globalThis.eval(expression);
+    let result = this.builtins.eval(expression);
     if (isFunction === true) {
       result = result(...parameters);
     } else if (isFunction === false) {
@@ -45,9 +58,9 @@ export class UtilityScript {
 
   jsonValue(returnByValue: true, value: any) {
     // Special handling of undefined to work-around multi-step returnByValue handling in WebKit.
-    if (Object.is(value, undefined))
+    if (value === undefined)
       return undefined;
-    return serializeAsCallArgument(value, (value: any) => ({ fallThrough: value }));
+    return this.serializeAsCallArgument(value, (value: any) => ({ fallThrough: value }));
   }
 
   private _promiseAwareJsonValueNoThrow(value: any) {

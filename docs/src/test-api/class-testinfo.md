@@ -19,6 +19,7 @@ test('basic test', async ({ page }, testInfo) => {
 - type: <[Array]<[Object]>>
   - `type` <[string]> Annotation type, for example `'skip'` or `'fail'`.
   - `description` ?<[string]> Optional description.
+  - `location` ?<[Location]> Optional location in the source where the annotation is added.
 
 The list of annotations applicable to the current test. Includes annotations from the test, annotations from all [`method: Test.describe`] groups the test belongs to and file-level annotations for the test file.
 
@@ -106,7 +107,7 @@ Column number where the currently running test is declared.
 
 ## property: TestInfo.config
 * since: v1.10
-- type: <[TestConfig]>
+- type: <[FullConfig]>
 
 Processed configuration from the [configuration file](../test-configuration.md).
 
@@ -216,7 +217,9 @@ Test function as passed to `test(title, testFunction)`.
 
 Tags that apply to the test. Learn more about [tags](../test-annotations.md#tag-tests).
 
-Note that any changes made to this list while the test is running will not be visible to test reporters.
+:::note
+Any changes made to this list while the test is running will not be visible to test reporters.
+:::
 
 ## property: TestInfo.testId
 * since: v1.32
@@ -279,7 +282,7 @@ Also available as `process.env.TEST_PARALLEL_INDEX`. Learn more about [paralleli
 
 ## property: TestInfo.project
 * since: v1.10
-- type: <[TestProject]>
+- type: <[FullProject]>
 
 Processed project configuration from the [configuration file](../test-configuration.md).
 
@@ -451,7 +454,7 @@ The title of the currently running test as passed to `test(title, testFunction)`
 * since: v1.10
 - type: <[Array]<[string]>>
 
-The full title path starting with the project.
+The full title path starting with the test file name.
 
 ## property: TestInfo.workerIndex
 * since: v1.10

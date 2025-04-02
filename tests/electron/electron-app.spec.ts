@@ -261,6 +261,18 @@ test('should record video', async ({ launchElectronApp }, testInfo) => {
   expect(fs.statSync(videoPath).size).toBeGreaterThan(0);
 });
 
+test('should record har', async ({ launchElectronApp, server }, testInfo) => {
+  test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/30747' });
+  const app = await launchElectronApp('electron-window-app.js', [], {
+    recordHar: { path: testInfo.outputPath('har.zip') }
+  });
+  const page = await app.firstWindow();
+  await page.goto(server.EMPTY_PAGE);
+  await app.close();
+  expect(fs.existsSync(testInfo.outputPath('har.zip'))).toBeTruthy();
+  expect(fs.statSync(testInfo.outputPath('har.zip')).size).toBeGreaterThan(0);
+});
+
 test('should be able to get the first window when with a delayed navigation', async ({ launchElectronApp }) => {
   test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/17765' });
 
@@ -301,4 +313,28 @@ test('should return app name / version from manifest', async ({ launchElectronAp
     name: 'my-electron-app',
     version: '1.0.0'
   });
+});
+
+test('should report downloads', async ({ launchElectronApp, electronMajorVersion, server }) => {
+  test.skip(electronMajorVersion < 30, 'Depends on https://github.com/electron/electron/pull/41718');
+
+  server.setRoute('/download', (req, res) => {
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment');
+    res.end(`Hello world`);
+  });
+
+  const app = await launchElectronApp('electron-window-app.js', [], {
+    acceptDownloads: true,
+  });
+  const window = await app.firstWindow();
+  await window.setContent(`<a href="${server.PREFIX}/download">download</a>`);
+  const [download] = await Promise.all([
+    window.waitForEvent('download'),
+    window.click('a')
+  ]);
+  const path = await download.path();
+  expect(fs.existsSync(path)).toBeTruthy();
+  expect(fs.readFileSync(path).toString()).toBe('Hello world');
+  await app.close();
 });

@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import type * as channels from '@protocol/channels';
 import { ChannelOwner } from './channelOwner';
+
 import type { Size } from './types';
+import type * as channels from '@protocol/channels';
 
 type DeviceDescriptor = {
   userAgent: string,
@@ -33,8 +34,41 @@ export class LocalUtils extends ChannelOwner<channels.LocalUtilsChannel> {
 
   constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.LocalUtilsInitializer) {
     super(parent, type, guid, initializer);
+    this.markAsInternalType();
     this.devices = {};
     for (const { name, descriptor } of initializer.deviceDescriptors)
       this.devices[name] = descriptor;
+  }
+
+  async zip(params: channels.LocalUtilsZipParams): Promise<void> {
+    return await this._channel.zip(params);
+  }
+
+  async harOpen(params: channels.LocalUtilsHarOpenParams): Promise<channels.LocalUtilsHarOpenResult> {
+    return await this._channel.harOpen(params);
+  }
+
+  async harLookup(params: channels.LocalUtilsHarLookupParams): Promise<channels.LocalUtilsHarLookupResult> {
+    return await this._channel.harLookup(params);
+  }
+
+  async harClose(params: channels.LocalUtilsHarCloseParams): Promise<void> {
+    return await this._channel.harClose(params);
+  }
+
+  async harUnzip(params: channels.LocalUtilsHarUnzipParams): Promise<void> {
+    return await this._channel.harUnzip(params);
+  }
+
+  async tracingStarted(params: channels.LocalUtilsTracingStartedParams): Promise<channels.LocalUtilsTracingStartedResult> {
+    return await this._channel.tracingStarted(params);
+  }
+
+  async traceDiscarded(params: channels.LocalUtilsTraceDiscardedParams): Promise<void> {
+    return await this._channel.traceDiscarded(params);
+  }
+
+  async addStackToTracingNoReply(params: channels.LocalUtilsAddStackToTracingNoReplyParams): Promise<void> {
+    return await this._channel.addStackToTracingNoReply(params);
   }
 }

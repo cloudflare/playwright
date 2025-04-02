@@ -10,7 +10,7 @@ a way to find element(s) on the page at any moment.
 
 ### Quick Guide
 
-These are the recommended built in locators.
+These are the recommended built-in locators.
 
 - [`method: Page.getByRole`](#locate-by-role) to locate by explicit and implicit accessibility attributes.
 - [`method: Page.getByText`](#locate-by-text) to locate by text content.
@@ -62,11 +62,11 @@ expect(page.get_by_text("Welcome, John!")).to_be_visible()
 ```
 
 ```csharp
-await page.GetByLabel("User Name").FillAsync("John");
+await Page.GetByLabel("User Name").FillAsync("John");
 
-await page.GetByLabel("Password").FillAsync("secret-password");
+await Page.GetByLabel("Password").FillAsync("secret-password");
 
-await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+await Page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
 
 await Expect(Page.GetByText("Welcome, John!")).ToBeVisibleAsync();
 ```
@@ -101,7 +101,7 @@ page.get_by_role("button", name="Sign in").click()
 ```
 
 ```csharp
-await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+await Page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
 ```
 
 :::note
@@ -122,7 +122,7 @@ await locator.click();
 
 ```java
 Locator locator = page.getByRole(AriaRole.BUTTON,
-                                 new Page.GetByRoleOptions().setName("Sign in"))
+                                 new Page.GetByRoleOptions().setName("Sign in"));
 
 locator.hover();
 locator.click();
@@ -143,7 +143,7 @@ locator.click()
 ```
 
 ```csharp
-var locator = page.GetByRole(AriaRole.Button, new() { Name = "Sign in" });
+var locator = Page.GetByRole(AriaRole.Button, new() { Name = "Sign in" });
 
 await locator.HoverAsync();
 await locator.ClickAsync();
@@ -180,7 +180,7 @@ locator.click()
 ```
 
 ```csharp
-var locator = page
+var locator = Page
     .FrameLocator("#my-frame")
     .GetByRole(AriaRole.Button, new() { Name = "Sign in" });
 
@@ -249,11 +249,11 @@ await Expect(Page
     .GetByRole(AriaRole.Heading, new() { Name = "Sign up" }))
     .ToBeVisibleAsync();
 
-await page
+await Page
     .GetByRole(AriaRole.Checkbox, new() { Name = "Subscribe" })
     .CheckAsync();
 
-await page
+await Page
     .GetByRole(AriaRole.Button, new() {
         NameRegex = new Regex("submit", RegexOptions.IgnoreCase)
     })
@@ -298,7 +298,7 @@ page.get_by_label("Password").fill("secret")
 ```
 
 ```csharp
-await page.GetByLabel("Password").FillAsync("secret");
+await Page.GetByLabel("Password").FillAsync("secret");
 ```
 
 :::note[When to use label locators]
@@ -335,7 +335,7 @@ page.get_by_placeholder("name@example.com").fill("playwright@microsoft.com")
 ```
 
 ```csharp
-await page
+await Page
     .GetByPlaceholder("name@example.com")
     .FillAsync("playwright@microsoft.com");
 ```
@@ -468,7 +468,7 @@ page.get_by_alt_text("playwright logo").click()
 ```
 
 ```csharp
-await page.GetByAltText("playwright logo").ClickAsync();
+await Page.GetByAltText("playwright logo").ClickAsync();
 ```
 
 :::note[When to use alt locators]
@@ -513,7 +513,7 @@ Use this locator when your element has the `title` attribute.
 
 ### Locate by test id
 
-Testing by test ids is the most resilient way of testing as even if your text or role of the attribute changes the test will still pass. QA's and developers should define explicit test ids and query them with [`method: Page.getByTestId`]. However testing by test ids is not user facing. If the role or text value is important to you then consider using user facing locators such as [role](#locate-by-role) and [text locators](#locate-by-text).
+Testing by test ids is the most resilient way of testing as even if your text or role of the attribute changes, the test will still pass. QA's and developers should define explicit test ids and query them with [`method: Page.getByTestId`]. However testing by test ids is not user facing. If the role or text value is important to you then consider using user facing locators such as [role](#locate-by-role) and [text locators](#locate-by-text).
 
 For example, consider the following DOM structure.
 
@@ -540,7 +540,7 @@ page.get_by_test_id("directions").click()
 ```
 
 ```csharp
-await page.GetByTestId("directions").ClickAsync();
+await Page.GetByTestId("directions").ClickAsync();
 ```
 
 :::note[When to use testid locators]
@@ -604,7 +604,7 @@ page.get_by_test_id("directions").click()
 ```
 
 ```csharp
-await page.GetByTestId("directions").ClickAsync();
+await Page.GetByTestId("directions").ClickAsync();
 ```
 
 ### Locate by CSS or XPath
@@ -644,11 +644,11 @@ page.locator("//button").click()
 ```
 
 ```csharp
-await page.Locator("css=button").ClickAsync();
-await page.Locator("xpath=//button").ClickAsync();
+await Page.Locator("css=button").ClickAsync();
+await Page.Locator("xpath=//button").ClickAsync();
 
-await page.Locator("button").ClickAsync();
-await page.Locator("//button").ClickAsync();
+await Page.Locator("button").ClickAsync();
+await Page.Locator("//button").ClickAsync();
 ```
 
 XPath and CSS selectors can be tied to the DOM structure or implementation. These selectors can break when the DOM structure changes. Long CSS or XPath chains below are an example of a **bad practice** that leads to unstable tests:
@@ -688,9 +688,9 @@ page.locator('//*[@id="tsf"]/div[2]/div[1]/div[1]/div/div[2]/input').click()
 ```
 
 ```csharp
-await page.Locator("#tsf > div:nth-child(2) > div.A8SBwf > div.RNNXgb > div > div.a4bIc > input").ClickAsync();
+await Page.Locator("#tsf > div:nth-child(2) > div.A8SBwf > div.RNNXgb > div > div.a4bIc > input").ClickAsync();
 
-await page.Locator("//*[@id='tsf']/div[2]/div[1]/div[1]/div/div[2]/input").ClickAsync();
+await Page.Locator("//*[@id='tsf']/div[2]/div[1]/div[1]/div/div[2]/input").ClickAsync();
 ```
 
 :::note[When to use this]
@@ -751,10 +751,10 @@ page.locator("x-details", new Page.LocatorOptions().setHasText("Details"))
     .click();
 ```
 ```python async
-await page.locator("x-details", has_text="Details" ).click()
+await page.locator("x-details", has_text="Details").click()
 ```
 ```python sync
-page.locator("x-details", has_text="Details" ).click()
+page.locator("x-details", has_text="Details").click()
 ```
 ```csharp
 await page
@@ -946,7 +946,7 @@ page.getByRole(AriaRole.LISTITEM)
         .setName("Product 2"))))
     .getByRole(AriaRole.BUTTON,
                new Page.GetByRoleOptions().setName("Add to cart"))
-    .click()
+    .click();
 ```
 
 ```python async
@@ -987,7 +987,7 @@ assertThat(page
     .getByRole(AriaRole.LISTITEM)
     .filter(new Locator.FilterOptions()
         .setHas(page.GetByRole(AriaRole.HEADING,
-                               new Page.GetByRoleOptions().setName("Product 2"))))
+                               new Page.GetByRoleOptions().setName("Product 2")))))
     .hasCount(1);
 ```
 
@@ -1033,7 +1033,7 @@ assertThat(page
     .filter(new Locator.FilterOptions()
         .setHas(page.GetByRole(AriaRole.LIST)
                     .GetByRole(AriaRole.HEADING,
-                               new Page.GetByRoleOptions().setName("Product 2"))))
+                               new Page.GetByRoleOptions().setName("Product 2")))))
     .hasCount(1);
 ```
 
@@ -1079,7 +1079,7 @@ await expect(page
 ```java
 assertThat(page
     .getByRole(AriaRole.LISTITEM)
-    .filter(new Locator.FilterOptions().setHasNot(page.getByText("Product 2")))
+    .filter(new Locator.FilterOptions().setHasNot(page.getByText("Product 2"))))
     .hasCount(1);
 ```
 
@@ -1218,7 +1218,7 @@ var button = page.GetByRole(AriaRole.Button).And(page.GetByTitle("Subscribe"));
 
 ### Matching one of the two alternative locators
 
-If you'd like to target one of the two or more elements, and you don't know which one it will be, use [`method: Locator.or`] to create a locator that matches all of the alternatives.
+If you'd like to target one of the two or more elements, and you don't know which one it will be, use [`method: Locator.or`] to create a locator that matches any one or both of the alternatives.
 
 For example, consider a scenario where you'd like to click on a "New email" button, but sometimes a security settings dialog shows up instead. In this case, you can wait for either a "New email" button, or a dialog and act accordingly.
 
@@ -1310,19 +1310,19 @@ Consider a page with two buttons, the first invisible and the second [visible](.
 * This will only find a second button, because it is visible, and then click it.
 
   ```js
-  await page.locator('button').locator('visible=true').click();
+  await page.locator('button').filter({ visible: true }).click();
   ```
   ```java
-  page.locator("button").locator("visible=true").click();
+  page.locator("button").filter(new Locator.FilterOptions.setVisible(true)).click();
   ```
   ```python async
-  await page.locator("button").locator("visible=true").click()
+  await page.locator("button").filter(visible=True).click()
   ```
   ```python sync
-  page.locator("button").locator("visible=true").click()
+  page.locator("button").filter(visible=True).click()
   ```
   ```csharp
-  await page.Locator("button").Locator("visible=true").ClickAsync();
+  await page.Locator("button").Filter(new() { Visible = true }).ClickAsync();
   ```
 
 ## Lists
@@ -1356,7 +1356,7 @@ expect(page.get_by_role("listitem")).to_have_count(3)
 ```
 
 ```java
-assertThat(page.getByRole(AriaRole.LISTITEM).hasCount(3);
+assertThat(page.getByRole(AriaRole.LISTITEM)).hasCount(3);
 ```
 
 ```csharp
@@ -1444,14 +1444,6 @@ page.getByText("orange").click();
 await page.GetByText("orange").ClickAsync();
 ```
 
-```html card
-<ul>
-  <li>apple</li>
-  <li>banana</li>
-  <li>orange</li>
-</ul>
-```
-
 #### Filter by text
 Use the [`method: Locator.filter`] to locate a specific item in a list.
 
@@ -1509,7 +1501,7 @@ For example, consider the following DOM structure:
 </ul>
 ```
 
-Locate an item by it's test id of "orange" and then click it.
+Locate an item by its test id of "orange" and then click it.
 
 ```js
 await page.getByTestId('orange').click();

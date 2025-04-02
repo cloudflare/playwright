@@ -14,18 +14,25 @@
   limitations under the License.
 */
 
+import { clsx } from '../uiUtils';
 import './toolbar.css';
 import * as React from 'react';
 
 type ToolbarProps = {
   noShadow?: boolean;
   noMinHeight?: boolean;
+  sidebarBackground?: boolean;
+  className?: string;
+  onClick?: (e: React.MouseEvent) => void;
 };
 
 export const Toolbar: React.FC<React.PropsWithChildren<ToolbarProps>> = ({
   noShadow,
   children,
-  noMinHeight
+  noMinHeight,
+  className,
+  sidebarBackground,
+  onClick,
 }) => {
-  return <div className={'toolbar' + (noShadow ? ' no-shadow' : '') + (noMinHeight ? ' no-min-height' : '')}>{children}</div>;
+  return <div className={clsx('toolbar', noShadow && 'no-shadow', noMinHeight && 'no-min-height', className, sidebarBackground && 'toolbar-sidebar-background')} onClick={onClick}>{children}</div>;
 };

@@ -14,10 +14,15 @@
  * limitations under the License.
  */
 
-import { ms as milliseconds } from 'playwright-core/lib/utilsBundle';
 import path from 'path';
-import { BaseReporter, formatError, formatFailure, stripAnsiEscapes } from './base';
-import type { TestCase, FullResult, TestError } from '../../types/testReporter';
+
+import { noColors } from 'playwright-core/lib/utils';
+import { ms as milliseconds } from 'playwright-core/lib/utilsBundle';
+
+import { TerminalReporter, formatResultFailure, formatRetry } from './base';
+import { stripAnsiEscapes } from '../util';
+
+import type { FullResult, TestCase, TestError } from '../../types/testReporter';
 
 type GitHubLogType = 'debug' | 'notice' | 'warning' | 'error';
 
@@ -56,10 +61,15 @@ class GitHubLogger {
   }
 }
 
-export class GitHubReporter extends BaseReporter {
+export class GitHubReporter extends TerminalReporter {
   githubLogger = new GitHubLogger();
 
-  override printsToStdio() {
+  constructor(options: { omitFailures?: boolean } = {}) {
+    super(options);
+    this.screen = { ...this.screen, colors: noColors };
+  }
+
+  printsToStdio() {
     return false;
   }
 
@@ -69,7 +79,7 @@ export class GitHubReporter extends BaseReporter {
   }
 
   override onError(error: TestError) {
-    const errorMessage = formatError(error, false).message;
+    const errorMessage = this.formatError(error).message;
     this.githubLogger.error(errorMessage);
   }
 
@@ -100,22 +110,23 @@ export class GitHubReporter extends BaseReporter {
 
   private _printFailureAnnotations(failures: TestCase[]) {
     failures.forEach((test, index) => {
-      const { annotations } = formatFailure(this.config, test, {
-        index: index + 1,
-        includeStdio: true,
-        includeAttachments: false,
-      });
-      annotations.forEach(({ location, title, message }) => {
-        const options: GitHubLogOptions = {
-          file: workspaceRelativePath(location?.file || test.location.file),
-          title,
-        };
-        if (location) {
-          options.line = location.line;
-          options.col = location.column;
+      const title = this.formatTestTitle(test);
+      const header = this.formatTestHeader(test, { indent: '  ', index: index + 1, mode: 'error' });
+      for (const result of test.results) {
+        const errors = formatResultFailure(this.screen, test, result, '    ');
+        for (const error of errors) {
+          const options: GitHubLogOptions = {
+            file: workspaceRelativePath(error.location?.file || test.location.file),
+            title,
+          };
+          if (error.location) {
+            options.line = error.location.line;
+            options.col = error.location.column;
+          }
+          const message = [header, ...formatRetry(this.screen, result), error.message].join('\n');
+          this.githubLogger.error(message, options);
         }
-        this.githubLogger.error(message, options);
-      });
+      }
     });
   }
 }

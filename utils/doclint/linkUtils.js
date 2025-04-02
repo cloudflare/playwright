@@ -13,10 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+/** @typedef {'Types'|'ReleaseNotesMd'} OutputType */
+
 // @ts-check
 const toKebabCase = require('lodash/kebabCase.js')
+const Documentation = require('./documentation');
 
-const createMarkdownLink = (languagePath, member, text) => {
+/**
+ * @param {string} languagePath
+ * @param {Documentation.Member} member
+ * @param {string} text
+ * @param {string=} paramOrOption
+ * @returns {string}
+ */
+function createMarkdownLink(languagePath, member, text, paramOrOption) {
+  if (!member.clazz)
+    throw new Error('Member without a class!');
   const className = toKebabCase(member.clazz.name);
   const memberName = toKebabCase(member.name);
   let hash = null;
@@ -24,27 +37,41 @@ const createMarkdownLink = (languagePath, member, text) => {
     hash = `${className}-${memberName}`.toLowerCase();
   else if (member.kind === 'event')
     hash = `${className}-event-${memberName}`.toLowerCase();
+  if (paramOrOption)
+    hash += '-option-' + toKebabCase(paramOrOption).toLowerCase();
   return `[${text}](https://playwright.dev${languagePath}/docs/api/class-${member.clazz.name.toLowerCase()}#${hash})`;
 };
 
 /**
- * @param {string} language 
- * @returns {import('../doclint/documentation').Renderer}
+ * @param {string} languagePath
+ * @param {Documentation.Class} clazz
+ * @returns {string}
  */
-function docsLinkRendererForLanguage(language) {
+function createClassMarkdownLink(languagePath, clazz) {
+  return `[${clazz.name}](https://playwright.dev${languagePath}/docs/api/class-${clazz.name.toLowerCase()})`;
+};
+
+/**
+ * @param {string} language
+ * @param {OutputType} outputType
+ * @returns {Documentation.Renderer}
+ */
+function docsLinkRendererForLanguage(language, outputType) {
   const languagePath = languageToRelativeDocsPath(language);
   return ({ clazz, member, param, option }) => {
-    if (param)
-      return `\`${param}\``;
-    if (option)
-      return `\`${option}\``;
     if (clazz)
-      return `{@link ${clazz.name}}`;
+      return createClassMarkdownLink(languagePath, clazz);
     if (!member || !member.clazz)
       throw new Error('Internal error');
+    if (param)
+      return createMarkdownLink(languagePath, member, `\`${param.alias}\``, param.name);
+    if (option)
+      return createMarkdownLink(languagePath, member, `\`${option.alias}\``, option.name);
     const className = member.clazz.varName === 'playwrightAssertions' ? '' : member.clazz.varName + '.';
-    if (member.kind === 'method')
-      return createMarkdownLink(languagePath, member, `${formatClassName(className, language)}${member.alias}(${renderJSSignature(member.argsArray)})`);
+    if (member.kind === 'method') {
+      const args = outputType === 'ReleaseNotesMd' ? '' : renderJSSignature(member.argsArray);
+      return createMarkdownLink(languagePath, member, `${formatClassName(className, language)}${member.alias}(${args})`);
+    }
     if (member.kind === 'event')
       return createMarkdownLink(languagePath, member, `${className}on('${member.alias.toLowerCase()}')`);
     if (member.kind === 'property')
@@ -92,7 +119,7 @@ function assertionArgument(className) {
 }
 
 /**
- * @param {import('../doclint/documentation').Member[]} args
+ * @param {Documentation.Member[]} args
  */
 function renderJSSignature(args) {
   const tokens = [];

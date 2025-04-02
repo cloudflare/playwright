@@ -14,11 +14,14 @@
  * limitations under the License.
  */
 
-import type { Fixtures, Locator, Page, BrowserContextOptions, PlaywrightTestArgs, PlaywrightTestOptions, PlaywrightWorkerArgs, PlaywrightWorkerOptions, BrowserContext } from 'playwright/test';
-import type { Component, JsxComponent, MountOptions, ObjectComponentOptions } from '../types/component';
-import type { ContextReuseMode, FullConfigInternal } from '../../playwright/src/common/config';
-import type { ImportRef } from './injected/importRegistry';
 import { wrapObject } from './injected/serializers';
+import { Router } from './router';
+
+import type { ContextReuseMode, FullConfigInternal } from '../../playwright/src/common/config';
+import type { RouterFixture } from '../index';
+import type { ImportRef } from './injected/importRegistry';
+import type { Component, JsxComponent, MountOptions, ObjectComponentOptions } from '../types/component';
+import type { BrowserContext, BrowserContextOptions, Fixtures, Locator, Page, PlaywrightTestArgs, PlaywrightTestOptions, PlaywrightWorkerArgs, PlaywrightWorkerOptions } from 'playwright/test';
 
 let boundCallbacksForMount: Function[] = [];
 
@@ -29,8 +32,9 @@ interface MountResult extends Locator {
 
 type TestFixtures = PlaywrightTestArgs & PlaywrightTestOptions & {
   mount: (component: any, options: any) => Promise<MountResult>;
+  router: RouterFixture;
 };
-type WorkerFixtures = PlaywrightWorkerArgs & PlaywrightWorkerOptions & { _ctWorker: { context: BrowserContext | undefined, hash: string } };
+type WorkerFixtures = PlaywrightWorkerArgs & PlaywrightWorkerOptions;
 type BaseTestFixtures = {
   _contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>,
   _optionContextReuseMode: ContextReuseMode
@@ -41,8 +45,6 @@ export const fixtures: Fixtures<TestFixtures, WorkerFixtures, BaseTestFixtures> 
   _optionContextReuseMode: 'when-possible',
 
   serviceWorkers: 'block',
-
-  _ctWorker: [{ context: undefined, hash: '' }, { scope: 'worker' }],
 
   page: async ({ page }, use, info) => {
     if (!((info as any)._configInternal as FullConfigInternal).defineConfigWasUsed)
@@ -78,6 +80,12 @@ export const fixtures: Fixtures<TestFixtures, WorkerFixtures, BaseTestFixtures> 
     });
     boundCallbacksForMount = [];
   },
+
+  router: async ({ context, baseURL }, use) => {
+    const router = new Router(context, baseURL);
+    await use(router);
+    await router.dispose();
+  },
 };
 
 function isJsxComponent(component: any): component is JsxComponent {
@@ -102,6 +110,7 @@ async function innerMount(page: Page, componentRef: JsxComponent | ImportRef, op
 
   const selector = await page.evaluate(async ({ component, hooksConfig }) => {
     component = await window.__pwUnwrapObject(component);
+    hooksConfig = await window.__pwUnwrapObject(hooksConfig);
     let rootElement = document.getElementById('root');
     if (!rootElement) {
       rootElement = document.createElement('div');

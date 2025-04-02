@@ -35,14 +35,13 @@ def test_status_becomes_submitted(page: Page) -> None:
 ```
 
 ```java
-...
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
 public class TestExample {
-  ...
+  // ...
   @Test
   void statusBecomesSubmitted() {
-    ...
+    // ...
     page.locator("#submit-button").click();
     assertThat(page.locator(".status")).hasText("Submitted");
   }
@@ -50,19 +49,18 @@ public class TestExample {
 ```
 
 ```csharp
-using System.Threading.Tasks;
-using Microsoft.Playwright.NUnit;
-using NUnit.Framework;
+using Microsoft.Playwright;
+using Microsoft.Playwright.MSTest;
 
 namespace PlaywrightTests;
 
-[TestFixture]
+[TestClass]
 public class ExampleTests : PageTest
 {
-    [Test]
+    [TestMethod]
     public async Task StatusBecomesSubmitted()
     {
-        await Page.Locator("#submit-button").ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Submit" }).ClickAsync();
         await Expect(Page.Locator(".status")).ToHaveTextAsync("Submitted");
     }
 }

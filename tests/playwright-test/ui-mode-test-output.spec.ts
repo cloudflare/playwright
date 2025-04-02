@@ -15,6 +15,7 @@
  */
 
 import { test, expect, retries } from './ui-mode-fixtures';
+import path from 'path';
 
 test.describe.configure({ mode: 'parallel', retries });
 
@@ -44,7 +45,8 @@ test('should work after theme switch', async ({ runUITest, writeFiles }) => {
   await page.getByTitle('Run all').click();
   await expect(page.getByTestId('output')).toContainText(`Hello world 1`);
 
-  await page.getByTitle('Toggle color mode').click();
+  await page.getByText('Settings', { exact: true }).click();
+  await page.getByLabel('Dark mode').click();
   await writeFiles({
     'a.test.ts': `
       import { test, expect } from '@playwright/test';
@@ -112,6 +114,47 @@ test('should show console messages for test', async ({ runUITest }, testInfo) =>
   await expect.soft(page.getByText('GREEN', { exact: true })).toHaveCSS('color', 'rgb(0, 188, 0)');
 });
 
+test('should collapse repeated console messages for test', async ({ runUITest }) => {
+  const { page } = await runUITest({
+    'a.spec.ts': `
+      import { test, expect } from '@playwright/test';
+      test('print', async ({ page }) => {
+        await page.evaluate(() => {
+          console.log('page message')
+          for (let i = 0; i < 10; ++i)
+            console.log('page message')
+        });
+        for (let i = 0; i < 10; ++i)
+          console.log('node message')
+        await page.evaluate(async () => {
+          await new Promise(resolve => {
+            for (let i = 0; i < 10; ++i)
+              console.log('page message')
+            window.builtins.setTimeout(() => {
+              for (let i = 0; i < 10; ++i)
+                console.log('page message')
+              resolve()
+            }, 1500)
+          })
+        });
+      });
+    `,
+  });
+  await page.getByTitle('Run all').click();
+  await page.getByRole('tab', { name: 'Console' }).click();
+  await page.getByText('print').click();
+
+  await expect(page.getByRole('tabpanel', { name: 'Console' })).toMatchAriaSnapshot(`
+    - tabpanel "Console":
+      - list:
+        - listitem: /page message/
+        - listitem: /10 page message/
+        - listitem: /10 node message/
+        - listitem: /10 page message/
+        - listitem: /10 page message/
+  `);
+});
+
 test('should format console messages in page', async ({ runUITest }, testInfo) => {
   const { page } = await runUITest({
     'a.spec.ts': `
@@ -143,6 +186,17 @@ test('should format console messages in page', async ({ runUITest }, testInfo) =
     'Failed to load resource: net::ERR_CONNECTION_REFUSED',
   ]);
 
+  await expect(page.locator('.console-tab')).toMatchAriaSnapshot(`
+    - list:
+      - listitem: "/<anonymous>:1 Object {a: 1}/"
+      - listitem: "/<anonymous>:4 Date/"
+      - listitem: "/<anonymous>:5 Regex \/a\//"
+      - listitem: "/<anonymous>:6 Number 0 one 2/"
+      - listitem: "/<anonymous>:7 Download the React DevTools for a better development experience: https:\/\/fb\.me\/react-devtools/"
+      - listitem: "/<anonymous>:8 Array of values/"
+      - listitem: "/Failed to load resource: net::ERR_CONNECTION_REFUSED/"
+  `);
+
   const label = page.getByText('React DevTools');
   await expect(label).toHaveCSS('color', 'rgb(255, 0, 0)');
   await expect(label).toHaveCSS('font-weight', '700');
@@ -154,7 +208,7 @@ test('should format console messages in page', async ({ runUITest }, testInfo) =
   await expect(link).toHaveCSS('text-decoration', 'none solid rgb(0, 0, 255)');
 });
 
-test('should stream console messages live', async ({ runUITest }, testInfo) => {
+test('should stream console messages live', async ({ runUITest }) => {
   const { page } = await runUITest({
     'a.spec.ts': `
       import { test, expect } from '@playwright/test';
@@ -162,7 +216,7 @@ test('should stream console messages live', async ({ runUITest }, testInfo) => {
         await page.setContent('<button>Click me</button>');
         const button = page.getByRole('button', { name: 'Click me' });
         await button.evaluate(node => node.addEventListener('click', () => {
-          setTimeout(() => { console.log('I was clicked'); }, 1000);
+          window.builtins.setTimeout(() => { console.log('I was clicked'); }, 1000);
         }));
         console.log('I was logged');
         await button.click();
@@ -201,4 +255,30 @@ test('should print beforeAll console messages once', async ({ runUITest }, testI
     'before all log',
     'test log',
   ]);
+});
+
+test('should print web server output', async ({ runUITest }, { workerIndex }) => {
+  const port = workerIndex * 2 + 10500;
+  const serverPath = path.join(__dirname, 'assets', 'simple-server.js');
+  const { page } = await runUITest({
+    'test.spec.ts': `
+      import { test, expect } from '@playwright/test';
+      test('connect to the server', async ({baseURL, page}) => {
+        expect(baseURL).toBe('http://localhost:${port}');
+      });
+    `,
+    'playwright.config.ts': `
+      module.exports = {
+        webServer: {
+          command: 'node ${JSON.stringify(serverPath)} ${port}',
+          port: ${port},
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }
+      };
+    `,
+  });
+  await page.getByTitle('Toggle output').click();
+  await expect(page.getByTestId('output')).toContainText('output from server');
+  await expect(page.getByTestId('output')).toContainText('error from server');
 });

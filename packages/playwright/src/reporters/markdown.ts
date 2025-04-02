@@ -16,17 +16,18 @@
 
 import fs from 'fs';
 import path from 'path';
-import type { FullResult, TestCase } from '../../types/testReporter';
+
 import { resolveReporterOutputPath } from '../util';
-import { BaseReporter, formatTestTitle } from './base';
+import { TerminalReporter } from './base';
+
+import type { FullResult, TestCase } from '../../types/testReporter';
 
 type MarkdownReporterOptions = {
   configDir: string,
   outputFile?: string;
 };
 
-
-class MarkdownReporter extends BaseReporter {
+class MarkdownReporter extends TerminalReporter {
   private _options: MarkdownReporterOptions;
 
   constructor(options: MarkdownReporterOptions) {
@@ -34,7 +35,7 @@ class MarkdownReporter extends BaseReporter {
     this._options = options;
   }
 
-  override printsToStdio() {
+  printsToStdio() {
     return false;
   }
 
@@ -68,14 +69,18 @@ class MarkdownReporter extends BaseReporter {
     lines.push(`:heavy_check_mark::heavy_check_mark::heavy_check_mark:`);
     lines.push(``);
 
+    await this.publishReport(lines.join('\n'));
+  }
+
+  protected async publishReport(report: string): Promise<void> {
     const reportFile = resolveReporterOutputPath('report.md', this._options.configDir, this._options.outputFile);
     await fs.promises.mkdir(path.dirname(reportFile), { recursive: true });
-    await fs.promises.writeFile(reportFile, lines.join('\n'));
+    await fs.promises.writeFile(reportFile, report);
   }
 
   private _printTestList(prefix: string, tests: TestCase[], lines: string[], suffix?: string) {
     for (const test of tests)
-      lines.push(`${prefix} ${formatTestTitle(this.config, test)}${suffix || ''}`);
+      lines.push(`${prefix} ${this.formatTestTitle(test)}${suffix || ''}`);
     lines.push(``);
   }
 }

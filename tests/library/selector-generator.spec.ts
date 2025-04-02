@@ -28,18 +28,31 @@ async function generateMultiple(pageOrFrame: Page | Frame, target: string): Prom
 it.describe('selector generator', () => {
   it.skip(({ mode }) => mode !== 'default');
 
-  it.beforeEach(async ({ context }) => {
+  it.beforeEach(async ({ context, page }) => {
+    // Make sure `page`(fixture) is created before enabling recorder, so that
+    // we properly wait for `extendInjectedScript` call to finish. Otherwise
+    // if the page is created later, there is a race between ConsoleAPI
+    // initialization and playwright.selector(e) call in `generate()` function above.
     await (context as any)._enableRecorder({ language: 'javascript' });
   });
 
   it('should prefer button over inner span', async ({ page }) => {
-    await page.setContent(`<button id=clickme><span></span></button>`);
-    expect(await generate(page, 'button')).toBe('#clickme');
+    await page.setContent(`<button><span>text</span></button>`);
+    expect(await generate(page, 'span')).toBe('internal:role=button[name="text"i]');
   });
 
   it('should prefer role=button over inner span', async ({ page }) => {
-    await page.setContent(`<div role=button><span></span></div>`);
-    expect(await generate(page, 'div')).toBe('internal:role=button');
+    await page.setContent(`<div role=button><span>text</span></div>`);
+    expect(await generate(page, 'span')).toBe('internal:role=button[name="text"i]');
+  });
+
+  it('should not prefer zero-sized button over inner span', async ({ page }) => {
+    await page.setContent(`
+      <button style="width:0;height:0;padding:0;border:0;overflow:visible;">
+        <span style="width:100px;height:100px;">text</span>
+      </button>
+    `);
+    expect(await generate(page, 'span')).toBe('internal:text="text"i');
   });
 
   it('should generate text and normalize whitespace', async ({ page }) => {
@@ -49,7 +62,7 @@ it.describe('selector generator', () => {
 
   it('should not escape spaces inside named attr selectors', async ({ page }) => {
     await page.setContent(`<input placeholder="Foo b ar"/>`);
-    expect(await generate(page, 'input')).toBe('internal:attr=[placeholder=\"Foo b ar\"i]');
+    expect(await generate(page, 'input')).toBe('internal:role=textbox[name=\"Foo b ar\"i]');
   });
 
   it('should generate text for <input type=button>', async ({ page }) => {
@@ -82,7 +95,7 @@ it.describe('selector generator', () => {
 
   it('should try to improve label text by shortening', async ({ page }) => {
     await page.setContent(`<label>Longest verbose description of the item<input></label>`);
-    expect(await generate(page, 'input')).toBe('internal:label="Longest verbose description"i');
+    expect(await generate(page, 'input')).toBe('internal:role=textbox[name=\"Longest verbose description\"i]');
   });
 
   it('should not improve guid text', async ({ page }) => {
@@ -203,6 +216,15 @@ it.describe('selector generator', () => {
     expect(await generate(page, 'div div')).toBe(`div >> internal:has-text=/^Hello world$/`);
   });
 
+  it('should use internal:has-text with regexp with a quote', async ({ page }) => {
+    await page.setContent(`
+      <span>Hello'world</span>
+      <div><div>Hello'<span>world</span></div>extra</div>
+      <a>Goodbye'<span>world</span></a>
+    `);
+    expect(await generate(page, 'div div')).toBe(`div >> internal:has-text=/^Hello\\'world$/`);
+  });
+
   it('should chain text after parent', async ({ page }) => {
     await page.setContent(`
       <div>Hello <span>world</span></div>
@@ -291,21 +313,27 @@ it.describe('selector generator', () => {
     expect(await generate(page, 'input[mark="1"]')).toBe('internal:role=textbox >> nth=1');
   });
 
-  it.describe('should prioritise attributes correctly', () => {
+  it.describe('should prioritize attributes correctly', () => {
     it('role', async ({ page }) => {
       await page.setContent(`<input name="foobar" type="text"/>`);
       expect(await generate(page, 'input')).toBe('internal:role=textbox');
     });
     it('placeholder', async ({ page }) => {
       await page.setContent(`<input placeholder="foobar" type="text"/>`);
-      expect(await generate(page, 'input')).toBe('internal:attr=[placeholder=\"foobar\"i]');
+      expect(await generate(page, 'input')).toBe('internal:role=textbox[name=\"foobar\"i]');
     });
     it('name', async ({ page }) => {
-      await page.setContent(`<input role="presentation" aria-hidden="false" name="foobar" type="date"/>`);
+      await page.setContent(`
+        <input aria-hidden="false" name="foobar" type="date"/>
+        <div role="textbox"/>content</div>
+      `);
       expect(await generate(page, 'input')).toBe('input[name="foobar"]');
     });
     it('type', async ({ page }) => {
-      await page.setContent(`<input role="presentation" aria-hidden="false" type="checkbox"/>`);
+      await page.setContent(`
+        <input aria-hidden="false" type="checkbox"/>
+        <div role="checkbox"/>content</div>
+      `);
       expect(await generate(page, 'input')).toBe('input[type="checkbox"]');
     });
   });
@@ -398,7 +426,7 @@ it.describe('selector generator', () => {
   });
 
   it('should work without CSS.escape', async ({ page }) => {
-    await page.setContent(`<button role="presentation" aria-hidden="false"></button>`);
+    await page.setContent(`<button aria-hidden="false"></button><div role="button"></div>`);
     await page.$eval('button', button => {
       delete window.CSS.escape;
       button.setAttribute('name', '-tricky\u0001name');
@@ -413,7 +441,7 @@ it.describe('selector generator', () => {
 
   it('should accept valid aria-label for candidate consideration', async ({ page }) => {
     await page.setContent(`<button aria-label="ariaLabel" id="buttonId"></button>`);
-    expect(await generate(page, 'button')).toBe('internal:label="ariaLabel"i');
+    expect(await generate(page, 'button')).toBe('internal:role=button[name=\"ariaLabel\"i]');
   });
 
   it('should ignore empty role for candidate consideration', async ({ page }) => {
@@ -445,15 +473,15 @@ it.describe('selector generator', () => {
       <label for=target5>Target5</label><input id=target5 type=hidden>
       <label for=target6>Target6</label><div id=target6>text</div>
     `);
-    expect(await generate(page, '#target1')).toBe('internal:label="Target1"i');
-    expect(await generate(page, '#target2')).toBe('internal:label="Target2"i');
-    expect(await generate(page, '#target3')).toBe('internal:label="Target3"i');
-    expect(await generate(page, '#target4')).toBe('internal:label="Target4"i');
-    expect(await generate(page, '#target5')).toBe('#target5');
-    expect(await generate(page, '#target6')).toBe('internal:text="text"i');
+    expect.soft(await generate(page, '#target1')).toBe('internal:role=textbox[name=\"Target1\"i]');
+    expect.soft(await generate(page, '#target2')).toBe('internal:role=button[name=\"Target2\"i]');
+    expect.soft(await generate(page, '#target3')).toBe('internal:label=\"Target3\"i');
+    expect.soft(await generate(page, '#target4')).toBe('internal:label=\"Target4\"i');
+    expect.soft(await generate(page, '#target5')).toBe('#target5');
+    expect.soft(await generate(page, '#target6')).toBe('internal:text="text"i');
 
     await page.setContent(`<label for=target>Coun"try</label><input id=target>`);
-    expect(await generate(page, 'input')).toBe('internal:label="Coun\\\"try"i');
+    expect(await generate(page, 'input')).toBe('internal:role=textbox[name=\"Coun\\\"try\"i]');
   });
 
   it('should prefer role other input[type]', async ({ page }) => {
@@ -490,7 +518,7 @@ it.describe('selector generator', () => {
       <input placeholder="Text"></input>
       <input placeholder="Text and more"></input>
     `);
-    expect(await generate(page, 'input')).toBe('internal:attr=[placeholder=\"Text\"s]');
+    expect(await generate(page, 'input')).toBe('internal:role=textbox[name=\"Text\"s]');
   });
 
   it('should generate exact role when necessary', async ({ page }) => {
@@ -506,7 +534,7 @@ it.describe('selector generator', () => {
       <label>Text <input></input></label>
       <label>Text and more <input></input></label>
     `);
-    expect(await generate(page, 'input')).toBe('internal:label=\"Text\"s');
+    expect(await generate(page, 'input')).toBe('internal:role=textbox[name=\"Text\"s]');
   });
 
   it('should generate relative selector', async ({ page }) => {
@@ -570,6 +598,25 @@ it.describe('selector generator', () => {
       `#second span`,
       `internal:text="Some span"i >> nth=1`,
       `span >> nth=1`,
+    ]);
+  });
+
+  it('should prefer role with hasText to css with hasText', async ({ page }) => {
+    await page.setContent(`
+      <ul>
+        <li>
+          <input aria-label="Toggle Todo" type="checkbox">
+          buy flowers
+        </li>
+        <li>
+          <input aria-label="Toggle Todo" type="checkbox">
+          sell milk
+        </li>
+      </ul>
+    `);
+    expect(await generateMultiple(page, 'input')).toEqual([
+      `internal:role=listitem >> internal:has-text=\"buy flowers\"i >> internal:label=\"Toggle Todo\"i`,
+      `internal:label=\"Toggle Todo\"i >> nth=0`,
     ]);
   });
 });

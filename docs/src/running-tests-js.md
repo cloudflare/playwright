@@ -33,7 +33,7 @@ npx playwright test --ui
 
 ![UI Mode](https://github.com/microsoft/playwright/assets/13063165/c5b501cc-4f5d-485a-87cc-66044c651786)
 
-Check out or [detailed guide on UI Mode](./test-ui-mode.md) to learn more about it's features.
+Check out or [detailed guide on UI Mode](./test-ui-mode.md) to learn more about its features.
 
 ### Run tests in headed mode
 
@@ -83,6 +83,15 @@ To run a test with a specific title, use the `-g` flag followed by the title of 
 npx playwright test -g "add a todo item"
 ```
 
+### Run last failed tests
+
+To run only the tests that failed in the last test run, first run your tests and then run them again with the `--last-failed` flag.
+
+```bash
+npx playwright test --last-failed
+```
+
+
 ### Run tests in VS Code
 
 Tests can be run right from VS Code using the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=ms-playwright.playwright). Once installed you can simply click the green triangle next to the test you want to run or run all tests from the testing sidebar. Check out our [Getting Started with VS Code](./getting-started-vscode.md#running-tests) guide for more details.
@@ -103,11 +112,11 @@ npx playwright test --ui
 
 ![showing errors in ui mode](https://github.com/microsoft/playwright/assets/13063165/ffca2fd1-5349-41fb-ade9-ace143bb2c58)
 
-While debugging you can use the Pick Locator button to select an element on the page and see the locator that Playwright would use to find that element. You can also edit the locator in the locator playground and see it highlighting live on the Browser window. Use the Copy Locator button to copy the locator to your clipboard and then paste it into you test.
+While debugging you can use the Pick Locator button to select an element on the page and see the locator that Playwright would use to find that element. You can also edit the locator in the locator playground and see it highlighting live on the Browser window. Use the Copy Locator button to copy the locator to your clipboard and then paste it into your test.
 
 ![pick locator in ui mode](https://github.com/microsoft/playwright/assets/13063165/9e7eeb84-bd26-4010-8614-75e24b56c716)
 
-Check out our [detailed guide on UI Mode](./test-ui-mode.md) to learn more about it's features.
+Check out our [detailed guide on UI Mode](./test-ui-mode.md) to learn more about its features.
 
 ### Debug tests with the Playwright Inspector
 

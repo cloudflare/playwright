@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-import { escapeForAttributeSelector, escapeForTextSelector } from '../../utils/isomorphic/stringUtils';
 import { asLocators } from './locatorGenerators';
-import type { Language, Quote } from './locatorGenerators';
 import { parseSelector } from './selectorParser';
+import { escapeForAttributeSelector, escapeForTextSelector } from './stringUtils';
+
+import type { Language, Quote } from './locatorGenerators';
 
 type TemplateParams = { quote: string, text: string }[];
 function parseLocator(locator: string, testIdAttributeName: string): { selector: string, preferredQuote: Quote | undefined } {
@@ -75,6 +76,7 @@ function parseLocator(locator: string, testIdAttributeName: string): { selector:
       .replace(/has_text/g, 'hastext')
       .replace(/has_not/g, 'hasnot')
       .replace(/frame_locator/g, 'framelocator')
+      .replace(/content_frame/g, 'contentframe')
       .replace(/[{}\s]/g, '')
       .replace(/new\(\)/g, '')
       .replace(/new[\w]+\.[\w]+options\(\)/g, '')
@@ -90,7 +92,8 @@ function parseLocator(locator: string, testIdAttributeName: string): { selector:
       .replace(/newregex\(([^)]+)\)/g, 'r$1')
       .replace(/string=/g, '=')
       .replace(/regex=/g, '=')
-      .replace(/,,/g, ',');
+      .replace(/,,/g, ',')
+      .replace(/,\)/g, ')');
 
   const preferredQuote = params.map(p => p.quote).filter(quote => '\'"`'.includes(quote))[0] as Quote | undefined;
   return { selector: transform(template, params, testIdAttributeName), preferredQuote };
@@ -154,6 +157,7 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
   template = template
       .replace(/\,set([\w]+)\(([^)]+)\)/g, (_, group1, group2) => ',' + group1.toLowerCase() + '=' + group2.toLowerCase())
       .replace(/framelocator\(([^)]+)\)/g, '$1.internal:control=enter-frame')
+      .replace(/contentframe(\(\))?/g, 'internal:control=enter-frame')
       .replace(/locator\(([^)]+),hastext=([^),]+)\)/g, 'locator($1).internal:has-text=$2')
       .replace(/locator\(([^)]+),hasnottext=([^),]+)\)/g, 'locator($1).internal:has-not-text=$2')
       .replace(/locator\(([^)]+),hastext=([^),]+)\)/g, 'locator($1).internal:has-text=$2')
@@ -166,12 +170,15 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
       .replace(/first(\(\))?/g, 'nth=0')
       .replace(/last(\(\))?/g, 'nth=-1')
       .replace(/nth\(([^)]+)\)/g, 'nth=$1')
+      .replace(/filter\(,?visible=true\)/g, 'visible=true')
+      .replace(/filter\(,?visible=false\)/g, 'visible=false')
       .replace(/filter\(,?hastext=([^)]+)\)/g, 'internal:has-text=$1')
       .replace(/filter\(,?hasnottext=([^)]+)\)/g, 'internal:has-not-text=$1')
       .replace(/filter\(,?has2=([^)]+)\)/g, 'internal:has=$1')
       .replace(/filter\(,?hasnot2=([^)]+)\)/g, 'internal:has-not=$1')
       .replace(/,exact=false/g, '')
       .replace(/,exact=true/g, 's')
+      .replace(/,includehidden=/g, ',include-hidden=')
       .replace(/\,/g, '][');
 
   const parts = template.split('.');
@@ -213,24 +220,29 @@ function transform(template: string, params: TemplateParams, testIdAttributeName
 
 export function locatorOrSelectorAsSelector(language: Language, locator: string, testIdAttributeName: string): string {
   try {
+    return unsafeLocatorOrSelectorAsSelector(language, locator, testIdAttributeName);
+  } catch (e) {
+    return '';
+  }
+}
+
+export function unsafeLocatorOrSelectorAsSelector(language: Language, locator: string, testIdAttributeName: string): string {
+  try {
     parseSelector(locator);
     return locator;
   } catch (e) {
   }
-  try {
-    const { selector, preferredQuote } = parseLocator(locator, testIdAttributeName);
-    const locators = asLocators(language, selector, undefined, undefined, preferredQuote);
-    const digest = digestForComparison(language, locator);
-    if (locators.some(candidate => digestForComparison(language, candidate) === digest))
-      return selector;
-  } catch (e) {
-  }
+  const { selector, preferredQuote } = parseLocator(locator, testIdAttributeName);
+  const locators = asLocators(language, selector, undefined, undefined, preferredQuote);
+  const digest = digestForComparison(language, locator);
+  if (locators.some(candidate => digestForComparison(language, candidate) === digest))
+    return selector;
   return '';
 }
 
 function digestForComparison(language: Language, locator: string) {
   locator = locator.replace(/\s/g, '');
   if (language === 'javascript')
-    locator = locator.replace(/\\?["`]/g, '\'');
+    locator = locator.replace(/\\?["`]/g, '\'').replace(/,{}/g, '');
   return locator;
 }

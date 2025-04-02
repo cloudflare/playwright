@@ -15,16 +15,17 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 import os from 'os';
-import type { Config, Fixtures, Project, ReporterDescription } from '../../types/test';
-import type { Location } from '../../types/testReporter';
-import type { TestRunnerPluginRegistration } from '../plugins';
+import path from 'path';
+
 import { getPackageJsonPath, mergeObjects } from '../util';
+
+import type { Config, Fixtures, Metadata, Project, ReporterDescription } from '../../types/test';
+import type { TestRunnerPluginRegistration } from '../plugins';
 import type { Matcher } from '../util';
 import type { ConfigCLIOverrides } from './ipc';
-import type { FullConfig, FullProject } from '../../types/test';
-import { setTransformConfig } from '../transform/transform';
+import type { Location } from '../../types/testReporter';
+import type { FullConfig, FullProject } from '../../types/testReporter';
 
 export type ConfigLocation = {
   resolvedConfigFile?: string;
@@ -35,67 +36,78 @@ export type FixturesWithLocation = {
   fixtures: Fixtures;
   location: Location;
 };
-export type Annotation = { type: string, description?: string };
 
 export const defaultTimeout = 30000;
 
 export class FullConfigInternal {
   readonly config: FullConfig;
-  readonly globalOutputDir: string;
   readonly configDir: string;
   readonly configCLIOverrides: ConfigCLIOverrides;
-  readonly ignoreSnapshots: boolean;
-  readonly preserveOutputDir: boolean;
-  readonly webServers: Exclude<FullConfig['webServer'], null>[];
+  readonly webServers: NonNullable<FullConfig['webServer']>[];
   readonly plugins: TestRunnerPluginRegistration[];
   readonly projects: FullProjectInternal[] = [];
+  readonly singleTSConfigPath?: string;
+  readonly captureGitInfo: Config['captureGitInfo'];
   cliArgs: string[] = [];
   cliGrep: string | undefined;
   cliGrepInvert: string | undefined;
+  cliOnlyChanged: string | undefined;
   cliProjectFilter?: string[];
   cliListOnly = false;
   cliPassWithNoTests?: boolean;
+  cliLastFailed?: boolean;
   testIdMatcher?: Matcher;
+  lastFailedTestIdMatcher?: Matcher;
   defineConfigWasUsed = false;
 
-  constructor(location: ConfigLocation, userConfig: Config, configCLIOverrides: ConfigCLIOverrides) {
+  globalSetups: string[] = [];
+  globalTeardowns: string[] = [];
+
+  constructor(location: ConfigLocation, userConfig: Config, configCLIOverrides: ConfigCLIOverrides, metadata?: Metadata) {
     if (configCLIOverrides.projects && userConfig.projects)
       throw new Error(`Cannot use --browser option when configuration file defines projects. Specify browserName in the projects instead.`);
 
     const { resolvedConfigFile, configDir } = location;
     const packageJsonPath = getPackageJsonPath(configDir);
-    const packageJsonDir = packageJsonPath ? path.dirname(packageJsonPath) : undefined;
-    const throwawayArtifactsPath = packageJsonDir || process.cwd();
+    const packageJsonDir = packageJsonPath ? path.dirname(packageJsonPath) : process.cwd();
 
     this.configDir = configDir;
     this.configCLIOverrides = configCLIOverrides;
-    this.globalOutputDir = takeFirst(configCLIOverrides.outputDir, pathResolve(configDir, userConfig.outputDir), throwawayArtifactsPath, path.resolve(process.cwd()));
-    this.preserveOutputDir = configCLIOverrides.preserveOutputDir || false;
-    this.ignoreSnapshots = takeFirst(configCLIOverrides.ignoreSnapshots, userConfig.ignoreSnapshots, false);
     const privateConfiguration = (userConfig as any)['@playwright/test'];
     this.plugins = (privateConfiguration?.plugins || []).map((p: any) => ({ factory: p }));
+    this.singleTSConfigPath = pathResolve(configDir, userConfig.tsconfig);
+    this.captureGitInfo = userConfig.captureGitInfo;
+
+    this.globalSetups = (Array.isArray(userConfig.globalSetup) ? userConfig.globalSetup : [userConfig.globalSetup]).map(s => resolveScript(s, configDir)).filter(script => script !== undefined);
+    this.globalTeardowns = (Array.isArray(userConfig.globalTeardown) ? userConfig.globalTeardown : [userConfig.globalTeardown]).map(s => resolveScript(s, configDir)).filter(script => script !== undefined);
+
+    // Make sure we reuse same metadata instance between FullConfigInternal instances,
+    // so that plugins such as gitCommitInfoPlugin can populate metadata once.
+    userConfig.metadata = userConfig.metadata || {};
 
     this.config = {
       configFile: resolvedConfigFile,
       rootDir: pathResolve(configDir, userConfig.testDir) || configDir,
+      failOnFlakyTests: takeFirst(configCLIOverrides.failOnFlakyTests, userConfig.failOnFlakyTests, false),
       forbidOnly: takeFirst(configCLIOverrides.forbidOnly, userConfig.forbidOnly, false),
       fullyParallel: takeFirst(configCLIOverrides.fullyParallel, userConfig.fullyParallel, false),
-      globalSetup: takeFirst(resolveScript(userConfig.globalSetup, configDir), null),
-      globalTeardown: takeFirst(resolveScript(userConfig.globalTeardown, configDir), null),
-      globalTimeout: takeFirst(configCLIOverrides.globalTimeout, userConfig.globalTimeout, 0),
+      globalSetup: this.globalSetups[0] ?? null,
+      globalTeardown: this.globalTeardowns[0] ?? null,
+      globalTimeout: takeFirst(configCLIOverrides.debug ? 0 : undefined, configCLIOverrides.globalTimeout, userConfig.globalTimeout, 0),
       grep: takeFirst(userConfig.grep, defaultGrep),
       grepInvert: takeFirst(userConfig.grepInvert, null),
-      maxFailures: takeFirst(configCLIOverrides.maxFailures, userConfig.maxFailures, 0),
-      metadata: takeFirst(userConfig.metadata, {}),
+      maxFailures: takeFirst(configCLIOverrides.debug ? 1 : undefined, configCLIOverrides.maxFailures, userConfig.maxFailures, 0),
+      metadata: metadata ?? userConfig.metadata,
       preserveOutput: takeFirst(userConfig.preserveOutput, 'always'),
       reporter: takeFirst(configCLIOverrides.reporter, resolveReporters(userConfig.reporter, configDir), [[defaultReporter]]),
-      reportSlowTests: takeFirst(userConfig.reportSlowTests, { max: 5, threshold: 15000 }),
+      reportSlowTests: takeFirst(userConfig.reportSlowTests, { max: 5, threshold: 300_000 /* 5 minutes */ }),
       quiet: takeFirst(configCLIOverrides.quiet, userConfig.quiet, false),
       projects: [],
       shard: takeFirst(configCLIOverrides.shard, userConfig.shard, null),
       updateSnapshots: takeFirst(configCLIOverrides.updateSnapshots, userConfig.updateSnapshots, 'missing'),
+      updateSourceMethod: takeFirst(configCLIOverrides.updateSourceMethod, userConfig.updateSourceMethod, 'patch'),
       version: require('../../package.json').version,
-      workers: 0,
+      workers: resolveWorkers(takeFirst(configCLIOverrides.debug ? 1 : undefined, configCLIOverrides.workers, userConfig.workers, '50%')),
       webServer: null,
     };
     for (const key in userConfig) {
@@ -104,18 +116,6 @@ export class FullConfigInternal {
     }
 
     (this.config as any)[configInternalSymbol] = this;
-
-    const workers = takeFirst(configCLIOverrides.workers, userConfig.workers, '50%');
-    if (typeof workers === 'string') {
-      if (workers.endsWith('%')) {
-        const cpus = os.cpus().length;
-        this.config.workers = Math.max(1, Math.floor(cpus * (parseInt(workers, 10) / 100)));
-      } else {
-        this.config.workers = parseInt(workers, 10);
-      }
-    } else {
-      this.config.workers = workers;
-    }
 
     const webServers = takeFirst(userConfig.webServer, null);
     if (Array.isArray(webServers)) { // multiple web server mode
@@ -130,13 +130,9 @@ export class FullConfigInternal {
     }
 
     const projectConfigs = configCLIOverrides.projects || userConfig.projects || [userConfig];
-    this.projects = projectConfigs.map(p => new FullProjectInternal(configDir, userConfig, this, p, this.configCLIOverrides, throwawayArtifactsPath));
+    this.projects = projectConfigs.map(p => new FullProjectInternal(configDir, userConfig, this, p, this.configCLIOverrides, packageJsonDir));
     resolveProjectDependencies(this.projects);
     this._assignUniqueProjectIds(this.projects);
-    setTransformConfig({
-      babelPlugins: privateConfiguration?.babelPlugins || [],
-      external: userConfig.build?.external || [],
-    });
     this.config.projects = this.projects.map(p => p.project);
   }
 
@@ -163,32 +159,33 @@ export class FullProjectInternal {
   readonly fullyParallel: boolean;
   readonly expect: Project['expect'];
   readonly respectGitIgnore: boolean;
-  readonly snapshotPathTemplate: string;
+  readonly snapshotPathTemplate: string | undefined;
+  readonly ignoreSnapshots: boolean;
+  readonly workers: number | undefined;
   id = '';
   deps: FullProjectInternal[] = [];
   teardown: FullProjectInternal | undefined;
 
-  constructor(configDir: string, config: Config, fullConfig: FullConfigInternal, projectConfig: Project, configCLIOverrides: ConfigCLIOverrides, throwawayArtifactsPath: string) {
+  constructor(configDir: string, config: Config, fullConfig: FullConfigInternal, projectConfig: Project, configCLIOverrides: ConfigCLIOverrides, packageJsonDir: string) {
     this.fullConfig = fullConfig;
     const testDir = takeFirst(pathResolve(configDir, projectConfig.testDir), pathResolve(configDir, config.testDir), fullConfig.configDir);
-    const defaultSnapshotPathTemplate = '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}{-snapshotSuffix}{ext}';
-    this.snapshotPathTemplate = takeFirst(projectConfig.snapshotPathTemplate, config.snapshotPathTemplate, defaultSnapshotPathTemplate);
+    this.snapshotPathTemplate = takeFirst(projectConfig.snapshotPathTemplate, config.snapshotPathTemplate);
 
     this.project = {
       grep: takeFirst(projectConfig.grep, config.grep, defaultGrep),
       grepInvert: takeFirst(projectConfig.grepInvert, config.grepInvert, null),
-      outputDir: takeFirst(configCLIOverrides.outputDir, pathResolve(configDir, projectConfig.outputDir), pathResolve(configDir, config.outputDir), path.join(throwawayArtifactsPath, 'test-results')),
+      outputDir: takeFirst(configCLIOverrides.outputDir, pathResolve(configDir, projectConfig.outputDir), pathResolve(configDir, config.outputDir), path.join(packageJsonDir, 'test-results')),
       // Note: we either apply the cli override for repeatEach or not, depending on whether the
       // project is top-level vs dependency. See collectProjectsAndTestFiles in loadUtils.
       repeatEach: takeFirst(projectConfig.repeatEach, config.repeatEach, 1),
       retries: takeFirst(configCLIOverrides.retries, projectConfig.retries, config.retries, 0),
-      metadata: takeFirst(projectConfig.metadata, config.metadata, undefined),
+      metadata: takeFirst(projectConfig.metadata, config.metadata, {}),
       name: takeFirst(projectConfig.name, config.name, ''),
       testDir,
       snapshotDir: takeFirst(pathResolve(configDir, projectConfig.snapshotDir), pathResolve(configDir, config.snapshotDir), testDir),
       testIgnore: takeFirst(projectConfig.testIgnore, config.testIgnore, []),
       testMatch: takeFirst(projectConfig.testMatch, config.testMatch, '**/*.@(spec|test).?(c|m)[jt]s?(x)'),
-      timeout: takeFirst(configCLIOverrides.timeout, projectConfig.timeout, config.timeout, defaultTimeout),
+      timeout: takeFirst(configCLIOverrides.debug ? 0 : undefined, configCLIOverrides.timeout, projectConfig.timeout, config.timeout, defaultTimeout),
       use: mergeObjects(config.use, projectConfig.use, configCLIOverrides.use),
       dependencies: projectConfig.dependencies || [],
       teardown: projectConfig.teardown,
@@ -199,7 +196,11 @@ export class FullProjectInternal {
       const stylePaths = Array.isArray(this.expect.toHaveScreenshot.stylePath) ? this.expect.toHaveScreenshot.stylePath : [this.expect.toHaveScreenshot.stylePath];
       this.expect.toHaveScreenshot.stylePath = stylePaths.map(stylePath => path.resolve(configDir, stylePath));
     }
-    this.respectGitIgnore = !projectConfig.testDir && !config.testDir;
+    this.respectGitIgnore = takeFirst(projectConfig.respectGitIgnore, config.respectGitIgnore, !projectConfig.testDir && !config.testDir);
+    this.ignoreSnapshots = takeFirst(configCLIOverrides.ignoreSnapshots,  projectConfig.ignoreSnapshots, config.ignoreSnapshots, false);
+    this.workers = projectConfig.workers ? resolveWorkers(projectConfig.workers) : undefined;
+    if (configCLIOverrides.debug && this.workers)
+      this.workers = 1;
   }
 }
 
@@ -223,6 +224,20 @@ function resolveReporters(reporters: Config['reporter'], rootDir: string): Repor
       return [id, arg];
     return [require.resolve(id, { paths: [rootDir] }), arg];
   });
+}
+
+function resolveWorkers(workers: string | number): number {
+  if (typeof workers === 'string') {
+    if (workers.endsWith('%')) {
+      const cpus = os.cpus().length;
+      return Math.max(1, Math.floor(cpus * (parseInt(workers, 10) / 100)));
+    }
+    const parsedWorkers = parseInt(workers, 10);
+    if (isNaN(parsedWorkers))
+      throw new Error(`Workers ${workers} must be a number or percentage.`);
+    return parsedWorkers;
+  }
+  return workers;
 }
 
 function resolveProjectDependencies(projects: FullProjectInternal[]) {
@@ -267,10 +282,10 @@ export function toReporters(reporters: BuiltInReporter | ReporterDescription[] |
   return reporters;
 }
 
-export const builtInReporters = ['list', 'line', 'dot', 'json', 'junit', 'null', 'github', 'html', 'blob', 'markdown'] as const;
+export const builtInReporters = ['list', 'line', 'dot', 'json', 'junit', 'null', 'github', 'html', 'blob'] as const;
 export type BuiltInReporter = typeof builtInReporters[number];
 
-export type ContextReuseMode = 'none' | 'force' | 'when-possible';
+export type ContextReuseMode = 'none' | 'when-possible';
 
 function resolveScript(id: string | undefined, rootDir: string): string | undefined {
   if (!id)

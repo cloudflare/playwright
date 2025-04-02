@@ -17,8 +17,8 @@
 
 import type { CRSession } from './crConnection';
 import type { Protocol } from './protocol';
-import type * as dom from '../dom';
 import type * as accessibility from '../accessibility';
+import type * as dom from '../dom';
 import type * as channels from '@protocol/channels';
 
 export async function getAccessibilityTree(client: CRSession, needle?: dom.ElementHandle): Promise<{tree: accessibility.AXNode, needle: accessibility.AXNode | null}> {
@@ -299,6 +299,6 @@ class CRAXNode implements accessibility.AXNode {
       for (const childId of node._payload.childIds || [])
         node._children.push(nodeById.get(childId)!);
     }
-    return nodeById.values().next().value;
+    return nodeById.values().next().value!;
   }
 }

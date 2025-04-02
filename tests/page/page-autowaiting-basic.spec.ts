@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+import { stripAnsi } from 'tests/config/utils';
 import type { TestServer } from '../config/testserver';
 import { test as it, expect } from './pageTest';
 
@@ -96,10 +97,10 @@ it('should work with noWaitAfter: true', async ({ page, server }) => {
   await page.click('a', { noWaitAfter: true });
 });
 
-it('should work with dblclick noWaitAfter: true', async ({ page, server }) => {
+it('should work with dblclick without noWaitAfter when navigation is stalled', async ({ page, server }) => {
   server.setRoute('/empty.html', async () => {});
   await page.setContent(`<a id="anchor" href="${server.EMPTY_PAGE}">empty.html</a>`);
-  await page.dblclick('a', { noWaitAfter: true });
+  await page.dblclick('a');
 });
 
 it('should work with waitForLoadState(load)', async ({ page, server }) => {
@@ -138,4 +139,22 @@ it('should report navigation in the log when clicking anchor', async ({ page, se
   expect(error.message).toContain('page.click: Timeout 5000ms exceeded.');
   expect(error.message).toContain('waiting for scheduled navigations to finish');
   expect(error.message).toContain(`navigated to "${server.PREFIX + '/frames/one-frame.html'}"`);
+});
+
+it('should report and collapse log in action', async ({ page, server, mode }) => {
+  await page.setContent(`<input id='checkbox' type='checkbox' style="visibility: hidden"></input>`);
+  const error = await page.locator('input').click({ timeout: 5000 }).catch(e => e);
+  const message = stripAnsi(error.message);
+  expect(message).toContain(`Call log:`);
+  expect(message).toMatch(/\d+ × waiting for/);
+  const logLines = message.substring(message.indexOf('Call log:')).split('\n');
+  expect(logLines.length).toBeLessThan(30);
+});
+
+it('should report and collapse log in expect', async ({ page, server, mode }) => {
+  await page.setContent(`<input id='checkbox' type='checkbox' style="visibility: hidden"></input>`);
+  const error = await expect(page.locator('input')).toBeVisible({ timeout: 5000 }).catch(e => e);
+  const message = stripAnsi(error.message);
+  expect(message).toContain(`Call log:`);
+  expect(message).toMatch(/\d+ × locator resolved to/);
 });

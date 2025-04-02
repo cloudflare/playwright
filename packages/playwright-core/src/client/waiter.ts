@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-import type { EventEmitter } from 'events';
-import { rewriteErrorMessage } from '../utils/stackTrace';
 import { TimeoutError } from './errors';
-import { createGuid } from '../utils';
-import type * as channels from '@protocol/channels';
+import { rewriteErrorMessage } from '../utils/isomorphic/stackTrace';
+
 import type { ChannelOwner } from './channelOwner';
+import type * as channels from '@protocol/channels';
+import type { EventEmitter } from 'events';
+import type { Zone } from './platform';
 
 export class Waiter {
   private _dispose: (() => void)[];
@@ -29,10 +30,13 @@ export class Waiter {
   private _channelOwner: ChannelOwner<channels.EventTargetChannel>;
   private _waitId: string;
   private _error: string | undefined;
+  private _savedZone: Zone;
 
   constructor(channelOwner: ChannelOwner<channels.EventTargetChannel>, event: string) {
-    this._waitId = createGuid();
+    this._waitId = channelOwner._platform.createGuid();
     this._channelOwner = channelOwner;
+    this._savedZone = channelOwner._platform.zones.current().pop();
+
     this._channelOwner._channel.waitForEventInfo({ info: { waitId: this._waitId, phase: 'before', event } }).catch(() => {});
     this._dispose = [
       () => this._channelOwner._wrapApiCall(async () => {
@@ -46,12 +50,12 @@ export class Waiter {
   }
 
   async waitForEvent<T = void>(emitter: EventEmitter, event: string, predicate?: (arg: T) => boolean | Promise<boolean>): Promise<T> {
-    const { promise, dispose } = waitForEvent(emitter, event, predicate);
+    const { promise, dispose } = waitForEvent(emitter, event, this._savedZone, predicate);
     return await this.waitForPromise(promise, dispose);
   }
 
   rejectOnEvent<T = void>(emitter: EventEmitter, event: string, error: Error | (() => Error), predicate?: (arg: T) => boolean | Promise<boolean>) {
-    const { promise, dispose } = waitForEvent(emitter, event, predicate);
+    const { promise, dispose } = waitForEvent(emitter, event, this._savedZone, predicate);
     this._rejectOn(promise.then(() => { throw (typeof error === 'function' ? error() : error); }), dispose);
   }
 
@@ -92,8 +96,8 @@ export class Waiter {
   log(s: string) {
     this._logs.push(s);
     this._channelOwner._wrapApiCall(async () => {
-      await this._channelOwner._channel.waitForEventInfo({ info: { waitId: this._waitId, phase: 'log', message: s } }).catch(() => {});
-    }, true);
+      await this._channelOwner._channel.waitForEventInfo({ info: { waitId: this._waitId, phase: 'log', message: s } });
+    }, true).catch(() => {});
   }
 
   private _rejectOn(promise: Promise<any>, dispose?: () => void) {
@@ -103,19 +107,21 @@ export class Waiter {
   }
 }
 
-function waitForEvent<T = void>(emitter: EventEmitter, event: string, predicate?: (arg: T) => boolean | Promise<boolean>): { promise: Promise<T>, dispose: () => void } {
+function waitForEvent<T = void>(emitter: EventEmitter, event: string, savedZone: Zone, predicate?: (arg: T) => boolean | Promise<boolean>): { promise: Promise<T>, dispose: () => void } {
   let listener: (eventArg: any) => void;
   const promise = new Promise<T>((resolve, reject) => {
     listener = async (eventArg: any) => {
-      try {
-        if (predicate && !(await predicate(eventArg)))
-          return;
-        emitter.removeListener(event, listener);
-        resolve(eventArg);
-      } catch (e) {
-        emitter.removeListener(event, listener);
-        reject(e);
-      }
+      await savedZone.run(async () => {
+        try {
+          if (predicate && !(await predicate(eventArg)))
+            return;
+          emitter.removeListener(event, listener);
+          resolve(eventArg);
+        } catch (e) {
+          emitter.removeListener(event, listener);
+          reject(e);
+        }
+      });
     };
     emitter.addListener(event, listener);
   });

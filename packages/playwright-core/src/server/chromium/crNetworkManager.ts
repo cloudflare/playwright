@@ -15,20 +15,22 @@
  * limitations under the License.
  */
 
-import type { CRSession } from './crConnection';
-import type { Page } from '../page';
+import { assert, headersArrayToObject, headersObjectToArray } from '../../utils';
+import { eventsHelper } from '../utils/eventsHelper';
 import { helper } from '../helper';
-import type { RegisteredListener } from '../../utils/eventsHelper';
-import { eventsHelper } from '../../utils/eventsHelper';
-import type { Protocol } from './protocol';
 import * as network from '../network';
+import { isProtocolError, isSessionClosedError } from '../protocolError';
+
+import type { CRSession } from './crConnection';
+import type { Protocol } from './protocol';
+import type { RegisteredListener } from '../utils/eventsHelper';
 import type * as contexts from '../browserContext';
 import type * as frames from '../frames';
+import type { Page } from '../page';
 import type * as types from '../types';
 import type { CRPage } from './crPage';
-import { assert, headersArrayToObject, headersObjectToArray } from '../../utils';
 import type { CRServiceWorker } from './crServiceWorker';
-import { isProtocolError, isSessionClosedError } from '../protocolError';
+
 
 type SessionInfo = {
   session: CRSession;
@@ -317,7 +319,7 @@ export class CRNetworkManager {
       requestPausedSessionInfo!.session._sendMayFail('Fetch.fulfillRequest', {
         requestId: requestPausedEvent.requestId,
         responseCode: 204,
-        responsePhrase: network.STATUS_TEXTS['204'],
+        responsePhrase: network.statusText(204),
         responseHeaders,
         body: '',
       });
@@ -332,12 +334,13 @@ export class CRNetworkManager {
     }
 
     let route = null;
+    let headersOverride: types.HeadersArray | undefined;
     if (requestPausedEvent) {
       // We do not support intercepting redirects.
       if (redirectedFrom || (!this._userRequestInterceptionEnabled && this._protocolRequestInterceptionEnabled)) {
         // Chromium does not preserve header overrides between redirects, so we have to do it ourselves.
-        const headers = redirectedFrom?._originalRequestRoute?._alreadyContinuedParams?.headers;
-        requestPausedSessionInfo!.session._sendMayFail('Fetch.continueRequest', { requestId: requestPausedEvent.requestId, headers });
+        headersOverride = redirectedFrom?._originalRequestRoute?._alreadyContinuedParams?.headers;
+        requestPausedSessionInfo!.session._sendMayFail('Fetch.continueRequest', { requestId: requestPausedEvent.requestId, headers: headersOverride });
       } else {
         route = new RouteImpl(requestPausedSessionInfo!.session, requestPausedEvent.requestId);
       }
@@ -353,15 +356,16 @@ export class CRNetworkManager {
       route,
       requestWillBeSentEvent,
       requestPausedEvent,
-      redirectedFrom
+      redirectedFrom,
+      headersOverride: headersOverride || null,
     });
     this._requestIdToRequest.set(requestWillBeSentEvent.requestId, request);
 
-    if (requestPausedEvent) {
-      // We will not receive extra info when intercepting the request.
+    if (route) {
+      // We may not receive extra info when intercepting the request.
       // Use the headers from the Fetch.requestPausedPayload and release the allHeaders()
       // right away, so that client can call it from the route handler.
-      request.request.setRawRequestHeaders(headersObjectToArray(requestPausedEvent.request.headers, '\n'));
+      request.request.setRawRequestHeaders(headersObjectToArray(requestPausedEvent!.request.headers, '\n'));
     }
     (this._page?._frameManager || this._serviceWorker)!.requestStarted(request.request, route || undefined);
   }
@@ -375,6 +379,10 @@ export class CRNetworkManager {
       const response = await session.send('Network.getResponseBody', { requestId: request._requestId });
       if (response.body || !expectedLength)
         return Buffer.from(response.body, response.base64Encoded ? 'base64' : 'utf8');
+
+      // Make sure no network requests sent while reading the body for fulfilled requests.
+      if (request._route?._fulfilled)
+        return Buffer.from('');
 
       // For <link prefetch we are going to receive empty body with non-empty content-length expectation. Reach out for the actual content.
       const resource = await session.send('Network.loadNetworkResource', { url: request.request.url(), frameId: this._serviceWorker ? undefined : request.request.frame()!._id, options: { disableCache: false, includeCredentials: true } });
@@ -564,8 +572,9 @@ class InterceptableRequest {
     requestWillBeSentEvent: Protocol.Network.requestWillBeSentPayload;
     requestPausedEvent: Protocol.Fetch.requestPausedPayload | undefined;
     redirectedFrom: InterceptableRequest | null;
+    headersOverride: types.HeadersArray | null;
   }) {
-    const { session, context, frame, documentId, route, requestWillBeSentEvent, requestPausedEvent, redirectedFrom, serviceWorker } = options;
+    const { session, context, frame, documentId, route, requestWillBeSentEvent, requestPausedEvent, redirectedFrom, serviceWorker, headersOverride } = options;
     this.session = session;
     this._timestamp = requestWillBeSentEvent.timestamp;
     this._wallTime = requestWillBeSentEvent.wallTime;
@@ -583,10 +592,11 @@ class InterceptableRequest {
     } = requestPausedEvent ? requestPausedEvent.request : requestWillBeSentEvent.request;
     const type = (requestWillBeSentEvent.type || '').toLowerCase();
     let postDataBuffer = null;
-    if (postDataEntries && postDataEntries.length && postDataEntries[0].bytes)
-      postDataBuffer = Buffer.from(postDataEntries[0].bytes, 'base64');
+    const entries = postDataEntries?.filter(entry => entry.bytes);
+    if (entries && entries.length)
+      postDataBuffer = Buffer.concat(entries.map(entry => Buffer.from(entry.bytes!, 'base64')));
 
-    this.request = new network.Request(context, frame, serviceWorker, redirectedFrom?.request || null, documentId, url, type, method, postDataBuffer, headersObjectToArray(headers));
+    this.request = new network.Request(context, frame, serviceWorker, redirectedFrom?.request || null, documentId, url, type, method, postDataBuffer,  headersOverride || headersObjectToArray(headers));
   }
 }
 
@@ -594,13 +604,14 @@ class RouteImpl implements network.RouteDelegate {
   private readonly _session: CRSession;
   private _interceptionId: string;
   _alreadyContinuedParams: Protocol.Fetch.continueRequestParameters | undefined;
+  _fulfilled: boolean = false;
 
   constructor(session: CRSession, interceptionId: string) {
     this._session = session;
     this._interceptionId = interceptionId;
   }
 
-  async continue(request: network.Request, overrides: types.NormalizedContinueOverrides): Promise<void> {
+  async continue(overrides: types.NormalizedContinueOverrides): Promise<void> {
     this._alreadyContinuedParams = {
       requestId: this._interceptionId!,
       url: overrides.url,
@@ -614,6 +625,7 @@ class RouteImpl implements network.RouteDelegate {
   }
 
   async fulfill(response: types.NormalizedFulfillResponse) {
+    this._fulfilled = true;
     const body = response.isBase64 ? response.body : Buffer.from(response.body).toString('base64');
 
     const responseHeaders = splitSetCookieHeader(response.headers);
@@ -621,7 +633,7 @@ class RouteImpl implements network.RouteDelegate {
       await this._session.send('Fetch.fulfillRequest', {
         requestId: this._interceptionId!,
         responseCode: response.status,
-        responsePhrase: network.STATUS_TEXTS[String(response.status)],
+        responsePhrase: network.statusText(response.status),
         responseHeaders,
         body,
       });
@@ -647,6 +659,8 @@ async function catchDisallowedErrors(callback: () => Promise<void>) {
     return await callback();
   } catch (e) {
     if (isProtocolError(e) && e.message.includes('Invalid http status code or phrase'))
+      throw e;
+    if (isProtocolError(e) && e.message.includes('Unsafe header'))
       throw e;
   }
 }

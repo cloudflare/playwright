@@ -15,17 +15,21 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
+import Module from 'module';
 import path from 'path';
 import url from 'url';
-import { sourceMapSupport, pirates } from '../utilsBundle';
+
+import { loadTsConfig } from '../third_party/tsconfig-loader';
+import { createFileMatcher, fileIsModule, resolveImportSpecifierAfterMapping } from '../util';
+import { pirates, sourceMapSupport } from '../utilsBundle';
+import { belongsToNodeModules, currentFileDepsCollector, getFromCompilationCache, installSourceMapSupport } from './compilationCache';
+
+import type { BabelPlugin, BabelTransformFunction } from './babelBundle';
 import type { Location } from '../../types/testReporter';
 import type { LoadedTsConfig } from '../third_party/tsconfig-loader';
-import { tsConfigLoader } from '../third_party/tsconfig-loader';
-import Module from 'module';
-import type { BabelPlugin, BabelTransformFunction } from './babelBundle';
-import { createFileMatcher, fileIsModule, resolveImportSpecifierExtension } from '../util';
 import type { Matcher } from '../util';
-import { getFromCompilationCache, currentFileDepsCollector, belongsToNodeModules, installSourceMapSupportIfNeeded } from './compilationCache';
+
 
 const version = require('../../package.json').version;
 
@@ -57,6 +61,17 @@ export function transformConfig(): TransformConfig {
   return _transformConfig;
 }
 
+let _singleTSConfigPath: string | undefined;
+let _singleTSConfig: ParsedTsConfigData[] | undefined;
+
+export function setSingleTSConfig(value: string | undefined) {
+  _singleTSConfigPath = value;
+}
+
+export function singleTSConfig(): string | undefined {
+  return _singleTSConfigPath;
+}
+
 function validateTsConfig(tsconfig: LoadedTsConfig): ParsedTsConfigData {
   // When no explicit baseUrl is set, resolve paths relative to the tsconfig file.
   // See https://www.typescriptlang.org/tsconfig#paths
@@ -71,12 +86,47 @@ function validateTsConfig(tsconfig: LoadedTsConfig): ParsedTsConfigData {
 }
 
 function loadAndValidateTsconfigsForFile(file: string): ParsedTsConfigData[] {
-  const cwd = path.dirname(file);
-  if (!cachedTSConfigs.has(cwd)) {
-    const loaded = tsConfigLoader({ cwd });
-    cachedTSConfigs.set(cwd, loaded.map(validateTsConfig));
+  if (_singleTSConfigPath && !_singleTSConfig)
+    _singleTSConfig = loadTsConfig(_singleTSConfigPath).map(validateTsConfig);
+  if (_singleTSConfig)
+    return _singleTSConfig;
+  return loadAndValidateTsconfigsForFolder(path.dirname(file));
+}
+
+function loadAndValidateTsconfigsForFolder(folder: string): ParsedTsConfigData[] {
+  const foldersWithConfig: string[] = [];
+  let currentFolder = path.resolve(folder);
+  let result: ParsedTsConfigData[] | undefined;
+  while (true) {
+    const cached = cachedTSConfigs.get(currentFolder);
+    if (cached) {
+      result = cached;
+      break;
+    }
+
+    foldersWithConfig.push(currentFolder);
+
+    for (const name of ['tsconfig.json', 'jsconfig.json']) {
+      const configPath = path.join(currentFolder, name);
+      if (fs.existsSync(configPath)) {
+        const loaded = loadTsConfig(configPath);
+        result = loaded.map(validateTsConfig);
+        break;
+      }
+    }
+    if (result)
+      break;
+
+    const parentFolder = path.resolve(currentFolder, '../');
+    if (currentFolder === parentFolder)
+      break;
+    currentFolder = parentFolder;
   }
-  return cachedTSConfigs.get(cwd)!;
+
+  result = result || [];
+  for (const folder of foldersWithConfig)
+    cachedTSConfigs.set(folder, result);
+  return result;
 }
 
 const pathSeparator = process.platform === 'win32' ? ';' : ':';
@@ -89,8 +139,13 @@ export function resolveHook(filename: string, specifier: string): string | undef
     return;
 
   if (isRelativeSpecifier(specifier))
-    return resolveImportSpecifierExtension(path.resolve(path.dirname(filename), specifier));
+    return resolveImportSpecifierAfterMapping(path.resolve(path.dirname(filename), specifier), false);
 
+  /**
+   * TypeScript discourages path-mapping into node_modules:
+   * https://www.typescriptlang.org/docs/handbook/modules/reference.html#paths-should-not-point-to-monorepo-packages-or-node_modules-packages
+   * However, if path-mapping doesn't yield a result, TypeScript falls back to the default resolution through node_modules.
+   */
   const isTypeScript = filename.endsWith('.ts') || filename.endsWith('.tsx');
   const tsconfigs = loadAndValidateTsconfigsForFile(filename);
   for (const tsconfig of tsconfigs) {
@@ -132,7 +187,7 @@ export function resolveHook(filename: string, specifier: string): string | undef
         if (value.includes('*'))
           candidate = candidate.replace('*', matchedPartOfSpecifier);
         candidate = path.resolve(tsconfig.pathsBase!, candidate);
-        const existing = resolveImportSpecifierExtension(candidate);
+        const existing = resolveImportSpecifierAfterMapping(candidate, true);
         if (existing) {
           longestPrefixLength = keyPrefix.length;
           pathMatchedByLongestPrefix = existing;
@@ -146,7 +201,7 @@ export function resolveHook(filename: string, specifier: string): string | undef
   if (path.isAbsolute(specifier)) {
     // Handle absolute file paths like `import '/path/to/file'`
     // Do not handle module imports like `import 'fs'`
-    return resolveImportSpecifierExtension(specifier);
+    return resolveImportSpecifierAfterMapping(specifier, false);
   }
 }
 
@@ -163,7 +218,6 @@ export function setTransformData(pluginName: string, value: any) {
 }
 
 export function transformHook(originalCode: string, filename: string, moduleUrl?: string): { code: string, serializedCache?: any } {
-  const isTypeScript = filename.endsWith('.ts') || filename.endsWith('.tsx') || filename.endsWith('.mts') || filename.endsWith('.cts');
   const hasPreprocessor =
       process.env.PW_TEST_SOURCE_TRANSFORM &&
       process.env.PW_TEST_SOURCE_TRANSFORM_SCOPE &&
@@ -181,9 +235,10 @@ export function transformHook(originalCode: string, filename: string, moduleUrl?
 
   const { babelTransform }: { babelTransform: BabelTransformFunction } = require('./babelBundle');
   transformData = new Map<string, any>();
-  const { code, map } = babelTransform(originalCode, filename, isTypeScript, !!moduleUrl, pluginsPrologue, pluginsEpilogue);
-  if (!code)
-    return { code: '', serializedCache };
+  const babelResult = babelTransform(originalCode, filename, !!moduleUrl, pluginsPrologue, pluginsEpilogue);
+  if (!babelResult?.code)
+    return { code: originalCode, serializedCache };
+  const { code, map } = babelResult;
   const added = addToCache!(code, map, transformData);
   return { code, serializedCache: added.serializedCache };
 }
@@ -201,33 +256,33 @@ function calculateHash(content: string, filePath: string, isModule: boolean, plu
 }
 
 export async function requireOrImport(file: string) {
-  const revertBabelRequire = installTransform();
+  installTransformIfNeeded();
   const isModule = fileIsModule(file);
-  try {
-    const esmImport = () => eval(`import(${JSON.stringify(url.pathToFileURL(file))})`);
-    if (isModule)
-      return await esmImport();
-    const result = require(file);
-    const depsCollector = currentFileDepsCollector();
-    if (depsCollector) {
-      const module = require.cache[file];
-      if (module)
-        collectCJSDependencies(module, depsCollector);
-    }
-    return result;
-  } finally {
-    revertBabelRequire();
+  const esmImport = () => eval(`import(${JSON.stringify(url.pathToFileURL(file))})`);
+  if (isModule)
+    return await esmImport();
+  const result = require(file);
+  const depsCollector = currentFileDepsCollector();
+  if (depsCollector) {
+    const module = require.cache[file];
+    if (module)
+      collectCJSDependencies(module, depsCollector);
   }
+  return result;
 }
 
-function installTransform(): () => void {
-  installSourceMapSupportIfNeeded();
+let transformInstalled = false;
 
-  let reverted = false;
+function installTransformIfNeeded() {
+  if (transformInstalled)
+    return;
+  transformInstalled = true;
+
+  installSourceMapSupport();
 
   const originalResolveFilename = (Module as any)._resolveFilename;
   function resolveFilename(this: any, specifier: string, parent: Module, ...rest: any[]) {
-    if (!reverted && parent) {
+    if (parent) {
       const resolved = resolveHook(parent.filename, specifier);
       if (resolved !== undefined)
         specifier = resolved;
@@ -236,17 +291,11 @@ function installTransform(): () => void {
   }
   (Module as any)._resolveFilename = resolveFilename;
 
-  const revertPirates = pirates.addHook((code: string, filename: string) => {
+  pirates.addHook((code: string, filename: string) => {
     if (!shouldTransform(filename))
       return code;
     return transformHook(code, filename).code;
   }, { exts: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.mts', '.cjs', '.cts'] });
-
-  return () => {
-    reverted = true;
-    (Module as any)._resolveFilename = originalResolveFilename;
-    revertPirates();
-  };
 }
 
 const collectCJSDependencies = (module: Module, dependencies: Set<string>) => {

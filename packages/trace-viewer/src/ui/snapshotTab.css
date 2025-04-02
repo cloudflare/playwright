@@ -15,17 +15,17 @@
 */
 
 .snapshot-tab {
-  display: flex;
-  flex: auto;
-  flex-direction: column;
   align-items: stretch;
   outline: none;
-  --browser-frame-header-height: 40px;
   overflow: hidden;
 }
 
 .snapshot-tab .toolbar {
   background-color: var(--vscode-sideBar-background);
+}
+
+.snapshot-tab .toolbar .pick-locator {
+  margin: 0 4px;
 }
 
 .snapshot-controls {
@@ -69,6 +69,7 @@
   margin: 1px;
   padding: 10px;
   position: relative;
+  --browser-frame-header-height: 40px;
 }
 
 .snapshot-container {
@@ -100,29 +101,6 @@ iframe.snapshot-visible[name=snapshot] {
 .no-snapshot {
   text-align: center;
   padding: 50px;
-}
-
-.popout-icon {
-  position: absolute;
-  top: 0;
-  right: 0;
-  color: var(--vscode-sideBarTitle-foreground);
-  font-size: 14px;
-  z-index: 100;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-}
-
-.popout-icon:not(.popout-disabled):hover {
-  color: var(--vscode-foreground);
-}
-
-.popout-icon.popout-disabled {
-  opacity: var(--vscode-disabledForeground);
 }
 
 .snapshot-tab .cm-wrapper {

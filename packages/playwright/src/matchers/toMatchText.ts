@@ -15,21 +15,22 @@
  */
 
 
-import type { ExpectedTextValue } from '@protocol/channels';
-import { isRegExp, isString } from 'playwright-core/lib/utils';
-import { expectTypes, callLogText } from '../util';
+import { colors } from 'playwright-core/lib/utils';
+
+import { callLogText, expectTypes } from '../util';
 import {
-  type ExpectMatcherContext,
   printReceivedStringContainExpectedResult,
   printReceivedStringContainExpectedSubstring
 } from './expect';
-import { matcherHint } from './matcherHint';
+import { kNoElementsFoundError, matcherHint } from './matcherHint';
+import { EXPECTED_COLOR } from '../common/expectBundle';
+
 import type { MatcherResult } from './matcherHint';
-import { currentExpectTimeout } from '../common/globals';
+import type { ExpectMatcherState } from '../../types/test';
 import type { Locator } from 'playwright-core';
 
 export async function toMatchText(
-  this: ExpectMatcherContext,
+  this: ExpectMatcherState,
   matcherName: string,
   receiver: Locator,
   receiverType: string,
@@ -48,55 +49,68 @@ export async function toMatchText(
     !(typeof expected === 'string') &&
     !(expected && typeof expected.test === 'function')
   ) {
-    throw new Error(
-        this.utils.matcherErrorMessage(
-            matcherHint(this, receiver, matcherName, receiver, expected, matcherOptions),
-            `${this.utils.EXPECTED_COLOR(
-                'expected',
-            )} value must be a string or regular expression`,
-            this.utils.printWithType('Expected', expected, this.utils.printExpected),
-        ),
-    );
+    // Same format as jest's matcherErrorMessage
+    throw new Error([
+      matcherHint(this, receiver, matcherName, receiver, expected, matcherOptions),
+      `${colors.bold('Matcher error')}: ${EXPECTED_COLOR('expected',)} value must be a string or regular expression`,
+      this.utils.printWithType('Expected', expected, this.utils.printExpected)
+    ].join('\n\n'));
   }
 
-  const timeout = currentExpectTimeout(options);
+  const timeout = options.timeout ?? this.timeout;
 
   const { matches: pass, received, log, timedOut } = await query(!!this.isNot, timeout);
+  if (pass === !this.isNot) {
+    return {
+      name: matcherName,
+      message: () => '',
+      pass,
+      expected
+    };
+  }
+
   const stringSubstring = options.matchSubstring ? 'substring' : 'string';
   const receivedString = received || '';
-  const message = pass
-    ? () =>
-      typeof expected === 'string'
-        ? matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
-        `Expected ${stringSubstring}: not ${this.utils.printExpected(expected)}\n` +
-        `Received string: ${printReceivedStringContainExpectedSubstring(
-            receivedString,
-            receivedString.indexOf(expected),
-            expected.length,
-        )}` + callLogText(log)
-        : matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
-        `Expected pattern: not ${this.utils.printExpected(expected)}\n` +
-        `Received string: ${printReceivedStringContainExpectedResult(
-            receivedString,
-            typeof expected.exec === 'function'
-              ? expected.exec(receivedString)
-              : null,
-        )}` + callLogText(log)
-    : () => {
-      const labelExpected = `Expected ${typeof expected === 'string' ? stringSubstring : 'pattern'
-      }`;
-      const labelReceived = 'Received string';
+  const messagePrefix = matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined);
+  const notFound = received === kNoElementsFoundError;
 
-      return (
-        matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined) +
-        this.utils.printDiffOrStringify(
-            expected,
-            receivedString,
-            labelExpected,
-            labelReceived,
-            this.expand !== false,
-        )) + callLogText(log);
-    };
+  let printedReceived: string | undefined;
+  let printedExpected: string | undefined;
+  let printedDiff: string | undefined;
+  if (pass) {
+    if (typeof expected === 'string') {
+      if (notFound) {
+        printedExpected = `Expected ${stringSubstring}: not ${this.utils.printExpected(expected)}`;
+        printedReceived = `Received: ${received}`;
+      } else {
+        printedExpected = `Expected ${stringSubstring}: not ${this.utils.printExpected(expected)}`;
+        const formattedReceived = printReceivedStringContainExpectedSubstring(receivedString, receivedString.indexOf(expected), expected.length);
+        printedReceived = `Received string: ${formattedReceived}`;
+      }
+    } else {
+      if (notFound) {
+        printedExpected = `Expected pattern: not ${this.utils.printExpected(expected)}`;
+        printedReceived = `Received: ${received}`;
+      } else {
+        printedExpected = `Expected pattern: not ${this.utils.printExpected(expected)}`;
+        const formattedReceived = printReceivedStringContainExpectedResult(receivedString, typeof expected.exec === 'function' ? expected.exec(receivedString) : null);
+        printedReceived = `Received string: ${formattedReceived}`;
+      }
+    }
+  } else {
+    const labelExpected = `Expected ${typeof expected === 'string' ? stringSubstring : 'pattern'}`;
+    if (notFound) {
+      printedExpected = `${labelExpected}: ${this.utils.printExpected(expected)}`;
+      printedReceived = `Received: ${received}`;
+    } else {
+      printedDiff = this.utils.printDiffOrStringify(expected, receivedString, labelExpected, 'Received string', false);
+    }
+  }
+
+  const message = () => {
+    const resultDetails = printedDiff ? printedDiff : printedExpected + '\n' + printedReceived;
+    return messagePrefix + resultDetails + callLogText(log);
+  };
 
   return {
     name: matcherName,
@@ -107,15 +121,4 @@ export async function toMatchText(
     log,
     timeout: timedOut ? timeout : undefined,
   };
-}
-
-export function toExpectedTextValues(items: (string | RegExp)[], options: { matchSubstring?: boolean, normalizeWhiteSpace?: boolean, ignoreCase?: boolean } = {}): ExpectedTextValue[] {
-  return items.map(i => ({
-    string: isString(i) ? i : undefined,
-    regexSource: isRegExp(i) ? i.source : undefined,
-    regexFlags: isRegExp(i) ? i.flags : undefined,
-    matchSubstring: options.matchSubstring,
-    ignoreCase: options.ignoreCase,
-    normalizeWhiteSpace: options.normalizeWhiteSpace,
-  }));
 }

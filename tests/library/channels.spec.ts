@@ -45,6 +45,8 @@ it('should scope context handles', async ({ browserType, server, expectScopeStat
       { _guid: 'android', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [
         { _guid: 'browser', objects: [] }
       ] },
@@ -65,6 +67,8 @@ it('should scope context handles', async ({ browserType, server, expectScopeStat
     _guid: '',
     objects: [
       { _guid: 'android', objects: [] },
+      { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [
@@ -103,6 +107,8 @@ it('should scope CDPSession handles', async ({ browserType, browserName, expectS
       { _guid: 'android', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [
         { _guid: 'browser', objects: [] }
       ] },
@@ -119,6 +125,8 @@ it('should scope CDPSession handles', async ({ browserType, browserName, expectS
     _guid: '',
     objects: [
       { _guid: 'android', objects: [] },
+      { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [
@@ -147,6 +155,8 @@ it('should scope browser handles', async ({ browserType, expectScopeState }) => 
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
       { _guid: 'electron', objects: [] },
       { _guid: 'localUtils', objects: [] },
       { _guid: 'Playwright', objects: [] },
@@ -161,6 +171,8 @@ it('should scope browser handles', async ({ browserType, expectScopeState }) => 
     _guid: '',
     objects: [
       { _guid: 'android', objects: [] },
+      { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [
@@ -199,6 +211,8 @@ it('should not generate dispatchers for subresources w/o listeners', async ({ pa
       { _guid: 'android', objects: [] },
       { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
+      { _guid: 'browser-type', objects: [] },
       { _guid: 'browser-type', objects: [
         {
           _guid: 'browser', objects: [
@@ -225,7 +239,7 @@ it('should not generate dispatchers for subresources w/o listeners', async ({ pa
   });
 });
 
-it('should work with the domain module', async ({ browserType, server, browserName }) => {
+it('should work with the domain module', async ({ browserType, server, browserName, channel }) => {
   const local = domain.create();
   local.run(() => { });
   let err;
@@ -248,7 +262,7 @@ it('should work with the domain module', async ({ browserType, server, browserNa
   if (browserName === 'firefox')
     expect(message).toBe('CLOSE_ABNORMAL');
   else
-    expect(message).toContain(': 400');
+    expect(message).toContain(channel?.includes('msedge') ? '' : ': 400');
 
   await browser.close();
 
@@ -268,6 +282,14 @@ it('exposeFunction should not leak', async ({ page, expectScopeState, server }) 
     'objects': [
       {
         '_guid': 'android',
+        'objects': [],
+      },
+      {
+        '_guid': 'browser-type',
+        'objects': [],
+      },
+      {
+        '_guid': 'browser-type',
         'objects': [],
       },
       {

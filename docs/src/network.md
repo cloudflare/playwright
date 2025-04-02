@@ -10,7 +10,7 @@ Playwright provides APIs to **monitor** and **modify** browser network traffic, 
 
 ## Mock APIs
 
-Check out our [API mocking guide](./mock.md) to learn more on how to 
+Check out our [API mocking guide](./mock.md) to learn more on how to
 - mock API requests and never hit the API
 - perform the API request and modify the response
 - use HAR files to mock network requests.
@@ -115,8 +115,7 @@ await page.GotoAsync("https://example.com");
 You can configure pages to load over the HTTP(S) proxy or SOCKSv5. Proxy can be either set globally
 for the entire browser, or for each browser context individually.
 
-You can optionally specify username and password for HTTP(S) proxy, you can also specify hosts to
-bypass proxy for.
+You can optionally specify username and password for HTTP(S) proxy, you can also specify hosts to bypass the [`option: Browser.newContext.proxy`] for.
 
 Here is an example of a global proxy:
 
@@ -146,8 +145,8 @@ const browser = await chromium.launch({
 ```java
 Browser browser = chromium.launch(new BrowserType.LaunchOptions()
   .setProxy(new Proxy("http://myproxy.com:3128")
-  .setUsername('usr')
-  .setPassword('pwd'));
+  .setUsername("usr")
+  .setPassword("pwd")));
 ```
 
 ```python async
@@ -179,60 +178,48 @@ await using var browser = await BrowserType.LaunchAsync(new()
 });
 ```
 
-When specifying proxy for each context individually, **Chromium on Windows** needs a hint that proxy will be set. This is done via passing a non-empty proxy server to the browser itself. Here is an example of a context-specific proxy:
+Its also possible to specify it per context:
 
-```js tab=js-test title="playwright.config.ts"
-import { defineConfig } from '@playwright/test';
-export default defineConfig({
-  use: {
-    launchOptions: {
-      // Browser proxy option is required for Chromium on Windows.
-      proxy: { server: 'per-context' }
-    },
+```js tab=js-test title="example.spec.ts"
+import { test, expect } from '@playwright/test';
+
+test('should use custom proxy on a new context', async ({ browser }) => {
+  const context = await browser.newContext({
     proxy: {
       server: 'http://myproxy.com:3128',
     }
-  }
+  });
+  const page = await context.newPage();
+
+  await context.close();
 });
 ```
 
 ```js tab=js-library
-const browser = await chromium.launch({
-  // Browser proxy option is required for Chromium on Windows.
-  proxy: { server: 'per-context' }
-});
+const browser = await chromium.launch();
 const context = await browser.newContext({
   proxy: { server: 'http://myproxy.com:3128' }
 });
 ```
 
 ```java
-Browser browser = chromium.launch(new BrowserType.LaunchOptions()
-  // Browser proxy option is required for Chromium on Windows.
-  .setProxy(new Proxy("per-context"));
-BrowserContext context = chromium.launch(new Browser.NewContextOptions()
-  .setProxy(new Proxy("http://myproxy.com:3128"));
+Browser browser = chromium.launch();
+BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+  .setProxy(new Proxy("http://myproxy.com:3128")));
 ```
 
 ```python async
-# Browser proxy option is required for Chromium on Windows.
-browser = await chromium.launch(proxy={"server": "per-context"})
+browser = await chromium.launch()
 context = await browser.new_context(proxy={"server": "http://myproxy.com:3128"})
 ```
 
 ```python sync
-# Browser proxy option is required for Chromium on Windows.
-browser = chromium.launch(proxy={"server": "per-context"})
+browser = chromium.launch()
 context = browser.new_context(proxy={"server": "http://myproxy.com:3128"})
 ```
 
 ```csharp
-var proxy = new Proxy { Server = "per-context" };
-await using var browser = await BrowserType.LaunchAsync(new()
-{
-    // Browser proxy option is required for Chromium on Windows.
-    Proxy = proxy
-});
+await using var browser = await BrowserType.LaunchAsync();
 await using var context = await browser.NewContextAsync(new()
 {
     Proxy = new Proxy { Server = "http://myproxy.com:3128" },
@@ -639,7 +626,7 @@ page.route("**/title.html", route -> {
   String body = response.text();
   body = body.replace("<title>", "<title>My prefix:");
   Map<String, String> headers = response.headers();
-  headers.put("content-type": "text/html");
+  headers.put("content-type", "text/html");
   route.fulfill(new Route.FulfillOptions()
     // Pass all fields from the response.
     .setResponse(response)
@@ -712,9 +699,34 @@ await Page.RouteAsync("**/title.html", async route =>
 });
 ```
 
+## Glob URL patterns
+
+Playwright uses simplified glob patterns for URL matching in network interception methods like [`method: Page.route`] or [`method: Page.waitForResponse`]. These patterns support basic wildcards:
+
+1. Asterisks:
+  - A single `*` matches any characters except `/`
+  - A double `**` matches any characters including `/`
+1. Question mark `?` matches only question mark `?`. If you want to match any character, use `*` instead.
+1. Curly braces `{}` can be used to match a list of options separated by commas `,`
+1. Backslash `\` can be used to escape any of special characters (note to escape backslash itself as `\\`)
+
+Examples:
+- `https://example.com/*.js` matches `https://example.com/file.js` but not `https://example.com/path/file.js`
+- `https://example.com/?page=1` matches `https://example.com/?page=1` but not `https://example.com`
+- `**/*.js` matches both `https://example.com/file.js` and `https://example.com/path/file.js`
+- `**/*.{png,jpg,jpeg}` matches all image requests
+
+Important notes:
+
+- The glob pattern must match the entire URL, not just a part of it.
+- When using globs for URL matching, consider the full URL structure, including the protocol and path separators.
+- For more complex matching requirements, consider using [RegExp] instead of glob patterns.
+
 ## WebSockets
 
-Playwright supports [WebSockets](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) inspection out of the box. Every time a WebSocket is created, the [`event: Page.webSocket`] event is fired. This event contains the [WebSocket] instance for further web socket frames inspection:
+Playwright supports [WebSockets](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) inspection, mocking and modifying out of the box. See our [API mocking guide](./mock.md#mock-websockets) to learn how to mock WebSockets.
+
+Every time a WebSocket is created, the [`event: Page.webSocket`] event is fired. This event contains the [WebSocket] instance for further web socket frames inspection:
 
 ```js
 page.on('websocket', ws => {

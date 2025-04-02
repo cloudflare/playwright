@@ -14,23 +14,26 @@
  * limitations under the License.
  */
 
-function jsx(type, props) {
+function jsx(type, props, key) {
   return {
     __pw_type: 'jsx',
     type,
     props,
+    key,
   };
 }
 
-function jsxs(type, props) {
+function jsxs(type, props, key) {
   return {
     __pw_type: 'jsx',
     type,
     props,
+    key,
   };
 }
 
-const Fragment = {};
+// this is used in <></> notation
+const Fragment = { __pw_jsx_fragment: true };
 
 module.exports = {
   Fragment,

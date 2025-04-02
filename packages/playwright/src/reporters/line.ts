@@ -14,18 +14,15 @@
  * limitations under the License.
  */
 
-import { colors, BaseReporter, formatError, formatFailure, formatTestTitle } from './base';
-import type { TestCase, Suite, TestResult, FullResult, TestStep, TestError } from '../../types/testReporter';
+import { TerminalReporter } from './base';
 
-class LineReporter extends BaseReporter {
+import type { FullResult, Suite, TestCase, TestError, TestResult, TestStep } from '../../types/testReporter';
+
+class LineReporter extends TerminalReporter {
   private _current = 0;
   private _failures = 0;
   private _lastTest: TestCase | undefined;
   private _didBegin = false;
-
-  override printsToStdio() {
-    return true;
-  }
 
   override onBegin(suite: Suite) {
     super.onBegin(suite);
@@ -54,7 +51,7 @@ class LineReporter extends BaseReporter {
       stream.write(`\u001B[1A\u001B[2K`);
     if (test && this._lastTest !== test) {
       // Write new header for the output.
-      const title = colors.dim(formatTestTitle(this.config, test));
+      const title = this.screen.colors.dim(this.formatTestTitle(test));
       stream.write(this.fitToScreen(title) + `\n`);
       this._lastTest = test;
     }
@@ -66,21 +63,18 @@ class LineReporter extends BaseReporter {
     console.log();
   }
 
-  override onTestBegin(test: TestCase, result: TestResult) {
-    super.onTestBegin(test, result);
+  onTestBegin(test: TestCase, result: TestResult) {
     ++this._current;
     this._updateLine(test, result, undefined);
   }
 
-  override onStepBegin(test: TestCase, result: TestResult, step: TestStep) {
-    super.onStepBegin(test, result, step);
-    if (step.category === 'test.step')
+  onStepBegin(test: TestCase, result: TestResult, step: TestStep) {
+    if (this.screen.isTTY && step.category === 'test.step')
       this._updateLine(test, result, step);
   }
 
-  override onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
-    super.onStepEnd(test, result, step);
-    if (step.category === 'test.step')
+  onStepEnd(test: TestCase, result: TestResult, step: TestStep) {
+    if (this.screen.isTTY && step.category === 'test.step')
       this._updateLine(test, result, step.parent);
   }
 
@@ -89,9 +83,7 @@ class LineReporter extends BaseReporter {
     if (!this.willRetry(test) && (test.outcome() === 'flaky' || test.outcome() === 'unexpected' || result.status === 'interrupted')) {
       if (!process.env.PW_TEST_DEBUG_REPORTERS)
         process.stdout.write(`\u001B[1A\u001B[2K`);
-      console.log(formatFailure(this.config, test, {
-        index: ++this._failures
-      }).message);
+      console.log(this.formatFailure(test, ++this._failures));
       console.log();
     }
   }
@@ -99,8 +91,8 @@ class LineReporter extends BaseReporter {
   private _updateLine(test: TestCase, result: TestResult, step?: TestStep) {
     const retriesPrefix = this.totalTestCount < this._current ? ` (retries)` : ``;
     const prefix = `[${this._current}/${this.totalTestCount}]${retriesPrefix} `;
-    const currentRetrySuffix = result.retry ? colors.yellow(` (retry #${result.retry})`) : '';
-    const title = formatTestTitle(this.config, test, step) + currentRetrySuffix;
+    const currentRetrySuffix = result.retry ? this.screen.colors.yellow(` (retry #${result.retry})`) : '';
+    const title = this.formatTestTitle(test, step) + currentRetrySuffix;
     if (process.env.PW_TEST_DEBUG_REPORTERS)
       process.stdout.write(`${prefix + title}\n`);
     else
@@ -110,7 +102,7 @@ class LineReporter extends BaseReporter {
   override onError(error: TestError): void {
     super.onError(error);
 
-    const message = formatError(error, colors.enabled).message + '\n';
+    const message = this.formatError(error).message + '\n';
     if (!process.env.PW_TEST_DEBUG_REPORTERS && this._didBegin)
       process.stdout.write(`\u001B[1A\u001B[2K`);
     process.stdout.write(message);

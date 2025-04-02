@@ -12,11 +12,21 @@ see [APIRequestContext].
 
 Creates new instances of [APIRequestContext].
 
+### option: APIRequest.newContext.clientCertificates = %%-context-option-clientCertificates-%%
+* since: 1.46
+
 ### option: APIRequest.newContext.useragent = %%-context-option-useragent-%%
 * since: v1.16
 
 ### option: APIRequest.newContext.extraHTTPHeaders = %%-context-option-extrahttpheaders-%%
 * since: v1.16
+
+### option: APIRequest.newContext.failOnStatusCode
+* since: v1.51
+- `failOnStatusCode` <[boolean]>
+
+Whether to throw on response codes other than 2xx and 3xx. By default response object is returned
+for all status codes.
 
 ### option: APIRequest.newContext.httpCredentials = %%-context-option-httpcredentials-%%
 * since: v1.16
@@ -26,6 +36,13 @@ Creates new instances of [APIRequestContext].
 
 ### option: APIRequest.newContext.ignoreHTTPSErrors = %%-context-option-ignorehttpserrors-%%
 * since: v1.16
+
+### option: APIRequest.newContext.maxRedirects
+* since: v1.52
+- `maxRedirects` <[int]>
+
+Maximum number of request redirects that will be followed automatically. An error will be thrown if the number is exceeded.
+Defaults to `20`. Pass `0` to not follow redirects. This can be overwritten for each request individually.
 
 ### option: APIRequest.newContext.timeout
 * since: v1.16

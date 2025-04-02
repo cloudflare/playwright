@@ -961,10 +961,24 @@ test('should complain when one test file imports another', async ({ runInlineTes
   expect(result.output).toContain(`test file "a.test.ts" should not import test file "b.test.ts"`);
 });
 
-test('should support dynamic import', async ({ runInlineTest }) => {
+test('should support dynamic imports and requires of js, ts from js, ts and cjs', async ({ runInlineTest }) => {
   const result = await runInlineTest({
     'helper.ts': `
-      module.exports.foo = 'foo';
+      const foo: string = 'foo';
+      module.exports.foo = foo;
+    `,
+    'helper2.ts': `
+      module.exports.bar = 'bar';
+    `,
+    'helper3.js': `
+      module.exports.baz = 'baz';
+    `,
+    'helper4.ts': `
+      const foo: string = 'foo';
+      module.exports.foo = foo;
+    `,
+    'passthrough.cjs': `
+      module.exports.load = () => import('./helper2');
     `,
     'a.test.ts': `
       import { test, expect } from '@playwright/test';
@@ -972,9 +986,24 @@ test('should support dynamic import', async ({ runInlineTest }) => {
       test('pass', async () => {
         const { foo } = await import('./helper');
         expect(foo).toBe('foo');
+
+        const { baz } = await import('./helper3');
+        expect(baz).toBe('baz');
       });
     `,
     'b.test.ts': `
+      import { test, expect } from '@playwright/test';
+      import { load } from './passthrough.cjs';
+
+      test('pass', async () => {
+        const { foo } = await import('./helper');
+        expect(foo).toBe('foo');
+
+        const { bar } = await load();
+        expect(bar).toBe('bar');
+      });
+    `,
+    'c.test.js': `
       import { test, expect } from '@playwright/test';
 
       test('pass', async () => {
@@ -982,8 +1011,42 @@ test('should support dynamic import', async ({ runInlineTest }) => {
         expect(foo).toBe('foo');
       });
     `,
+    'd.test.js': `
+      import { test, expect } from '@playwright/test';
+
+      test('pass', async () => {
+        const { foo } = require('./helper4');
+        expect(foo).toBe('foo');
+      });
+    `,
   }, { workers: 1 });
-  expect(result.passed).toBe(2);
+  expect(result.passed).toBe(4);
+  expect(result.exitCode).toBe(0);
+});
+
+test('should support dynamic imports of esm-only packages', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'node_modules/foo-pkg/package.json': `
+      {
+        "name": "foo-pkg",
+        "type": "module",
+        "exports": { "default": "./index.js" }
+      }
+    `,
+    'node_modules/foo-pkg/index.js': `
+      export const foo = 'bar';
+    `,
+    'package.json': `{ "name": "test-project" }`,
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+
+      test('pass', async () => {
+        const { foo } = await import('foo-pkg');
+        expect(foo).toBe('bar');
+      });
+    `,
+  }, { workers: 1 });
+  expect(result.passed).toBe(1);
   expect(result.exitCode).toBe(0);
 });
 
