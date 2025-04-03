@@ -1,174 +1,161 @@
-# Workers version of Playwright
+# Playwright for Browser Rendering
 
-This repo is an experimental work-in-progress fork of [Playwright](https://playwright.dev/) that has been modified to be compatible with Cloudflare Workers and [Browser Rendering](https://developers.cloudflare.com/browser-rendering/). For installation and usage instructions specific to this fork, see our [Developer Documentation](./packages/playwright-cloudflare/README.md).
+Fork of [Playwright](https://github.com/microsoft/playwright/) that was modified to be compatible with [Cloudflare Workers](https://developers.cloudflare.com/workers/) and [Browser Rendering](https://developers.cloudflare.com/browser-rendering/).
 
-Original README follows:
+## Getting Started
 
-# 🎭 Playwright
+Create a [Cloudflare Worker](https://developers.cloudflare.com/workers/get-started/guide/_)
 
-[![npm version](https://img.shields.io/npm/v/playwright.svg)](https://www.npmjs.com/package/playwright) <!-- GEN:chromium-version-badge -->[![Chromium version](https://img.shields.io/badge/chromium-135.0.7049.28-blue.svg?logo=google-chrome)](https://www.chromium.org/Home)<!-- GEN:stop --> <!-- GEN:firefox-version-badge -->[![Firefox version](https://img.shields.io/badge/firefox-136.0-blue.svg?logo=firefoxbrowser)](https://www.mozilla.org/en-US/firefox/new/)<!-- GEN:stop --> <!-- GEN:webkit-version-badge -->[![WebKit version](https://img.shields.io/badge/webkit-18.4-blue.svg?logo=safari)](https://webkit.org/)<!-- GEN:stop --> [![Join Discord](https://img.shields.io/badge/join-discord-infomational)](https://aka.ms/playwright/discord)
-
-## [Documentation](https://playwright.dev) | [API reference](https://playwright.dev/docs/api/class-playwright)
-
-Playwright is a framework for Web Testing and Automation. It allows testing [Chromium](https://www.chromium.org/Home), [Firefox](https://www.mozilla.org/en-US/firefox/new/) and [WebKit](https://webkit.org/) with a single API. Playwright is built to enable cross-browser web automation that is **ever-green**, **capable**, **reliable** and **fast**.
-
-|          | Linux | macOS | Windows |
-|   :---   | :---: | :---: | :---:   |
-| Chromium <!-- GEN:chromium-version -->135.0.7049.28<!-- GEN:stop --> | :white_check_mark: | :white_check_mark: | :white_check_mark: |
-| WebKit <!-- GEN:webkit-version -->18.4<!-- GEN:stop --> | :white_check_mark: | :white_check_mark: | :white_check_mark: |
-| Firefox <!-- GEN:firefox-version -->136.0<!-- GEN:stop --> | :white_check_mark: | :white_check_mark: | :white_check_mark: |
-
-Headless execution is supported for all browsers on all platforms. Check out [system requirements](https://playwright.dev/docs/intro#system-requirements) for details.
-
-Looking for Playwright for [Python](https://playwright.dev/python/docs/intro), [.NET](https://playwright.dev/dotnet/docs/intro), or [Java](https://playwright.dev/java/docs/intro)?
+```Shell
+npm create cloudflare@latest -- cf-playwright-worker
+```
 
 ## Installation
 
-Playwright has its own test runner for end-to-end tests, we call it Playwright Test.
-
-### Using init command
-
-The easiest way to get started with Playwright Test is to run the init command.
+This package is released on npmjs.com at [@cloudflare/playwright](https://www.npmjs.com/package/@cloudflare/playwright). To install it in your project:
 
 ```Shell
-# Run from your project's root directory
-npm init playwright@latest
-# Or create a new project
-npm init playwright@latest new-project
+npm i -s @cloudflare/playwright
 ```
 
-This will create a configuration file, optionally add examples, a GitHub Action workflow and a first test example.spec.ts. You can now jump directly to writing assertions section.
+## Configuration
 
-### Manually
+📄 **Place this in `wrangler.toml`**
 
-Add dependency and install browsers.
-
-```Shell
-npm i -D @playwright/test
-# install supported browsers
-npx playwright install
+```toml
+compatibility_flags = [ "nodejs_compat" ]
+browser = { binding = "MYBROWSER" }
 ```
 
-You can optionally install only selected browsers, see [install browsers](https://playwright.dev/docs/cli#install-browsers) for more details. Or you can install no browsers at all and use existing [browser channels](https://playwright.dev/docs/browsers).
+## Example
 
-* [Getting started](https://playwright.dev/docs/intro)
-* [API reference](https://playwright.dev/docs/api/class-playwright)
+You can find a full running example here [Cloudflare Playwright running example](https://github.com/cloudflare/playwright/tree/main/packages/playwright-cloudflare/examples/todomvc)
 
-## Capabilities
+### Screenshot
 
-### Resilient • No flaky tests
+```js
+import { launch } from '@cloudflare/playwright';
 
-**Auto-wait**. Playwright waits for elements to be actionable prior to performing actions. It also has a rich set of introspection events. The combination of the two eliminates the need for artificial timeouts - a primary cause of flaky tests.
+const todos = searchParams.getAll('todo');
 
-**Web-first assertions**. Playwright assertions are created specifically for the dynamic web. Checks are automatically retried until the necessary conditions are met.
+const browser = await launch(env.MYBROWSER);
+const page = await browser.newPage();
 
-**Tracing**. Configure test retry strategy, capture execution trace, videos and screenshots to eliminate flakes.
+await page.goto('https://demo.playwright.dev/todomvc');
 
-### No trade-offs • No limits
+const TODO_ITEMS = todos.length > 0 ? todos : [
+    'buy some cheese',
+    'feed the cat',
+    'book a doctors appointment'
+];
 
-Browsers run web content belonging to different origins in different processes. Playwright is aligned with the architecture of the modern browsers and runs tests out-of-process. This makes Playwright free of the typical in-process test runner limitations.
+const newTodo = page.getByPlaceholder('What needs to be done?');
+for (const item of TODO_ITEMS) {
+    await newTodo.fill(item);
+    await newTodo.press('Enter');
+}
 
-**Multiple everything**. Test scenarios that span multiple tabs, multiple origins and multiple users. Create scenarios with different contexts for different users and run them against your server, all in one test.
+const img = await page.screenshot();
+    await browser.close();
 
-**Trusted events**. Hover elements, interact with dynamic controls and produce trusted events. Playwright uses real browser input pipeline indistinguishable from the real user.
+    return new Response(img, {
+        headers: {
+            'Content-Type': 'image/png',
+        },
+    });
+```
 
-Test frames, pierce Shadow DOM. Playwright selectors pierce shadow DOM and allow entering frames seamlessly.
+### Trace
 
-### Full isolation • Fast execution
+```js
+import { launch } from '@cloudflare/playwright';
+import fs from "@cloudflare/playwright/fs";
 
-**Browser contexts**. Playwright creates a browser context for each test. Browser context is equivalent to a brand new browser profile. This delivers full test isolation with zero overhead. Creating a new browser context only takes a handful of milliseconds.
+const browser = await launch(env.MYBROWSER);
+const page = await browser.newPage();
 
-**Log in once**. Save the authentication state of the context and reuse it in all the tests. This bypasses repetitive log-in operations in each test, yet delivers full isolation of independent tests.
+await page.context().tracing.start({ screenshots: true, snapshots: true });
 
-### Powerful Tooling
+// ... do something, screenshot for example
 
-**[Codegen](https://playwright.dev/docs/codegen)**. Generate tests by recording your actions. Save them into any language.
+await page.context().tracing.stop({ path: 'trace.zip' });
+await browser.close();
+const file = await fs.promises.readFile('trace.zip');
 
-**[Playwright inspector](https://playwright.dev/docs/inspector)**. Inspect page, generate selectors, step through the test execution, see click points and explore execution logs.
-
-**[Trace Viewer](https://playwright.dev/docs/trace-viewer)**. Capture all the information to investigate the test failure. Playwright trace contains test execution screencast, live DOM snapshots, action explorer, test source and many more.
-
-Looking for Playwright for [TypeScript](https://playwright.dev/docs/intro), [JavaScript](https://playwright.dev/docs/intro), [Python](https://playwright.dev/python/docs/intro), [.NET](https://playwright.dev/dotnet/docs/intro), or [Java](https://playwright.dev/java/docs/intro)?
-
-## Examples
-
-To learn how to run these Playwright Test examples, check out our [getting started docs](https://playwright.dev/docs/intro).
-
-#### Page screenshot
-
-This code snippet navigates to Playwright homepage and saves a screenshot.
-
-```TypeScript
-import { test } from '@playwright/test';
-
-test('Page Screenshot', async ({ page }) => {
-  await page.goto('https://playwright.dev/');
-  await page.screenshot({ path: `example.png` });
+return new Response(file, {
+    status: 200,
+    headers: {
+        'Content-Type': 'application/zip',
+    },
 });
 ```
 
-#### Mobile and geolocation
+### Assertions
 
-This snippet emulates Mobile Safari on a device at given geolocation, navigates to maps.google.com, performs the action and takes a screenshot.
+```js
+import { launch } from '@cloudflare/playwright';
+import { expect } from '@cloudflare/playwright/test';
 
-```TypeScript
-import { test, devices } from '@playwright/test';
+const browser = await launch(env.MYBROWSER);
+const page = await browser.newPage();
 
-test.use({
-  ...devices['iPhone 13 Pro'],
-  locale: 'en-US',
-  geolocation: { longitude: 12.492507, latitude: 41.889938 },
-  permissions: ['geolocation'],
-})
+await page.goto('https://demo.playwright.dev/todomvc');
 
-test('Mobile and geolocation', async ({ page }) => {
-  await page.goto('https://maps.google.com');
-  await page.getByText('Your location').click();
-  await page.waitForRequest(/.*preview\/pwa/);
-  await page.screenshot({ path: 'colosseum-iphone.png' });
-});
+const TODO_ITEMS = todos.length > 0 ? todos : [
+    'buy some cheese',
+    'feed the cat',
+    'book a doctors appointment'
+];
+
+const newTodo = page.getByPlaceholder('What needs to be done?');
+for (const item of TODO_ITEMS) {
+    await newTodo.fill(item);
+    await newTodo.press('Enter');
+}
+
+await expect(page.getByTestId('todo-title')).toHaveCount(TODO_ITEMS.length);
+
+await Promise.all(TODO_ITEMS.map(
+    (value, index) => expect(page.getByTestId('todo-title').nth(index)).toHaveText(value)
+));
 ```
 
-#### Evaluate in browser context
+# Contribute
 
-This code snippet navigates to example.com, and executes a script in the page context.
+## Build
 
-```TypeScript
-import { test } from '@playwright/test';
+To build Playwright for Cloudflare:
 
-test('Evaluate in browser context', async ({ page }) => {
-  await page.goto('https://www.example.com/');
-  const dimensions = await page.evaluate(() => {
-    return {
-      width: document.documentElement.clientWidth,
-      height: document.documentElement.clientHeight,
-      deviceScaleFactor: window.devicePixelRatio
-    }
-  });
-  console.log(dimensions);
-});
+```sh
+npm ci
+cd packages/playwright-cloudflare
+npm run build
 ```
 
-#### Intercept network requests
+## Run
 
-This code snippet sets up request routing for a page to log all network requests.
+To run the TodoMVC example:
 
-```TypeScript
-import { test } from '@playwright/test';
+- launch it with `wrangler`:
 
-test('Intercept network requests', async ({ page }) => {
-  // Log and continue all network requests
-  await page.route('**', route => {
-    console.log(route.request().url());
-    route.continue();
-  });
-  await page.goto('http://todomvc.com');
-});
+```sh
+cd packages/playwright-cloudflare/examples/todomvc
+npm ci
+npx wrangler dev --remote
 ```
 
-## Resources
+- press `b` to open the browser
 
-* [Documentation](https://playwright.dev)
-* [API reference](https://playwright.dev/docs/api/class-playwright/)
-* [Contribution guide](CONTRIBUTING.md)
-* [Changelog](https://github.com/microsoft/playwright/releases)
+## 🚧 Currently Unsupported Features
+
+The following capabilities are not yet fully supported, but we’re actively working on them.
+
+- [API Testing](https://playwright.dev/docs/api-testing)
+- [Playwright Test](https://playwright.dev/docs/test-configuration) except [Assertions](https://playwright.dev/docs/test-assertions)
+- [Components](https://playwright.dev/docs/test-components)
+- [Firefox](https://playwright.dev/docs/api/class-playwright#playwright-firefox), [Android](https://playwright.dev/docs/api/class-android) and [Electron](https://playwright.dev/docs/api/class-electron), as well as different versions of Chrome
+- [Network](https://playwright.dev/docs/next/network#network)
+- [Videos](https://playwright.dev/docs/next/videos)
+
+This is **not an exhaustive list** — expect rapid changes as we work toward broader parity with the original feature set. You can also check [latest test results](https://playwright-full-test-report.pages.dev/) for a granular up to date list of the features that are fully supported
+
