@@ -4,9 +4,6 @@
   "version": "0.0.1-next",
   "license": "Apache-2.0",
   "type": "module",
-  "publishConfig": {
-    "access": "restricted"
-  },
   "exports": {
     ".": {
       "types": "./index.d.ts",
