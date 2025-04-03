@@ -63,7 +63,10 @@ jobs:
   merge-reports:
     if: ${{ !cancelled() }}
     needs: [tests]
-
+    
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,3 +98,20 @@ jobs:
           name: playwright-report--attempt-${{ github.run_attempt }}
           path: packages/playwright-cloudflare/tests/playwright-report
           retention-days: 14
+
+      - name: Download HTML artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-report--attempt-${{ github.run_attempt }}
+          path: report 
+
+      - name: Debug report contents
+        run: |
+          echo "🔍 Listing contents of ./report recursively:"
+          ls -R report
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy to Cloudflare Pages
+        run: wrangler pages deploy report --project-name playwright-full-test-report
