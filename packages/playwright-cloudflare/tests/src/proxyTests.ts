@@ -1,8 +1,6 @@
 import { test as baseTest } from '@playwright/test';
 import { MessageEvent, WebSocket } from 'ws';
 
-import { ManualPromise } from './manualPromise';
-
 import type { AcquireResponse } from '@cloudflare/playwright';
 import type { TestEndPayload } from '@cloudflare/playwright/internal';
 import type { TestInfo } from '@playwright/test';
@@ -24,7 +22,7 @@ export const test = baseTest.extend<{}, WorkerFixture>({
 const testsServerUrl = process.env.TESTS_SERVER_URL ?? `http://localhost:8787`;
 
 export async function proxyTests(file: string) {
-  const testResults = new Map<string, ManualPromise<TestPayload>>();
+  const testResults = new Map<string, (payload: TestPayload) => void>();
   let websocket!: WebSocket;
 
   return {
@@ -37,18 +35,18 @@ export async function proxyTests(file: string) {
       websocket = new WebSocket(wsUrl);
       websocket.addEventListener('message',  (ev: MessageEvent) => {
         const payload = JSON.parse(ev.data as string) as TestPayload;
-        const promise = testResults.get(payload.testId);
+        const resolve = testResults.get(payload.testId);
         testResults.delete(payload.testId);
-        promise?.resolve(payload);
+        resolve?.(payload);
       });
       await new Promise<any>((resolve, reject) => {
         websocket.addEventListener('open', resolve);
         websocket.addEventListener('error', reject);
       });
       websocket.addEventListener('close', () => {
-        for (const [testId, promise] of testResults.entries()) {
+        for (const [testId, resolve] of testResults.entries()) {
           testResults.delete(testId);
-          promise.resolve({ testId, status: 'interrupted', errors: [] });
+          resolve({ testId, status: 'interrupted', errors: [] });
         }
       });
     },
@@ -58,8 +56,9 @@ export async function proxyTests(file: string) {
     },
 
     runTest: async ({ testId, fullTitle }: { testId: string, fullTitle: string }, testInfo: TestInfo) => {
-      const testPromise = new ManualPromise<TestPayload>();
-      testResults.set(testId, testPromise);
+      const testPromise = new Promise<TestPayload>((resolve, reject) => {
+        testResults.set(testId, resolve);
+      });
       websocket.send(JSON.stringify({ testId, fullTitle }));
       const payload: TestPayload = await testPromise;
       const { status, errors } = payload;
