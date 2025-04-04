@@ -36,14 +36,13 @@ You can find a full running example here [Cloudflare Playwright running example]
 ```js
 import { launch } from '@cloudflare/playwright';
 
-const todos = searchParams.getAll('todo');
 
 const browser = await launch(env.MYBROWSER);
 const page = await browser.newPage();
 
 await page.goto('https://demo.playwright.dev/todomvc');
 
-const TODO_ITEMS = todos.length > 0 ? todos : [
+const TODO_ITEMS = [
     'buy some cheese',
     'feed the cat',
     'book a doctors appointment'
@@ -56,13 +55,13 @@ for (const item of TODO_ITEMS) {
 }
 
 const img = await page.screenshot();
-    await browser.close();
+await browser.close();
 
-    return new Response(img, {
-        headers: {
-            'Content-Type': 'image/png',
-        },
-    });
+return new Response(img, {
+    headers: {
+        'Content-Type': 'image/png',
+    },
+});
 ```
 
 ### Trace
@@ -101,7 +100,7 @@ const page = await browser.newPage();
 
 await page.goto('https://demo.playwright.dev/todomvc');
 
-const TODO_ITEMS = todos.length > 0 ? todos : [
+const TODO_ITEMS = [
     'buy some cheese',
     'feed the cat',
     'book a doctors appointment'
