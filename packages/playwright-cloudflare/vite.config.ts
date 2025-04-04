@@ -42,6 +42,7 @@ export default defineConfig({
       './zipBundleImpl': path.resolve(__dirname, './src/bundles/zipBundleImpl'),
       './expectBundleImpl': path.resolve(__dirname, './src/bundles/expectBundleImpl'),
       'fs': path.resolve(__dirname, './src/bundles/fs'),
+      'pngjs': path.resolve(__dirname, './src/bundles/pngjs'),
 
       // replace playwright transport with cloudflare workers transport
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),

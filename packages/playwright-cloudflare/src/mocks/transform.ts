@@ -1,6 +1,6 @@
 import { currentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 
-import { playwrightTestConfig } from '../internal';
+import { playwrightTestConfig, configLocation } from '../internal';
 
 type Location = {
   file: string;
@@ -9,7 +9,7 @@ type Location = {
 };
 
 export const requireOrImport = (file: string) => {
-  if (file === 'playwright.config.ts')
+  if (file === configLocation.resolvedConfigFile)
     return playwrightTestConfig;
   // do nothing
 };

@@ -1,25 +1,11 @@
-/**
- * Copyright (c) Microsoft Corporation.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 import { _baseTest } from '@cloudflare/playwright/internal';
 import playwright from '@cloudflare/playwright';
 
-import type { Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize } from '@cloudflare/playwright/test';
-import type { BrowserContextOptions, ScreenshotMode, VideoMode } from '../../types/test';
+import type { ScreenshotMode, VideoMode } from '../../../types/test';
+import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize } from '@cloudflare/playwright/test';
 
 export { expect } from '@cloudflare/playwright/test';
+export { mergeTests } from '@cloudflare/playwright/internal';
 
 export type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
 
@@ -210,7 +196,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 export async function rafraf(target: Page | Frame, count = 1) {
   for (let i = 0; i < count; i++) {
     await target.evaluate(async () => {
-      await new Promise(f => window.builtinRequestAnimationFrame(() => window.builtinRequestAnimationFrame(f)));
+      // @ts-ignore
+      await new Promise(f => window.builtins.requestAnimationFrame(() => window.builtins.requestAnimationFrame(f)));
     });
   }
 }
@@ -224,6 +211,7 @@ export function roundBox(box: BoundingBox): BoundingBox {
   };
 }
 
+export const devices = [];
 export const playwrightTest = test;
 export const browserTest = test;
 export const contextTest = test;

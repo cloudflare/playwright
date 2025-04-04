@@ -14,13 +14,13 @@ function generateDescribeOrTest(entry, indent = '') {
   const title = entry.title.replace('\'', '\\\'');
   const fullTitle = entry.fullTitle.replace('\'', '\\\'');
   if (entry.type === 'describe') {
-    return `${indent}test.describe('${title}', async () => {
+    return `${indent}test.describe(${JSON.stringify(title)}, async () => {
 ${entry.entries.map(entry => generateDescribeOrTest(entry, `${indent}  `)).join('\n\n')}
 ${indent}});`;
   } else {
-    return `${indent}test('${title}', async ({}, testInfo) => await proxy.runTest({
-${indent}  testId: '${entry.testId}',
-${indent}  fullTitle: '${fullTitle}',
+    return `${indent}test(${JSON.stringify(title)}, async ({}, testInfo) => await proxy.runTest({
+${indent}  testId: ${JSON.stringify(entry.testId)},
+${indent}  fullTitle: ${JSON.stringify(fullTitle)},
 ${indent}}, testInfo));`;
   }
 }
@@ -29,7 +29,7 @@ ${indent}}, testInfo));`;
   const suites = await fetch(`${testsServerUrl}`).then(res => res.json());
   for (const suite of suites) {
     const targetProxyTestFile = path.join(proxyTestsDir, suite.file);
-    const proxyTests = path.join(basedir, '../tests/src/proxyTests.ts');
+    const proxyTests = path.join(basedir, '../tests/src/proxy/proxyTests.ts');
     const relativePath = path.relative(path.dirname(targetProxyTestFile), proxyTests).replace(/\\/g, '/');
     writeFile(targetProxyTestFile, `import { proxyTests, test } from '${relativePath}';
 
