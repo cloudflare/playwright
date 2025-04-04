@@ -1,5 +1,5 @@
 name = "playwright-test-workers"
-main = "src/index.ts"
+main = "src/server/index.ts"
 workers_dev = true
 compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2025-03-05"

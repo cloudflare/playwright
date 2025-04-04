@@ -56,7 +56,7 @@ export async function proxyTests(file: string) {
     },
 
     runTest: async ({ testId, fullTitle }: { testId: string, fullTitle: string }, testInfo: TestInfo) => {
-      const testPromise = new Promise<TestPayload>((resolve, reject) => {
+      const testPromise = new Promise<TestPayload>(resolve => {
         testResults.set(testId, resolve);
       });
       websocket.send(JSON.stringify({ testId, fullTitle }));

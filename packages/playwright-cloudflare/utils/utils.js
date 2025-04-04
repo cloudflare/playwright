@@ -9,3 +9,16 @@ export function writeFile(filePath, content) {
 export function deleteDir(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
+
+export function listFiles(dir, options) {
+  const files = [];
+  for (const file of fs.readdirSync(dir)) {
+    const fullPath = path.join(dir, file);
+    if (fs.statSync(fullPath).isDirectory() && options?.recursive) {
+      files.push(...listFiles(fullPath));
+    } else {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}

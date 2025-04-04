@@ -1,10 +1,11 @@
 import { _baseTest } from '@cloudflare/playwright/internal';
 import playwright from '@cloudflare/playwright';
 
-import type { ScreenshotMode, VideoMode } from '../../types/test';
+import type { ScreenshotMode, VideoMode } from '../../../types/test';
 import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize } from '@cloudflare/playwright/test';
 
 export { expect } from '@cloudflare/playwright/test';
+export { mergeTests } from '@cloudflare/playwright/internal';
 
 export type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
 
@@ -210,6 +211,7 @@ export function roundBox(box: BoundingBox): BoundingBox {
   };
 }
 
+export const devices = [];
 export const playwrightTest = test;
 export const browserTest = test;
 export const contextTest = test;

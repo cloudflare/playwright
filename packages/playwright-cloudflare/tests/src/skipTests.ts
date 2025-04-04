@@ -1,149 +1,7 @@
 /* eslint-disable quotes */
 import '@cloudflareTests/browser-rendering/api.spec';
 
-import '@workerTests/page/elementhandle-bounding-box.spec';
-import '@workerTests/page/elementhandle-click.spec';
-import '@workerTests/page/elementhandle-content-frame.spec';
-import '@workerTests/page/elementhandle-convenience.spec';
-import '@workerTests/page/elementhandle-eval-on-selector.spec';
-import '@workerTests/page/elementhandle-misc.spec';
-import '@workerTests/page/elementhandle-owner-frame.spec';
-import '@workerTests/page/elementhandle-press.spec';
-import '@workerTests/page/elementhandle-query-selector.spec';
-import '@workerTests/page/elementhandle-screenshot.spec';
-import '@workerTests/page/elementhandle-scroll-into-view.spec';
-import '@workerTests/page/elementhandle-select-text.spec';
-import '@workerTests/page/elementhandle-type.spec';
-import '@workerTests/page/elementhandle-wait-for-element-state.spec';
-import '@workerTests/page/eval-on-selector-all.spec';
-import '@workerTests/page/eval-on-selector.spec';
-import '@workerTests/page/expect-boolean.spec';
-import '@workerTests/page/expect-matcher-result.spec';
-import '@workerTests/page/expect-misc.spec';
-import '@workerTests/page/expect-timeout.spec';
-import '@workerTests/page/expect-to-have-text.spec';
-import '@workerTests/page/expect-to-have-value.spec';
-import '@workerTests/page/frame-evaluate.spec';
-import '@workerTests/page/frame-frame-element.spec';
-import '@workerTests/page/frame-goto.spec';
-import '@workerTests/page/frame-hierarchy.spec';
-// import '@workerTests/page/interception.spec';
-import '@workerTests/page/jshandle-as-element.spec';
-import '@workerTests/page/jshandle-evaluate.spec';
-import '@workerTests/page/jshandle-json-value.spec';
-import '@workerTests/page/jshandle-properties.spec';
-import '@workerTests/page/jshandle-to-string.spec';
-import '@workerTests/page/locator-click.spec';
-import '@workerTests/page/locator-convenience.spec';
-import '@workerTests/page/locator-element-handle.spec';
-import '@workerTests/page/locator-evaluate.spec';
-import '@workerTests/page/locator-frame.spec';
-import '@workerTests/page/locator-highlight.spec';
-import '@workerTests/page/locator-is-visible.spec';
-import '@workerTests/page/locator-list.spec';
-import '@workerTests/page/locator-misc-1.spec';
-import '@workerTests/page/locator-misc-2.spec';
-import '@workerTests/page/locator-query.spec';
-import '@workerTests/page/matchers.misc.spec';
-import '@workerTests/page/network-post-data.spec';
-import '@workerTests/page/page-accessibility.spec';
-import '@workerTests/page/page-add-init-script.spec';
-import '@workerTests/page/page-add-locator-handler.spec';
-import '@workerTests/page/page-add-script-tag.spec';
-import '@workerTests/page/page-add-style-tag.spec';
-import '@workerTests/page/page-aria-snapshot.spec';
-import '@workerTests/page/page-autowaiting-basic.spec';
-import '@workerTests/page/page-autowaiting-no-hang.spec';
-import '@workerTests/page/page-basic.spec';
-import '@workerTests/page/page-check.spec';
-import '@workerTests/page/page-click-during-navigation.spec';
-import '@workerTests/page/page-click-react.spec';
-import '@workerTests/page/page-click-scroll.spec';
-import '@workerTests/page/page-click-timeout-1.spec';
-import '@workerTests/page/page-click-timeout-2.spec';
-import '@workerTests/page/page-click-timeout-3.spec';
-import '@workerTests/page/page-click-timeout-4.spec';
-import '@workerTests/page/page-click.spec';
-import '@workerTests/page/page-close.spec';
-import '@workerTests/page/page-dialog.spec';
-import '@workerTests/page/page-dispatchevent.spec';
-import '@workerTests/page/page-drag.spec';
-import '@workerTests/page/page-emulate-media.spec';
-import '@workerTests/page/page-evaluate-handle.spec';
-import '@workerTests/page/page-evaluate-no-stall.spec';
-import '@workerTests/page/page-evaluate.spec';
-import '@workerTests/page/page-event-console.spec';
-import '@workerTests/page/page-event-load.spec';
-import '@workerTests/page/page-event-network.spec';
-import '@workerTests/page/page-event-pageerror.spec';
-import '@workerTests/page/page-event-popup.spec';
-import '@workerTests/page/page-event-request.spec';
-import '@workerTests/page/page-expose-function.spec';
-import '@workerTests/page/page-filechooser.spec';
-import '@workerTests/page/page-fill.spec';
-import '@workerTests/page/page-focus.spec';
-import '@workerTests/page/page-goto.spec';
-import '@workerTests/page/page-history.spec';
-import '@workerTests/page/page-keyboard.spec';
-// import '@workerTests/page/page-leaks.spec';
-import '@workerTests/page/page-listeners.spec';
-import '@workerTests/page/page-mouse.spec';
-import '@workerTests/page/page-navigation.spec';
-import '@workerTests/page/page-network-idle.spec';
-import '@workerTests/page/page-network-request.spec';
-import '@workerTests/page/page-network-response.spec';
-import '@workerTests/page/page-network-sizes.spec';
-import '@workerTests/page/page-request-continue.spec';
-import '@workerTests/page/page-request-fallback.spec';
-import '@workerTests/page/page-request-fulfill.spec';
-import '@workerTests/page/page-request-gc.spec';
-import '@workerTests/page/page-request-intercept.spec';
-import '@workerTests/page/page-route.spec';
-// import '@workerTests/page/page-screenshot.spec';
-import '@workerTests/page/page-select-option.spec';
-import '@workerTests/page/page-set-content.spec';
-import '@workerTests/page/page-set-extra-http-headers.spec';
-import '@workerTests/page/page-set-input-files.spec';
-import '@workerTests/page/page-strict.spec';
-import '@workerTests/page/page-wait-for-function.spec';
-import '@workerTests/page/page-wait-for-load-state.spec';
-import '@workerTests/page/page-wait-for-navigation.spec';
-import '@workerTests/page/page-wait-for-request.spec';
-import '@workerTests/page/page-wait-for-response.spec';
-import '@workerTests/page/page-wait-for-selector-1.spec';
-import '@workerTests/page/page-wait-for-selector-2.spec';
-import '@workerTests/page/page-wait-for-url.spec';
-import '@workerTests/page/queryselector.spec';
-import '@workerTests/page/retarget.spec';
-import '@workerTests/page/selectors-css.spec';
-import '@workerTests/page/selectors-frame.spec';
-import '@workerTests/page/selectors-get-by.spec';
-import '@workerTests/page/selectors-misc.spec';
-import '@workerTests/page/selectors-react.spec';
-import '@workerTests/page/selectors-register.spec';
-import '@workerTests/page/selectors-role.spec';
-import '@workerTests/page/selectors-text.spec';
-import '@workerTests/page/selectors-vue.spec';
-import '@workerTests/page/to-match-aria-snapshot.spec';
-import '@workerTests/page/wheel.spec';
-import '@workerTests/page/workers.spec';
-
-import '@workerTests/library/browsercontext-pages.spec';
-
 export const skipTests: string[][] = [
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "path option should create subdirectories"], // Error: Error: [unenv] fs.readFile is not implemented yet!
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should capture full element when larger than viewport in parallel"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-larger-than-viewport-workers.png, writing actual.
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should capture full element when larger than viewport"], // Error: TypeError: Class constructor Inflate cannot be invoked without 'new'
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should scroll 15000px into view"], // Error: TypeError: Class constructor Inflate cannot be invoked without 'new'
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should scroll element into view"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-scrolled-into-view-workers.png, writing actual.
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should take into account padding and border"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-padding-border-workers.png, writing actual.
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should wait for element to stop moving"], // Error: TypeError: Class constructor Inflate cannot be invoked without 'new'
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should wait for visible"], // Error: TypeError: Class constructor Inflate cannot be invoked without 'new'
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should work for an element with an offset"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-fractional-offset-workers.png, writing actual.
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should work for an element with fractional dimensions"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-fractional-workers.png, writing actual.
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should work when main world busts JSON.stringify"], // Error: TypeError: Class constructor Inflate cannot be invoked without 'new'
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should work with a rotated element"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-rotate-workers.png, writing actual.
-  ["page/elementhandle-screenshot.spec.ts", "element screenshot", "should work"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/elementhandle-screenshot.spec.ts-snapshots/screenshot-element-bounding-box-workers.png, writing actual.
   ["page/expect-boolean.spec.ts", "not.toBeOK"], // Error: Error: requestContext.get: [unenv] https.request is not implemented yet!
   ["page/expect-boolean.spec.ts", "toBeOK fail with promise"], // Error: Error: requestContext.get: [unenv] https.request is not implemented yet!
   ["page/expect-boolean.spec.ts", "toBeOK should print response with text content type when fails", "image content type"], // Error: Error: requestContext.get: [unenv] https.request is not implemented yet!
@@ -163,7 +21,6 @@ export const skipTests: string[][] = [
   ["page/locator-misc-1.spec.ts", "hover should support noWaitAfter"], // Error: Test timeout of 5000ms exceeded.
   ["page/locator-misc-1.spec.ts", "should focus and blur a button"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/locator-misc-2.spec.ts", "should scroll into view"], // Error: Test timeout of 5000ms exceeded.
-  ["page/locator-misc-2.spec.ts", "should take screenshot"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/locator-misc-2.spec.ts-snapshots/screenshot-element-bounding-box-workers.png, writing actual.
   ["page/network-post-data.spec.ts", "should get post data for file/blob"], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ["page/network-post-data.spec.ts", "should get post data for navigator.sendBeacon api calls"], // Error: Error: expect(received).toStrictEqual(expected) // deep equality
   ["page/page-add-init-script.spec.ts", "should work after a cross origin navigation"], // Error: Error: page.goto: url: expected string, got undefined
@@ -299,7 +156,6 @@ export const skipTests: string[][] = [
   ["page/page-request-continue.spec.ts", "should intercept css variable with background url"], // Error: Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://test-workers.rui-figueira.workers.dev/test.html
   ["page/page-request-continue.spec.ts", "should work with Cross-Origin-Opener-Policy"], // Error: Error: expect(received).toEqual(expected) // deep equality
   ["page/page-request-fulfill.spec.ts", "headerValue should return set-cookie from intercepted response"], // Error: Error: expect(received).toBe(expected) // Object.is equality
-  ["page/page-request-fulfill.spec.ts", "should allow mocking svg with charset"], // Error: Error: A snapshot doesn't exist at /playwright.config.ts/page/page-request-fulfill.spec.ts-snapshots/mock-svg-workers.png, writing actual.
   ["page/page-request-fulfill.spec.ts", "should fetch original request and fulfill"], // Error: Test timeout of 5000ms exceeded.
   ["page/page-request-fulfill.spec.ts", "should fulfill with fetch response that has multiple set-cookie"], // Error: Test timeout of 5000ms exceeded.
   ["page/page-request-fulfill.spec.ts", "should fulfill with fetch result and overrides"], // Error: Test timeout of 5000ms exceeded.

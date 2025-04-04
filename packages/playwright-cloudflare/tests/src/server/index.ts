@@ -1,4 +1,5 @@
 import testsServer from './testsServer';
+import '@workerTests/index';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

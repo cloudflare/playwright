@@ -2,7 +2,7 @@ import { connect, sessions, limits, acquire } from '@cloudflare/playwright';
 import { testSuites, TestRunner, setUnderTest } from '@cloudflare/playwright/internal';
 
 import { setCurrentContext } from './workerFixtures';
-import { skipTests } from './tests';
+import { skipTests } from '../skipTests';
 
 export type TestRequestPayload = {
   file: string;
