@@ -123,4 +123,16 @@ export const devices = playwright.devices;
 export const errors = playwright.errors;
 export const request = playwright.request;
 
-export default playwright;
+export default {
+  chromium,
+  selectors,
+  devices,
+  errors,
+  request,
+  launch,
+  connect,
+  sessions,
+  history,
+  acquire,
+  limits,
+};

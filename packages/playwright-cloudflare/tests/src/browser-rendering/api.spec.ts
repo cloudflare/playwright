@@ -1,9 +1,12 @@
-import { launch, connect, sessions, BrowserWorker, Browser, history, acquire } from '@cloudflare/playwright';
+import { launch, connect, sessions, history, acquire, limits } from '@cloudflare/playwright';
+import playwright from '@cloudflare/playwright';
 
 import { test, expect } from '../workerFixtures';
 
-async function launchAndGetSession(endpoint: BrowserWorker): Promise<[Browser, string]> {
-  const browser = await launch(endpoint);
+import type { BrowserWorker, Browser, WorkersLaunchOptions } from '@cloudflare/playwright';
+
+async function launchAndGetSession(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<[Browser, string]> {
+  const browser = await launch(endpoint, options);
   const sessionId = browser.sessionId();
   expect(sessionId).toBeDefined();
   return [browser, sessionId];
@@ -42,14 +45,43 @@ test(`should close session when launched browser is closed`, async ({ env }) => 
   expect(afterClose.map(a => a.sessionId)).not.toContain(sessionId);
 });
 
+test(`should close session after keep_alive`, async ({ env }) => {
+  const [browser, sessionId] = await launchAndGetSession(env.BROWSER, { keep_alive: 15000 });
+  await new Promise(resolve => setTimeout(resolve, 11000));
+  const beforeKeepAlive = await sessions(env.BROWSER);
+  expect(beforeKeepAlive.map(a => a.sessionId)).toContain(sessionId);
+  expect(browser.isConnected()).toBe(true);
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  const afterKeepAlive = await sessions(env.BROWSER);
+  expect(afterKeepAlive.map(a => a.sessionId)).toContain(sessionId);
+  expect(browser.isConnected()).toBe(true);
+});
 
 test(`should add new session to history when launching browser`, async ({ env }) => {
   const before = await history(env.BROWSER);
-  const [launchedBrowse, sessionId] = await launchAndGetSession(env.BROWSER);
+  const [launchedBrowser, sessionId] = await launchAndGetSession(env.BROWSER);
   const after = await history(env.BROWSER);
 
   expect(before.map(a => a.sessionId)).not.toContain(sessionId);
   expect(after.map(a => a.sessionId)).toContain(sessionId);
 
-  await launchedBrowse.close();
+  await launchedBrowser.close();
+});
+
+test(`should show sessionId in active sessions under limits endpoint`, async ({ env }) => {
+  const [launchedBrowser, sessionId] = await launchAndGetSession(env.BROWSER);
+
+  const response = await limits(env.BROWSER);
+  expect(response.activeSessions.map(s => s.id)).toContain(sessionId);
+
+  await launchedBrowser.close();
+});
+
+test(`should have functions in default exported object`, () => {
+  expect(playwright.launch).toBe(launch);
+  expect(playwright.connect).toBe(connect);
+  expect(playwright.sessions).toBe(sessions);
+  expect(playwright.history).toBe(history);
+  expect(playwright.acquire).toBe(acquire);
+  expect(playwright.limits).toBe(limits);
 });

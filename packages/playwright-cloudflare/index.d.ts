@@ -116,4 +116,13 @@ export async function history(endpoint: BrowserWorker): Promise<ClosedSession[]>
  */
 export async function limits(endpoint: BrowserWorker): Promise<LimitsResponse>;
 
-export default Playwright;
+declare const playwright: Pick<Playwright, 'chromium' | 'selectors' | 'devices' | 'errors' | 'request'> & {
+  connect,
+  launch,
+  limits,
+  sessions,
+  history,
+  acquire,
+};
+
+export default playwright;
