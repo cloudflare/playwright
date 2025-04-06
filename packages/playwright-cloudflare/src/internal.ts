@@ -1,15 +1,19 @@
-import { setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
-import { Suite, TestCase } from 'playwright/lib/common/test';
+import { ManualPromise } from 'playwright-core/lib/utils';
 import { loadConfig } from 'playwright/lib/common/configLoader';
+import { setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 import { bindFileSuiteToProject } from 'playwright/lib/common/suiteUtils';
+import { Suite, TestCase } from 'playwright/lib/common/test';
 import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
-import { ManualPromise } from 'playwright-core/lib/utils';
 
 import type { SuiteInfo, TestCaseInfo, TestEndPayload } from '../internal';
 
-export { debug } from 'playwright-core/lib/utilsBundle';
 export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
+export { debug } from 'playwright-core/lib/utilsBundle';
+export { mergeTests } from 'playwright/lib/common/testType';
+
+export * from 'playwright-core/lib/zipBundle';
+export * from 'playwright-core/lib/utilsBundle';
 
 // @ts-ignore
 export const _baseTest: TestType<{}, {}> = rootTestType.test;
@@ -85,7 +89,7 @@ class TestWorker extends WorkerMain {
       workerIndex: 0,
       parallelIndex: 0,
       repeatEachIndex: 0,
-      projectId: 'workers',
+      projectId: playwrightTestConfig.projects[0].name,
       config: {
         location: configLocation,
         configCLIOverrides: {

@@ -1,7 +1,7 @@
 import { launch, connect, sessions, history, acquire, limits } from '@cloudflare/playwright';
 import playwright from '@cloudflare/playwright';
 
-import { test, expect } from '../workerFixtures';
+import { test, expect } from '../server/workerFixtures';
 
 import type { BrowserWorker, Browser, WorkersLaunchOptions } from '@cloudflare/playwright';
 
