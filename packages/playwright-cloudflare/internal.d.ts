@@ -1,7 +1,7 @@
 import { isUnderTest } from 'playwright-core/lib/utils';
 
 export * from './tests';
-export { expect, _baseTest, Fixtures } from './types/test';
+export { expect, _baseTest, Fixtures, mergeTests } from './types/test';
 
 export type TestStatus = 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
 

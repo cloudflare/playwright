@@ -1,7 +1,10 @@
+import path from 'path';
+import fs from 'fs';
+
 import { test as baseTest } from '@playwright/test';
 import { MessageEvent, WebSocket } from 'ws';
 
-import type { AcquireResponse } from '@cloudflare/playwright';
+import type { AcquireResponse, ActiveSession } from '@cloudflare/playwright';
 import type { TestEndPayload } from '@cloudflare/playwright/internal';
 import type { TestInfo } from '@playwright/test';
 
@@ -12,9 +15,22 @@ export type WorkerFixture = {
 };
 
 export const test = baseTest.extend<{}, WorkerFixture>({
-  sessionId: [async ({}, use) => {
-    const response = await fetch(`${testsServerUrl}/v1/acquire`, { method: 'GET' });
-    const { sessionId } = await response.json() as AcquireResponse;
+  sessionId: [async ({}, use, workerInfo) => {
+    const shard = workerInfo.config.shard?.current ?? '1';
+    const sessionFile = path.join(workerInfo.project.outputDir, `session-${shard}.json`);
+    let sessionId: string | undefined;
+    if (fs.existsSync(sessionFile)) {
+      const session = JSON.parse(fs.readFileSync(sessionFile, 'utf-8')) as AcquireResponse;
+      sessionId = session.sessionId;
+    }
+
+    if (!sessionId) {
+      const response = await fetch(`${testsServerUrl}/v1/acquire?keep_alive=60000`);
+      const session = await response.json() as AcquireResponse;
+      fs.writeFileSync(sessionFile, JSON.stringify(session));
+      sessionId = session.sessionId!;
+    }
+
     await use(sessionId);
   }, { scope: 'worker' }],
 });
@@ -56,7 +72,7 @@ export async function proxyTests(file: string) {
     },
 
     runTest: async ({ testId, fullTitle }: { testId: string, fullTitle: string }, testInfo: TestInfo) => {
-      const testPromise = new Promise<TestPayload>((resolve, reject) => {
+      const testPromise = new Promise<TestPayload>(resolve => {
         testResults.set(testId, resolve);
       });
       websocket.send(JSON.stringify({ testId, fullTitle }));
