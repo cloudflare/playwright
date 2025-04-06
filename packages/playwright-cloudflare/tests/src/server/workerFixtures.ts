@@ -2,7 +2,7 @@ import { _baseTest } from '@cloudflare/playwright/internal';
 import playwright from '@cloudflare/playwright';
 
 import type { ScreenshotMode, VideoMode } from '../../../types/test';
-import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize } from '@cloudflare/playwright/test';
+import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright } from '@cloudflare/playwright/test';
 
 export { expect } from '@cloudflare/playwright/test';
 export { mergeTests } from '@cloudflare/playwright/internal';
@@ -28,7 +28,7 @@ export const platformTest = _baseTest.extend<{}, PlatformWorkerFixtures>({
 });
 
 export interface PlaywrightWorkerArgs {
-  playwright: typeof import('@cloudflare/playwright');
+  playwright: Playwright;
   browser: Browser;
 }
 
@@ -57,7 +57,7 @@ export type PageWorkerFixtures = {
   screenshot: ScreenshotMode | { mode: ScreenshotMode } & Pick<PageScreenshotOptions, 'fullPage' | 'omitBackground'>;
   trace: 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'retain-on-first-failure' | 'on-all-retries' | /** deprecated */ 'retry-with-trace';
   video: VideoMode | { mode: VideoMode, size: ViewportSize };
-  browserName: 'chromium' | 'firefox' | 'webkit';
+  browserName: 'chromium';
   browserVersion: string;
   browserMajorVersion: number;
   isAndroid: boolean;
@@ -166,9 +166,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     testInfo.skip(true, 'httpsServer not supported, skipping');
   },
 
-
-  asset: async ({}, run, testInfo) => {
-    testInfo.skip(true, 'assets not supported, skipping');
+  asset: async ({}, run) => {
+    await run((p: string) => `/assets/${p}`);
   },
 
   mode: ['service', { scope: 'worker', option: true }],
