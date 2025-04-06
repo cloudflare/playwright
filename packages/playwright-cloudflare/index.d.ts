@@ -125,4 +125,6 @@ declare const playwright: Pick<Playwright, 'chromium' | 'selectors' | 'devices' 
   acquire,
 };
 
+export type Playwright = typeof playwright;
+
 export default playwright;
