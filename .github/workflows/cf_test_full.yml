@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  full-tests:
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -22,96 +22,21 @@ jobs:
           npm run build
           npm run test:deploy
 
-  tests:
-    if: ${{ !cancelled() }}
-    needs: [build-and-deploy]
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
-      TESTS_SERVER_URL: https://playwright-test-workers.cloudflare-browser-rendering-085.workers.dev
-    strategy:
-      fail-fast: false
-      matrix:
-        shardIndex: [1, 2, 3, 4, 5, 6]
-        shardTotal: [6]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-          registry-url: 'https://registry.npmjs.org'
-      - name: Install dependencies
-        run: |
-          npm ci
-          cd packages/playwright-cloudflare
-          npm run ci:tests
-
       - name: Run tests
         run: |
           cd packages/playwright-cloudflare
-          # TODO change to test:full
-          npm run test:full -- --reporter=blob --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
-
-      - name: Upload blob report to GitHub Actions Artifacts
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: blob-report-${{ matrix.shardIndex }}
-          path: packages/playwright-cloudflare/tests/blob-report
-          retention-days: 1
-
-  merge-reports:
-    if: ${{ !cancelled() }}
-    needs: [tests]
-    
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-          registry-url: 'https://registry.npmjs.org'
-      - name: Install dependencies
-        run: |
-          npm ci
-          cd packages/playwright-cloudflare
-          npm run ci:tests
-
-      - name: Download blob reports from GitHub Actions Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: packages/playwright-cloudflare/tests/all-blob-reports
-          pattern: blob-report-*
-          merge-multiple: true
-
-      - name: Merge into HTML Report
-        run: |
-          cd packages/playwright-cloudflare
-          npm run test:merge
+          npm run test:full -- --reporter=html
 
       - name: Upload HTML report
         uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
         with:
           name: playwright-report--attempt-${{ github.run_attempt }}
           path: packages/playwright-cloudflare/tests/playwright-report
           retention-days: 14
 
-      - name: Download HTML artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: playwright-report--attempt-${{ github.run_attempt }}
-          path: report 
-
-      - name: Debug report contents
-        run: |
-          echo "🔍 Listing contents of ./report recursively:"
-          ls -R report
-
-      - name: Install Wrangler
-        run: npm install -g wrangler
-
       - name: Deploy to Cloudflare Pages
-        run: wrangler pages deploy report --project-name playwright-full-test-report
+        if: ${{ !cancelled() }}
+        run: |
+          cd packages/playwright-cloudflare/tests
+          npx wrangler pages deploy ./playwright-report --project-name playwright-full-test-report

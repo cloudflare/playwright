@@ -4,7 +4,7 @@ import fs from 'fs';
 import { test as baseTest } from '@playwright/test';
 import { MessageEvent, WebSocket } from 'ws';
 
-import type { AcquireResponse, ActiveSession } from '@cloudflare/playwright';
+import type { AcquireResponse, SessionsResponse } from '@cloudflare/playwright';
 import type { TestEndPayload } from '@cloudflare/playwright/internal';
 import type { TestInfo } from '@playwright/test';
 
@@ -15,17 +15,24 @@ export type WorkerFixture = {
 };
 
 export const test = baseTest.extend<{}, WorkerFixture>({
-  sessionId: [async ({}, use, workerInfo) => {
-    const shard = workerInfo.config.shard?.current ?? '1';
-    const sessionFile = path.join(workerInfo.project.outputDir, `session-${shard}.json`);
+  sessionId: [async ({}, use, workerInfo) => {;
+    const sessionFile = path.join(workerInfo.project.outputDir, `session-${workerInfo.parallelIndex}.json`);
     let sessionId: string | undefined;
     if (fs.existsSync(sessionFile)) {
       const session = JSON.parse(fs.readFileSync(sessionFile, 'utf-8')) as AcquireResponse;
+      while (true) {
+        const response = await fetch(`${testsServerUrl}/v1/sessions`);
+        const { sessions } = await response.json() as SessionsResponse;
+        if (!sessions.find(s => s.sessionId === session.sessionId)?.connectionId)
+          break;
+        // wait for the session to be released and try again
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
       sessionId = session.sessionId;
     }
 
     if (!sessionId) {
-      const response = await fetch(`${testsServerUrl}/v1/acquire?keep_alive=60000`);
+      const response = await fetch(`${testsServerUrl}/v1/acquire`);
       const session = await response.json() as AcquireResponse;
       fs.writeFileSync(sessionFile, JSON.stringify(session));
       sessionId = session.sessionId!;
