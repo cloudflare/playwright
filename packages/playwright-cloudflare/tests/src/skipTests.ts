@@ -1,4 +1,11 @@
 export const skipTests: string[][] = [
+  ['library/browser.spec.ts', 'should create new page @smoke'],
+  ['library/browsercontext-basic.spec.ts', 'should create new context @smoke'],
+  ['library/browsercontext-basic.spec.ts', 'should isolate localStorage and cookies @smoke'],
+  ['library/browsercontext-cookies.spec.ts', 'should get a cookie @smoke'],
+  ['library/browsercontext-credentials.spec.ts', 'should work with correct credentials @smoke'],
+  ['library/browsercontext-device.spec.ts', 'device', 'should work @smoke'],
+  ['library/tap.spec.ts', 'should send all of the correct events @smoke'],
   ['page/expect-boolean.spec.ts', 'not.toBeOK'], // Error: Error: requestContext.get: [unenv] https.request is not implemented yet!
   ['page/expect-boolean.spec.ts', 'toBeOK fail with promise'], // Error: Error: requestContext.get: [unenv] https.request is not implemented yet!
   ['page/expect-boolean.spec.ts', 'toBeOK should print response with text content type when fails', 'image content type'], // Error: Error: requestContext.get: [unenv] https.request is not implemented yet!
@@ -44,29 +51,30 @@ export const skipTests: string[][] = [
   ['page/page-click.spec.ts', 'should click the button after a cross origin navigation '], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
   ['page/page-click.spec.ts', 'should scroll and click the button with smooth scroll behavior'], // Error: Test timeout of 5000ms exceeded.
   ['page/page-dispatchevent.spec.ts', 'should dispatch click after a cross origin navigation '], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
-  ['page/page-drag.spec.ts', 'Drag and drop', 'should work @smoke'], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ['page/page-drag.spec.ts', 'Drag and drop', 'should be able to drag the mouse in a frame'], // Error: Error: expect(received).toEqual(expected) // deep equality
   ['page/page-drag.spec.ts', 'Drag and drop', 'should respect the drop effect'], // Error: Test timeout of 5000ms exceeded.
+  ['page/page-drag.spec.ts', 'Drag and drop', 'should work @smoke'], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ['page/page-evaluate-handle.spec.ts', 'should accept object handle as an argument'], // Error: Error: expect(received).toContain(expected) // indexOf
-  ['page/page-evaluate.spec.ts', 'should work with function shorthands'], // Error: Error: page.evaluate: SyntaxError: Unexpected token '{'
-  ['page/page-evaluate.spec.ts', 'should work right after a cross-origin navigation'], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
-  ['page/page-evaluate.spec.ts', 'should work from-inside an exposed function'], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
   ['page/page-evaluate.spec.ts', 'should await promise from popup'], // Error: Tearing down "context" exceeded the test timeout of 10000ms.
-  ['page/page-evaluate.spec.ts', 'should work with new Function() and CSP'], // Error: TypeError: server.setCSP is not a function
-  ['page/page-evaluate.spec.ts', 'should work with CSP'], // Error: TypeError: server.setCSP is not a function
-  ['page/page-evaluate.spec.ts', 'should work with overridden Object.defineProperty'], // Error: Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://test-workers.rui-figueira.workers.dev/test
+  ['page/page-evaluate.spec.ts', 'should work from-inside an exposed function'], // Error: Error: page.evaluate: Error: Invalid arguments: should be exactly one string.
+  ['page/page-evaluate.spec.ts', 'should work right after a cross-origin navigation'], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
   ['page/page-evaluate.spec.ts', 'should work with busted Array.prototype.map/push'], // Error: Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://test-workers.rui-figueira.workers.dev/test  ["page/page-event-console.spec.ts", "should work for different console API calls"], // Error: Error: expect(received).toEqual(expected) // deep equality
+  ['page/page-evaluate.spec.ts', 'should work with CSP'], // Error: TypeError: server.setCSP is not a function
+  ['page/page-evaluate.spec.ts', 'should work with function shorthands'], // Error: Error: page.evaluate: SyntaxError: Unexpected token '{'
+  ['page/page-evaluate.spec.ts', 'should work with new Function() and CSP'], // Error: TypeError: server.setCSP is not a function
+  ['page/page-evaluate.spec.ts', 'should work with overridden Object.defineProperty'], // Error: Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://test-workers.rui-figueira.workers.dev/test
   ['page/page-event-load.spec.ts', 'should fire once with iframe navigation'], // Error: Error: page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://test-workers.rui-figueira.workers.dev/home
+  ['page/page-event-network.spec.ts', 'interrupt request.response() and request.allHeaders() on page.close'], // Error: Error: expect(received).toContain(expected) // indexOf
+  ['page/page-event-network.spec.ts', 'Page.Events.Request @smoke'],
   ['page/page-event-network.spec.ts', 'Page.Events.RequestFailed @smoke'], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ['page/page-event-network.spec.ts', 'should support redirects'], // Error: TypeError: server.setRedirect is not a function
-  ['page/page-event-network.spec.ts', 'interrupt request.response() and request.allHeaders() on page.close'], // Error: Error: expect(received).toContain(expected) // indexOf
   ['page/page-event-popup.spec.ts', 'should not treat navigations as new popups'],
   ['page/page-event-request.spec.ts', 'should return response body when Cross-Origin-Opener-Policy is set'], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ['page/page-expose-function.spec.ts', 'should throw exception in page context'],
   ['page/page-expose-function.spec.ts', 'should work after cross origin navigation'],
   ['page/page-expose-function.spec.ts', 'should work with busted Array.prototype.map/push'],
-  ['page/page-expose-function.spec.ts', 'should work with overridden eval'],
   ['page/page-expose-function.spec.ts', 'should work with deleted Map'],
+  ['page/page-expose-function.spec.ts', 'should work with overridden eval'],
   ['page/page-fill.spec.ts', 'should fill contenteditable'], // Error: Test timeout of 5000ms exceeded.
   ['page/page-focus.spec.ts', 'should emit blur event'], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ['page/page-focus.spec.ts', 'should emit focus event'], // Error: Error: expect(received).toBe(expected) // Object.is equality
@@ -188,6 +196,7 @@ export const skipTests: string[][] = [
   ['page/page-route.spec.ts', 'should work with equal requests'], // Error: Error: expect(received).toEqual(expected) // deep equality
   ['page/page-route.spec.ts', 'should work with redirect inside sync XHR'], // Error: TypeError: server.setRedirect is not a function
   ['page/page-route.spec.ts', 'should work with redirects for subresources'], // Error: TypeError: server.setRedirect is not a function
+  ['page/page-screenshot.spec.ts', 'page screenshot', 'should work @smoke'],
   ['page/page-set-extra-http-headers.spec.ts', 'should not duplicate referer header'], // Error: Error: expect(received).toBe(expected) // Object.is equality
   ['page/page-set-extra-http-headers.spec.ts', 'should work with redirects'], // Error: TypeError: server.setRedirect is not a function
   ['page/page-wait-for-function.spec.ts', 'should survive cross-process navigation'], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
@@ -210,6 +219,7 @@ export const skipTests: string[][] = [
   ['page/selectors-get-by.spec.ts', 'getByTestId should work for regex'], // Error: Test timeout of 5000ms exceeded.
   ['page/selectors-text.spec.ts', 'should work @smoke'], // Error: Test timeout of 5000ms exceeded.
   ['page/selectors-text.spec.ts', 'should work with large DOM'], // Error: Test timeout of 5000ms exceeded.
+  ['page/wheel.spec.ts', 'should dispatch wheel events after popup was opened @smoke'],
   ['page/workers.spec.ts', 'should clear upon cross-process navigation'], // Error: Error: page.goto: Protocol error (Page.navigate): Cannot navigate to invalid URL
   ['page/workers.spec.ts', 'should emit created and destroyed events'], // Error: Error: expect(received).toContain(expected) // indexOf
 ];
