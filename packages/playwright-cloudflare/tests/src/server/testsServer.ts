@@ -66,8 +66,14 @@ export default {
       log(`🧪 Running ${fullTitle}`);
 
       testRunner.runTest(file, testId)
-          .then(result => send(server, result))
-          .catch(e => server.close(1011, e.message));
+          .then(result => {
+            send(server, result);
+            if (!['passed', 'skipped'].includes(result.status))
+              log(`❌ ${fullTitle} failed with status ${result.status}${result.errors.length ? `: ${result.errors[0].message}` : ''}`);
+          })
+          .catch(e => {
+            server.close(1011, e.message);
+          });
     });
     server.addEventListener('close', () => {
       browser.close().catch(e => error(e));
