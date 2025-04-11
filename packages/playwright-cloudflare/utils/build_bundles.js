@@ -3,10 +3,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const bundles = {
+  // pngjs needs to bundle browserify-zlib, it throws an error when trying to use workers runtime zlib:
+  // Error: Class constructor Inflate cannot be invoked without 'new'
+  // It needs to build before other bundles, because they may depend on it
+  'pngjs': '../bundles/pngjs',
+  'fs': '../bundles/fs',
   'utilsBundleImpl': '../../playwright-core/bundles/utils',
   'zipBundleImpl': '../../playwright-core/bundles/zip',
   'expectBundleImpl': '../../playwright/bundles/expect',
-  'fs': '../bundles/fs',
 };
 
 const external = [
@@ -28,7 +32,6 @@ const external = [
   'tls',
   'url',
   'util',
-  'zlib',
 ];
 
 const basedir = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +41,10 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
     const root = path.join(basedir, bundleDir);
     await build({
       root,
+      resolve: {
+        alias: name === 'pngjs' ? { 'zlib': 'browserify-zlib' } :
+          { 'pngjs': path.join(basedir, `../src/bundles/pngjs.js` ) },
+      },
       build: {
         emptyOutDir: false,
         minify: false,
@@ -49,7 +56,9 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
           formats: ['es'],
         },
         rollupOptions: {
-          external: name === 'fs' ? external : [...external, 'fs'],
+          external: name === 'fs' ? [...external, 'zlib']
+            : name === 'pngjs' ? [...external, 'fs']
+            : [...external, 'fs', 'zlib', 'pngjs'],
           output: {
             dir: path.join(basedir, '../src/bundles'),
             entryFileNames: `${name}.js`,

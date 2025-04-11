@@ -1,7 +1,8 @@
+import fs from 'fs';
 import path from "path";
 import { fileURLToPath } from "url";
 import { build } from "vite";
-import { deleteDir, listFiles, writeFile } from "./utils.js";
+import { decodeBase64ToFiles, deleteDir, encodeFilesToBase64, listFiles, writeFile } from "./utils.js";
 
 const basedir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -68,6 +69,24 @@ function setTestFilePlugin() {
 
 deleteDir(workerTestsDir);
 
+// generate workerTests/assets.ts file
+const assets = [
+    ...['page', 'library'].flatMap(dir => listFiles(path.join(sourceTestsDir, dir), { recursive: true })).filter(file => file.endsWith('-chromium.png')),
+    ...listFiles(path.join(sourceTestsDir, 'assets'), { recursive: true }),
+  ]
+  .map(file => path.relative(sourceTestsDir, file).replace(/\\/g, '/'));
+
+writeFile(path.join(workerTestsDir, 'assets.ts'), `// @ts-nocheck
+import path from 'path';
+import zlib from 'zlib';
+
+import fs from '@cloudflare/playwright/fs';
+
+${decodeBase64ToFiles.toString()}
+
+decodeBase64ToFiles('/', ${JSON.stringify(encodeFilesToBase64(sourceTestsDir, assets), undefined, 2)});
+`);
+
 // generate workerTests/index.ts file
 const testFiles = ['page', 'library']
   .flatMap(dir => listFiles(path.join(sourceTestsDir, dir)))
@@ -78,8 +97,10 @@ const cloudflareTestFiles = listFiles(cloudflareSourceTestsDir, { recursive: tru
   .filter(file => /\.(test|spec)\.ts$/.test(file))
   .map(file => `@cloudflareTests/${path.relative(cloudflareSourceTestsDir, file)}`.replace(/\\/g, '/').replace(/\.ts$/, ''));
 
-writeFile(path.join(workerTestsDir, 'index.ts'), [...testFiles, ...cloudflareTestFiles]
-  .map(file => `import ${JSON.stringify(file)};`).join('\n'));
+writeFile(path.join(workerTestsDir, 'index.ts'), `import "./assets";
+
+${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(file)};`).join('\n')}
+`);
 
 (async () => {
   await build({

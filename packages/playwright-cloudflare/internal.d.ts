@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks';
 import { isUnderTest } from 'playwright-core/lib/utils';
 
 export * from './tests';
@@ -51,6 +52,16 @@ export type TestCaseInfo = {
 
 export function setCurrentTestFile(file?: string): void;
 export function testSuites(): Promise<SuiteInfo[]>;
+
+export type TestContext = {
+  env: Env;
+  browser: Browser;
+  assetsUrl: string;
+};
+
+export const testContextZone: AsyncLocalStorage<TestContext>;
+
+export function currentTestContext(): TestContext;
 
 export class TestRunner {
   constructor(options?: { timeout?: number });

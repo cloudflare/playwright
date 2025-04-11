@@ -99,7 +99,7 @@ export class Chromium extends BrowserType {
       await cleanedUp;
     };
     const browserProcess: BrowserProcess = { close: doClose, kill: doClose };
-    const persistent: types.BrowserContextOptions = { noDefaultViewport: true };
+    const persistent = globalThis.navigator?.userAgent === 'Cloudflare-Workers' ? undefined : { noDefaultViewport: true };
     const browserOptions: BrowserOptions = {
       slowMo: options.slowMo,
       name: 'chromium',
@@ -113,7 +113,8 @@ export class Chromium extends BrowserType {
       tracesDir: options.tracesDir || artifactsDir,
       originalLaunchOptions: {},
     };
-    validateBrowserContextOptions(persistent, browserOptions);
+    if (persistent)
+      validateBrowserContextOptions(persistent, browserOptions);
     progress.throwIfAborted();
     const browser = await CRBrowser.connect(this.attribution.playwright, chromeTransport, browserOptions);
     browser._isCollocatedWithServer = false;

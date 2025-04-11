@@ -8,7 +8,7 @@ import type { AcquireResponse, SessionsResponse } from '@cloudflare/playwright';
 import type { TestEndPayload } from '@cloudflare/playwright/internal';
 import type { TestInfo } from '@playwright/test';
 
-type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'errors'>;
+type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'expectedStatus' | 'errors' | 'annotations'>;
 
 export type WorkerFixture = {
   sessionId: string;
@@ -69,7 +69,7 @@ export async function proxyTests(file: string) {
       websocket.addEventListener('close', () => {
         for (const [testId, resolve] of testResults.entries()) {
           testResults.delete(testId);
-          resolve({ testId, status: 'interrupted', errors: [] });
+          resolve({ testId, status: 'interrupted', expectedStatus: 'passed', errors: [], annotations: [] });
         }
       });
     },
@@ -84,21 +84,18 @@ export async function proxyTests(file: string) {
       });
       websocket.send(JSON.stringify({ testId, fullTitle }));
       const payload: TestPayload = await testPromise;
-      const { status, errors } = payload;
-      const error = errors[0]?.message;
+      const { status, expectedStatus, errors, annotations } = payload;
 
-      switch (status) {
-        case 'passed':
-          return;
-        case 'failed':
-          throw new Error(error ?? 'Test failed');
-        case 'skipped':
-          testInfo.skip();
-        case 'interrupted':
-          testInfo.skip();
-        case 'timedOut':
-          throw new Error(error ?? 'Test timed out');
-      }
+      if (annotations)
+        testInfo.annotations.push(...annotations);
+
+      if (errors)
+        // if drop stacktrace because otherwise it tries to parse the stacktrace from the worker
+        // and fails
+        testInfo.errors = errors.map(({ message, value }) => ({ message, value }));
+
+      testInfo.expectedStatus = status === 'skipped' ? 'skipped' : expectedStatus;
+      testInfo.status = status;
     }
   };
 }
