@@ -6,7 +6,7 @@ import { Suite, TestCase } from 'playwright/lib/common/test';
 import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
 
-import type { SuiteInfo, TestCaseInfo, TestEndPayload } from '../internal';
+import type { SuiteInfo, TestCaseInfo, TestContext, TestEndPayload } from '../internal';
 
 export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
 export { debug } from 'playwright-core/lib/utilsBundle';
@@ -103,7 +103,7 @@ class TestWorker extends WorkerMain {
 
   async testResult() {
     await this._donePromise;
-    return this._testResult!;
+    return this._testResult;
   }
 
   protected override dispatchEvent(method: string, params: any): void {
@@ -114,23 +114,44 @@ class TestWorker extends WorkerMain {
   }
 }
 
+let context: TestContext | undefined;
+
+export function currentTestContext() {
+  if (!context)
+    throw new Error(`Test context not initialized`);
+  return context;
+}
+
 export class TestRunner {
+  private _testContext: TestContext;
   private _options: { timeout?: number; } | undefined;
 
-  constructor(options?: { timeout?: number }) {
+  constructor(testContext: TestContext, options?: { timeout?: number }) {
+    this._testContext = testContext;
     this._options = options;
   }
 
   async runTest(file: string, testId: string): Promise<TestEndPayload> {
+    context = this._testContext;
     const testWorker = new TestWorker(this._options);
     try {
       const [result] = await Promise.all([
         testWorker.testResult(),
         testWorker.runTestGroup({ file, entries: [{ testId, retry: 0 }] }),
       ]);
-      return result;
+      return result ?? {
+        testId,
+        annotations: [{ type: 'error', description: 'testEnd event not triggered' }],
+        errors: [],
+        expectedStatus: 'passed',
+        status: 'failed',
+        hasNonRetriableError: false,
+        duration: 0,
+        timeout: 0,
+      };
     } finally {
       await testWorker.gracefullyClose();
+      context = undefined;
     }
   }
 }

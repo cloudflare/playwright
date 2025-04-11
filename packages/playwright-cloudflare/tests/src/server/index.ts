@@ -1,5 +1,8 @@
-import testsServer from './testsServer';
-import '@workerTests/index';
+import { testSuites } from '@cloudflare/playwright/internal';
+
+import { TestsServer } from './testsServer';
+
+export { TestsServer } from './testsServer';
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -7,9 +10,17 @@ export default {
 
     if (url.pathname.startsWith('/v1'))
       return await env.BROWSER.fetch(`http://fake.host${url.pathname}`);
+    if (url.pathname === '/')
+      return Response.json(await testSuites());
 
-    if (url.pathname === '/' || /\.(spec|test)\.ts$/.test(url.pathname))
-      return await testsServer.fetch(request, env);
+    if (/\.(spec|test)\.ts$/.test(url.pathname)) {
+      const sessionId = url.searchParams.get('sessionId');
+      if (!sessionId)
+        return new Response('sessionId is required', { status: 400 });
+      const id = env.TESTS_SERVER.idFromName(sessionId);
+      const testsServer = env.TESTS_SERVER.get(id) as DurableObjectStub<TestsServer>;
+      return await testsServer.fetch(request);
+    }
 
     if (url.pathname.endsWith('.html'))
       request = new Request(request.url.substring(0, request.url.length - '.html'.length));

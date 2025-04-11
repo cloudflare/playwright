@@ -2,13 +2,12 @@ import path from 'path';
 import fs from 'fs';
 
 import { test as baseTest } from '@playwright/test';
-import { MessageEvent, WebSocket } from 'ws';
 
 import type { AcquireResponse, SessionsResponse } from '@cloudflare/playwright';
 import type { TestEndPayload } from '@cloudflare/playwright/internal';
 import type { TestInfo } from '@playwright/test';
 
-type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'errors'>;
+type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'expectedStatus' | 'errors' | 'annotations'>;
 
 export type WorkerFixture = {
   sessionId: string;
@@ -52,60 +51,37 @@ export const test = baseTest.extend<{}, WorkerFixture>({
 const testsServerUrl = process.env.TESTS_SERVER_URL ?? `http://localhost:8787`;
 
 export async function proxyTests(file: string) {
-  const testResults = new Map<string, (payload: TestPayload) => void>();
-  let websocket!: WebSocket;
+
+  const url = new URL(`${testsServerUrl}/${file}`);
 
   return {
     beforeAll: async ({ sessionId }: WorkerFixture) => {
-      const wsUrl = new URL(`${testsServerUrl}/${file}`.replace(/^http/, 'ws'));
       if (process.env.CI)
-        wsUrl.searchParams.set('timeout', '30');
+        url.searchParams.set('timeout', '30');
       if (sessionId)
-        wsUrl.searchParams.set('sessionId', sessionId);
-      websocket = new WebSocket(wsUrl);
-      websocket.addEventListener('message',  (ev: MessageEvent) => {
-        const payload = JSON.parse(ev.data as string) as TestPayload;
-        const resolve = testResults.get(payload.testId);
-        testResults.delete(payload.testId);
-        resolve?.(payload);
-      });
-      await new Promise<any>((resolve, reject) => {
-        websocket.addEventListener('open', resolve);
-        websocket.addEventListener('error', reject);
-      });
-      websocket.addEventListener('close', () => {
-        for (const [testId, resolve] of testResults.entries()) {
-          testResults.delete(testId);
-          resolve({ testId, status: 'interrupted', errors: [] });
-        }
-      });
+        url.searchParams.set('sessionId', sessionId);
     },
 
     afterAll: async () => {
-      websocket.close();
     },
 
     runTest: async ({ testId, fullTitle }: { testId: string, fullTitle: string }, testInfo: TestInfo) => {
-      const testPromise = new Promise<TestPayload>(resolve => {
-        testResults.set(testId, resolve);
-      });
-      websocket.send(JSON.stringify({ testId, fullTitle }));
-      const payload: TestPayload = await testPromise;
-      const { status, errors } = payload;
-      const error = errors[0]?.message;
+      const response = await fetch(url, { body: JSON.stringify({ testId, fullTitle }), method: 'POST' });
+      if (!response.ok)
+        throw new Error(`Failed to run test ${fullTitle} (${testId})`);
 
-      switch (status) {
-        case 'passed':
-          return;
-        case 'failed':
-          throw new Error(error ?? 'Test failed');
-        case 'skipped':
-          testInfo.skip();
-        case 'interrupted':
-          testInfo.skip();
-        case 'timedOut':
-          throw new Error(error ?? 'Test timed out');
-      }
+      const { status, expectedStatus, errors, annotations } = await response.json() as TestPayload;
+
+      if (annotations)
+        testInfo.annotations.push(...annotations);
+
+      if (errors)
+        // if drop stacktrace because otherwise it tries to parse the stacktrace from the worker
+        // and fails
+        testInfo.errors = errors.map(({ message, value }) => ({ message, value }));
+
+      testInfo.expectedStatus = status === 'skipped' ? 'skipped' : expectedStatus;
+      testInfo.status = status;
     }
   };
 }
