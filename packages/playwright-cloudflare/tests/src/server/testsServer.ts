@@ -1,7 +1,6 @@
 import { connect, sessions, limits, acquire } from '@cloudflare/playwright';
-import { testSuites, TestRunner, setUnderTest } from '@cloudflare/playwright/internal';
+import { testSuites, TestRunner, setUnderTest, testContextZone } from '@cloudflare/playwright/internal';
 
-import { setCurrentContext } from './workerFixtures';
 import { skipTests } from '../skipTests';
 
 export type TestRequestPayload = {
@@ -50,8 +49,6 @@ export default {
     // so URL will ne a public one which is what we need
     const assetsUrl = url.origin;
 
-    setCurrentContext({ env, browser, assetsUrl });
-
     const testRunner = new TestRunner({ timeout });
 
     server.addEventListener('message', event => {
@@ -65,19 +62,19 @@ export default {
 
       log(`🧪 Running ${fullTitle}`);
 
-      testRunner.runTest(file, testId)
-          .then(result => {
-            send(server, result);
-            if (!['passed', 'skipped'].includes(result.status))
-              log(`❌ ${fullTitle} failed with status ${result.status}${result.errors.length ? `: ${result.errors[0].message}` : ''}`);
-          })
-          .catch(e => {
-            server.close(1011, e.message);
-          });
+      testContextZone.run({ env, browser, assetsUrl }, async () => {
+        try {
+          const result = await testRunner.runTest(file, testId);
+          send(server, result);
+          if (!['passed', 'skipped'].includes(result.status))
+            log(`❌ ${fullTitle} failed with status ${result.status}${result.errors.length ? `: ${result.errors[0].message}` : ''}`);
+        } catch (e: any) {
+          server.close(1011, e.message);
+        }
+      }).catch(() => {});
     });
     server.addEventListener('close', () => {
       browser.close().catch(e => error(e));
-      setCurrentContext(undefined);
     });
 
     return new Response(null, {
