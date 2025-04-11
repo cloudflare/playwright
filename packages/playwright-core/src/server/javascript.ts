@@ -294,7 +294,7 @@ export function normalizeEvaluationExpression(expression: string, isFunction: bo
   expression = expression.trim();
 
   if (isFunction) {
-    if (navigator.userAgent === 'Cloudflare-Workers') {
+    if (globalThis.navigator?.userAgent === 'Cloudflare-Workers') {
       // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
       // See: https://github.com/cloudflare/workers-sdk/issues/7107
       expression = `((__name => (${expression}))(t => t))`;
