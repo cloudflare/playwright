@@ -8,8 +8,6 @@
   "devDependencies": {
     "@cloudflare/playwright": "file:..",
     "@playwright/test": "^1.51.1",
-    "@types/ws": "^8.18.0",
-    "wrangler": "^4.4.0",
-    "ws": "^8.18.1"
+    "wrangler": "^4.4.0"
   }
 }

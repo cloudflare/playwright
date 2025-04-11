@@ -1,7 +1,4 @@
 export const skipTests: string[][] = [
-  ['library/browser.spec.ts', 'should create new page @smoke'],
-  ['library/browsercontext-basic.spec.ts', 'should create new context @smoke'],
-  ['library/browsercontext-basic.spec.ts', 'should isolate localStorage and cookies @smoke'],
   ['library/browsercontext-cookies.spec.ts', 'should get a cookie @smoke'],
   ['library/browsercontext-credentials.spec.ts', 'should work with correct credentials @smoke'],
   ['library/browsercontext-device.spec.ts', 'device', 'should work @smoke'],

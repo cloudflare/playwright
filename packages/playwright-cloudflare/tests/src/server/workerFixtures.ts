@@ -1,5 +1,5 @@
-import { _baseTest } from '@cloudflare/playwright/internal';
-import playwright from '@cloudflare/playwright';
+import { _baseTest, currentTestContext } from '@cloudflare/playwright/internal';
+import playwright, { connect } from '@cloudflare/playwright';
 
 import type { ScreenshotMode, VideoMode } from '../../../types/test';
 import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright } from '@cloudflare/playwright/test';
@@ -11,6 +11,7 @@ export type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>
 
 export type WorkersWorkerFixtures = {
   env: Env;
+  sessionId: string;
 };
 
 export type PlatformWorkerFixtures = {
@@ -40,15 +41,19 @@ export type PageTestFixtures = {
 type TestServer = {
   PREFIX: string;
   EMPTY_PAGE: string;
-  setRoute(): Promise<void>;
+  setRoute(): void;
   waitForRequest(): Promise<void>;
+  enableGzip(): void;
+  setRedirect(): void;
+  setCSP(): void;
 };
 
 export type ServerFixtures = {
   server: TestServer;
-  httpsServer: TestServer;
+  httpsServer: never;
+  proxyServer: never;
   asset: (p: string) => string;
-  loopback?: string;
+  loopback?: never;
 };
 
 export type PageWorkerFixtures = {
@@ -89,23 +94,6 @@ export type TestModeTestFixtures = {
   toImpl: (rpcObject?: any) => any;
 };
 
-export type Context = {
-  env: Env;
-  browser: Browser;
-  assetsUrl: string;
-};
-
-export function setCurrentContext(context?: Context) {
-  (global as any)['__TEST_GLOBALS'] = context;
-}
-
-export function currentContext() {
-  const context = (global as any)['__TEST_GLOBALS'];
-  if (!context)
-    throw new Error('Context not initialized');
-  return context as Context;
-}
-
 export const test = platformTest.extend<PageTestFixtures & ServerFixtures & TestModeTestFixtures & BrowserTestTestFixtures, WorkersWorkerFixtures & PlaywrightWorkerArgs & BrowserTestWorkerFixtures & PageWorkerFixtures & TestModeWorkerOptions>({
   headless: [true, { scope: 'worker' }],
   channel: ['stable', { scope: 'worker' }],
@@ -115,7 +103,11 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   browserName: ['chromium', { scope: 'worker' }],
 
   env: [async ({}, run) => {
-    await run(currentContext().env);
+    await run(currentTestContext().env);
+  }, { scope: 'worker' }],
+
+  sessionId: [async ({}, run) => {
+    await run(currentTestContext().sessionId);
   }, { scope: 'worker' }],
 
   browserVersion: [async ({ browser }, run) => {
@@ -137,8 +129,10 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   playwright: [async ({}, run) => run(playwright), { scope: 'worker' }],
 
-  browser: [async ({}, run) => {
-    await run(currentContext().browser);
+  browser: [async ({ env, sessionId }, run) => {
+    const browser = await connect(env.BROWSER, sessionId);
+    await run(browser);
+    await browser.close();
   }, { scope: 'worker' }],
 
   context: async ({ contextFactory }, run) => {
@@ -152,18 +146,25 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   },
 
   server: async ({}, run, testInfo) => {
-    const assetsUrl = currentContext().assetsUrl;
+    const assetsUrl = currentTestContext().assetsUrl;
 
     await run({
       PREFIX: assetsUrl,
       EMPTY_PAGE: `${assetsUrl}/empty.html`,
-      setRoute: async () => testInfo.skip(true, 'setRoute not supported, skipping'),
+      setRoute: () => testInfo.skip(true, 'setRoute not supported, skipping'),
       waitForRequest: async () => testInfo.skip(true, 'waitForRequest not supported, skipping'),
+      enableGzip: () => testInfo.skip(true, 'enableGzip not supported, skipping'),
+      setRedirect: () => testInfo.skip(true, 'setRedirect not supported, skipping'),
+      setCSP: () => testInfo.skip(true, 'setCSP not supported, skipping'),
     });
   },
 
   httpsServer: async ({}, run, testInfo) => {
     testInfo.skip(true, 'httpsServer not supported, skipping');
+  },
+
+  proxyServer: async ({}, run, testInfo) => {
+    testInfo.skip(true, 'proxyServer not supported, skipping');
   },
 
   asset: async ({}, run) => {
