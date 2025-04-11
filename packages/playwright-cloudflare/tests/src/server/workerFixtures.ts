@@ -40,6 +40,7 @@ export type PageTestFixtures = {
 
 type TestServer = {
   PREFIX: string;
+  CROSS_PROCESS_PREFIX: string;
   EMPTY_PAGE: string;
   setRoute(): void;
   waitForRequest(): Promise<void>;
@@ -147,9 +148,9 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   server: async ({}, run, testInfo) => {
     const assetsUrl = currentTestContext().assetsUrl;
-
     await run({
       PREFIX: assetsUrl,
+      CROSS_PROCESS_PREFIX: assetsUrl.replace(/\:\/\/([^.]+)\./, '://$1-cross-origin.'),
       EMPTY_PAGE: `${assetsUrl}/empty.html`,
       setRoute: () => testInfo.skip(true, 'setRoute not supported, skipping'),
       waitForRequest: async () => testInfo.skip(true, 'waitForRequest not supported, skipping'),
