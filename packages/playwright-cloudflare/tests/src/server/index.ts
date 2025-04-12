@@ -22,7 +22,11 @@ export default {
       return await testsServer.fetch(request);
     }
 
-    if (url.pathname.endsWith('.html'))
+    if (url.pathname === '/index.html')
+      // let's use empty.html for index.html
+      request = new Request(request.url.replace(/\/index\.html$/, '/empty'));
+    else if (url.pathname.endsWith('.html'))
+      // assets serve html files without .html extension
       request = new Request(request.url.substring(0, request.url.length - '.html'.length));
 
     return await env.ASSETS?.fetch(request) ?? new Response('Not found', { status: 404 });

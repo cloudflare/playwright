@@ -42,16 +42,18 @@ type TestServer = {
   PREFIX: string;
   CROSS_PROCESS_PREFIX: string;
   EMPTY_PAGE: string;
+  setAuth(): void;
   setRoute(): void;
   waitForRequest(): Promise<void>;
   enableGzip(): void;
   setRedirect(): void;
   setCSP(): void;
+  sendOnWebSocketConnection(): void;
 };
 
 export type ServerFixtures = {
   server: TestServer;
-  httpsServer: never;
+  httpsServer: TestServer;
   proxyServer: never;
   asset: (p: string) => string;
   loopback?: never;
@@ -82,7 +84,10 @@ export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
 };
 
 type BrowserTestTestFixtures = {
+  hasTouch: boolean;
+  _combinedContextOptions: BrowserContextOptions,
   contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>;
+  launchPersistent: () => never;
 };
 
 export type TestModeName = 'default' | 'driver' | 'service' | 'service2';
@@ -103,6 +108,13 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   video: ['off', { scope: 'worker' }],
   browserName: ['chromium', { scope: 'worker' }],
 
+  hasTouch: [false, { option: true }],
+  _combinedContextOptions: async ({ hasTouch }, run) => {
+    await run({
+      hasTouch,
+    });
+  },
+
   env: [async ({}, run) => {
     await run(currentTestContext().env);
   }, { scope: 'worker' }],
@@ -115,6 +127,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await run(browser.version());
   }, { scope: 'worker' }],
 
+  defaultSameSiteCookieValue: ['Lax', { scope: 'worker' }],
+
   browserMajorVersion: [async ({ browserVersion }, run) => {
     await run(Number(browserVersion.split('.')[0]));
   }, { scope: 'worker' }],
@@ -122,7 +136,6 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   isAndroid: [false, { scope: 'worker' }],
   isElectron: [false, { scope: 'worker' }],
   isWebView2: [false, { scope: 'worker' }],
-
 
   browserType: [async ({ playwright, browserName, }, run) => {
     await run(playwright[browserName]);
@@ -136,8 +149,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await browser.close();
   }, { scope: 'worker' }],
 
-  context: async ({ contextFactory }, run) => {
-    await run(await contextFactory());
+  context: async ({ contextFactory, _combinedContextOptions }, run) => {
+    await run(await contextFactory(_combinedContextOptions));
   },
 
   page: async ({ context }, run) => {
@@ -152,16 +165,18 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
       PREFIX: assetsUrl,
       CROSS_PROCESS_PREFIX: assetsUrl.replace(/\:\/\/([^.]+)\./, '://$1-cross-origin.'),
       EMPTY_PAGE: `${assetsUrl}/empty.html`,
+      setAuth: () => testInfo.skip(true, 'setAuth not supported, skipping'),
       setRoute: () => testInfo.skip(true, 'setRoute not supported, skipping'),
       waitForRequest: async () => testInfo.skip(true, 'waitForRequest not supported, skipping'),
       enableGzip: () => testInfo.skip(true, 'enableGzip not supported, skipping'),
       setRedirect: () => testInfo.skip(true, 'setRedirect not supported, skipping'),
       setCSP: () => testInfo.skip(true, 'setCSP not supported, skipping'),
+      sendOnWebSocketConnection: () => testInfo.skip(true, 'sendOnWebSocketConnection not supported, skipping'),
     });
   },
 
-  httpsServer: async ({}, run, testInfo) => {
-    testInfo.skip(true, 'httpsServer not supported, skipping');
+  httpsServer: async ({ server }, run, testInfo) => {
+    await run(server);
   },
 
   proxyServer: async ({}, run, testInfo) => {
@@ -191,6 +206,10 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     });
     for (const context of contexts)
       await context.close();
+  },
+
+  launchPersistent: async ({}, run, testInfo) => {
+    testInfo.skip(true, 'launchPersistent not supported, skipping');
   },
 });
 
