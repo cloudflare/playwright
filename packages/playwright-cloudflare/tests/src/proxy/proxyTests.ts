@@ -15,20 +15,27 @@ export type WorkerFixture = {
 };
 
 export const test = baseTest.extend<{}, WorkerFixture>({
-  sessionId: [async ({}, use, workerInfo) => {;
+  sessionId: [async ({}, use, workerInfo) => {
     const sessionFile = path.join(workerInfo.project.outputDir, `session-${workerInfo.parallelIndex}.json`);
     let sessionId: string | undefined;
     if (fs.existsSync(sessionFile)) {
       const session = JSON.parse(fs.readFileSync(sessionFile, 'utf-8')) as AcquireResponse;
-      while (true) {
+      for (let i = 0; i < 5; i++) {
         const response = await fetch(`${testsServerUrl}/v1/sessions`);
         const { sessions } = await response.json() as SessionsResponse;
-        if (!sessions.find(s => s.sessionId === session.sessionId)?.connectionId)
+        const activeSession = sessions.find(s => s.sessionId === session.sessionId);
+
+        if (!activeSession)
           break;
+
+        if (!activeSession.connectionId) {
+          sessionId = session.sessionId;
+          break;
+        }
+
         // wait for the session to be released and try again
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      sessionId = session.sessionId;
     }
 
     if (!sessionId) {
