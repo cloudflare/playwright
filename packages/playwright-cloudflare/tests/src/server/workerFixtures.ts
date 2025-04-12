@@ -1,7 +1,7 @@
 import { _baseTest, currentTestContext, runWithExpectApiListener } from '@cloudflare/playwright/internal';
 import playwright, { connect } from '@cloudflare/playwright';
 
-import type { ScreenshotMode, VideoMode } from '../../../types/test';
+import type { TestInfo, ScreenshotMode, VideoMode } from '../../../types/test';
 import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright } from '@cloudflare/playwright/test';
 
 export { expect } from '@cloudflare/playwright/test';
@@ -38,18 +38,64 @@ export type PageTestFixtures = {
   page: Page;
 };
 
-type TestServer = {
-  PREFIX: string;
-  CROSS_PROCESS_PREFIX: string;
-  EMPTY_PAGE: string;
-  setAuth(): void;
-  setRoute(): void;
-  waitForRequest(): Promise<void>;
-  enableGzip(): void;
-  setRedirect(): void;
-  setCSP(): void;
-  sendOnWebSocketConnection(): void;
-};
+class TestServer {
+  private _testInfo: TestInfo;
+  readonly PREFIX: string;
+  readonly CROSS_PROCESS_PREFIX: string;
+  readonly EMPTY_PAGE: string;
+
+  constructor(testInfo: TestInfo, assetsUrl: string) {
+    this._testInfo = testInfo;
+    this.PREFIX = assetsUrl;
+    this.CROSS_PROCESS_PREFIX = assetsUrl.replace(/\:\/\/([^.]+)\./, '://$1-cross-origin.');
+    this.EMPTY_PAGE = `${assetsUrl}/empty.html`;
+  }
+
+  get PORT() {
+    this._testInfo.skip(true, 'server.PORT not supported, skipping');
+    return 443;
+  }
+
+  onceWebSocketConnection() {
+    this._testInfo.skip(true, 'onceWebSocketConnection not supported, skipping');
+  }
+
+  setAuth() {
+    this._testInfo.skip(true, 'setAuth not supported, skipping');
+  }
+
+  setRoute() {
+    this._testInfo.skip(true, 'setRoute not supported, skipping');
+  }
+
+  waitForRequest() {
+    this._testInfo.skip(true, 'waitForRequest not supported, skipping');
+  }
+
+  waitForUpgrade() {
+    this._testInfo.skip(true, 'waitForUpgrade not supported, skipping');
+  }
+
+  waitForWebSocket() {
+    this._testInfo.skip(true, 'waitForWebSocket not supported, skipping');
+  }
+
+  enableGzip() {
+    this._testInfo.skip(true, 'enableGzip not supported, skipping');
+  }
+
+  setRedirect() {
+    this._testInfo.skip(true, 'setRedirect not supported, skipping');
+  }
+
+  setCSP() {
+    this._testInfo.skip(true, 'setCSP not supported, skipping');
+  }
+
+  sendOnWebSocketConnection() {
+    this._testInfo.skip(true, 'sendOnWebSocketConnection not supported, skipping');
+  }
+}
 
 export type ServerFixtures = {
   server: TestServer;
@@ -162,18 +208,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   server: async ({}, run, testInfo) => {
     const assetsUrl = currentTestContext().assetsUrl;
-    await run({
-      PREFIX: assetsUrl,
-      CROSS_PROCESS_PREFIX: assetsUrl.replace(/\:\/\/([^.]+)\./, '://$1-cross-origin.'),
-      EMPTY_PAGE: `${assetsUrl}/empty.html`,
-      setAuth: () => testInfo.skip(true, 'setAuth not supported, skipping'),
-      setRoute: () => testInfo.skip(true, 'setRoute not supported, skipping'),
-      waitForRequest: async () => testInfo.skip(true, 'waitForRequest not supported, skipping'),
-      enableGzip: () => testInfo.skip(true, 'enableGzip not supported, skipping'),
-      setRedirect: () => testInfo.skip(true, 'setRedirect not supported, skipping'),
-      setCSP: () => testInfo.skip(true, 'setCSP not supported, skipping'),
-      sendOnWebSocketConnection: () => testInfo.skip(true, 'sendOnWebSocketConnection not supported, skipping'),
-    });
+    await run(new TestServer(testInfo, assetsUrl));
   },
 
   httpsServer: async ({ server }, run, testInfo) => {
