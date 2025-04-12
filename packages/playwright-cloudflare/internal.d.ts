@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from 'async_hooks';
 import { isUnderTest } from 'playwright-core/lib/utils';
 
 export * from './tests';
@@ -76,3 +75,5 @@ export const debug: Debug;
 
 export function setUnderTest(underTest: boolean): boolean;
 export function isUnderTest(): boolean;
+
+export async function runWithExpectApiListener<T>(fn: () => Promise<T>): Promise<T>;

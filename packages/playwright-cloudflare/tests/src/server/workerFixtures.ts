@@ -1,4 +1,4 @@
-import { _baseTest, currentTestContext } from '@cloudflare/playwright/internal';
+import { _baseTest, currentTestContext, runWithExpectApiListener } from '@cloudflare/playwright/internal';
 import playwright, { connect } from '@cloudflare/playwright';
 
 import type { ScreenshotMode, VideoMode } from '../../../types/test';
@@ -86,6 +86,7 @@ export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
 type BrowserTestTestFixtures = {
   hasTouch: boolean;
   _combinedContextOptions: BrowserContextOptions,
+  _setupArtifacts: void,
   contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>;
   launchPersistent: () => never;
 };
@@ -211,6 +212,10 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   launchPersistent: async ({}, run, testInfo) => {
     testInfo.skip(true, 'launchPersistent not supported, skipping');
   },
+
+  _setupArtifacts: [async ({}, use) => {
+    await runWithExpectApiListener(use);
+  }, { auto: 'all-hooks-included', timeout: 0 } as any],
 });
 
 export async function rafraf(target: Page | Frame, count = 1) {
