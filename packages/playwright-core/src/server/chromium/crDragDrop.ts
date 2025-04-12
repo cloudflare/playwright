@@ -90,7 +90,10 @@ export class DragManager {
       };
     }
 
-    await this._crPage._page.safeNonStallingEvaluateInAllFrames(`(${setupDragListeners.toString()})()`, 'utility');
+    // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+    // See: https://github.com/cloudflare/workers-sdk/issues/7107
+    const script = `((__name => (${setupDragListeners.toString()}))(t => t))`;
+    await this._crPage._page.safeNonStallingEvaluateInAllFrames(`(${script})()`, 'utility');
 
     client.on('Input.dragIntercepted', onDragIntercepted!);
     try {

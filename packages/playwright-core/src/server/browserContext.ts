@@ -519,7 +519,10 @@ export abstract class BrowserContext extends SdkObject {
     };
     const originsToSave = new Set(this._origins);
 
-    const collectScript = `(${storageScript.collect})(${utilityScriptSerializers.source}, (${ensureBuiltins})(globalThis), ${this._browser.options.name === 'firefox'}, ${indexedDB})`;
+    let collectScript = `(${storageScript.collect})(${utilityScriptSerializers.source}, (${ensureBuiltins})(globalThis), ${this._browser.options.name === 'firefox'}, ${indexedDB})`;
+    // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+    // See: https://github.com/cloudflare/workers-sdk/issues/7107
+    collectScript = `((__name => (${collectScript}))(t => t))`;
 
     // First try collecting storage stage from existing pages.
     for (const page of this.pages()) {
