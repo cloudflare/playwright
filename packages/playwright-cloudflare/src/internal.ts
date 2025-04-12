@@ -1,12 +1,16 @@
-import { ManualPromise } from 'playwright-core/lib/utils';
+import { asLocator, currentZone, isString, ManualPromise } from 'playwright-core/lib/utils';
 import { loadConfig } from 'playwright/lib/common/configLoader';
-import { setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
+import { currentTestInfo, setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 import { bindFileSuiteToProject } from 'playwright/lib/common/suiteUtils';
 import { Suite, TestCase } from 'playwright/lib/common/test';
 import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
+import { TestStepInternal } from 'playwright/lib/worker/testInfo';
+
+import playwright from '.';
 
 import type { SuiteInfo, TestCaseInfo, TestContext, TestEndPayload } from '../internal';
+import type { ApiCallData, ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
 
 export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
 export { debug } from 'playwright-core/lib/utilsBundle';
@@ -153,5 +157,89 @@ export class TestRunner {
       await testWorker.gracefullyClose();
       context = undefined;
     }
+  }
+}
+
+function paramsToRender(apiName: string) {
+  switch (apiName) {
+    case 'locator.fill':
+      return ['value'];
+    default:
+      return ['url', 'selector', 'text', 'key'];
+  }
+}
+
+function renderApiCall(apiName: string, params: any) {
+  if (apiName === 'tracing.group')
+    return params.name;
+  const paramsArray = [];
+  if (params) {
+    for (const name of paramsToRender(apiName)) {
+      if (!(name in params))
+        continue;
+      let value;
+      if (name === 'selector' && isString(params[name]) && params[name].startsWith('internal:')) {
+        const getter = asLocator('javascript', params[name]);
+        apiName = apiName.replace(/^locator\./, 'locator.' + getter + '.');
+        apiName = apiName.replace(/^page\./, 'page.' + getter + '.');
+        apiName = apiName.replace(/^frame\./, 'frame.' + getter + '.');
+      } else {
+        value = params[name];
+        paramsArray.push(value);
+      }
+    }
+  }
+  const paramsText = paramsArray.length ? '(' + paramsArray.join(', ') + ')' : '';
+  return apiName + paramsText;
+}
+
+const tracingGroupSteps: TestStepInternal[] = [];
+const expectApiListener: ClientInstrumentationListener = {
+  onApiCallBegin: (data: ApiCallData) => {
+    const testInfo = currentTestInfo();
+    // Some special calls do not get into steps.
+    if (!testInfo || data.apiName.includes('setTestIdAttribute') || data.apiName === 'tracing.groupEnd')
+      return;
+    const zone = currentZone().data<TestStepInternal>('stepZone');
+    if (zone && zone.category === 'expect') {
+      // Display the internal locator._expect call under the name of the enclosing expect call,
+      // and connect it to the existing expect step.
+      data.apiName = zone.title;
+      data.stepId = zone.stepId;
+      return;
+    }
+    // In the general case, create a step for each api call and connect them through the stepId.
+    const step = testInfo._addStep({
+      location: data.frames[0],
+      category: 'pw:api',
+      title: renderApiCall(data.apiName, data.params),
+      apiName: data.apiName,
+      params: data.params,
+    }, tracingGroupSteps[tracingGroupSteps.length - 1]);
+    data.userData = step;
+    data.stepId = step.stepId;
+    if (data.apiName === 'tracing.group')
+      tracingGroupSteps.push(step);
+  },
+  onApiCallEnd: (data: ApiCallData) => {
+    // "tracing.group" step will end later, when "tracing.groupEnd" finishes.
+    if (data.apiName === 'tracing.group')
+      return;
+    if (data.apiName === 'tracing.groupEnd') {
+      const step = tracingGroupSteps.pop();
+      step?.complete({ error: data.error });
+      return;
+    }
+    const step = data.userData;
+    step?.complete({ error: data.error });
+  },
+};
+
+export async function runWithExpectApiListener<T>(fn: () => Promise<T>): Promise<T> {
+  playwright._instrumentation.addListener(expectApiListener);
+  try {
+    return await fn();
+  } finally {
+    playwright._instrumentation.removeListener(expectApiListener);
   }
 }

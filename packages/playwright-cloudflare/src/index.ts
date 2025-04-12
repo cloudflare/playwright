@@ -122,6 +122,7 @@ export const selectors = playwright.selectors;
 export const devices = playwright.devices;
 export const errors = playwright.errors;
 export const request = playwright.request;
+export const _instrumentation = playwright._instrumentation;
 
 export default {
   chromium,
@@ -129,6 +130,7 @@ export default {
   devices,
   errors,
   request,
+  _instrumentation,
   launch,
   connect,
   sessions,
