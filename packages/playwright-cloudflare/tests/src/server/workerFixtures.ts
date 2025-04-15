@@ -216,8 +216,16 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await run(_combinedContextOptions);
   },
 
-  context: async ({ contextFactory, _combinedContextOptions }, run) => {
-    await run(await contextFactory(_combinedContextOptions));
+  context: async ({ contextFactory, _combinedContextOptions }, run, testInfo) => {
+    const context = await contextFactory(_combinedContextOptions);
+    await context.tracing.start({ screenshots: true, snapshots: true });
+    await run(context);
+    if (testInfo.status !== 'skipped' && testInfo.status !== testInfo.expectedStatus) {
+      const tracePath = testInfo.outputPath('trace.zip');
+      await context.tracing.stop({ path: tracePath });
+      const trace = await fs.promises.readFile(tracePath);
+      testInfo.attachments.push({ name: 'trace', body: trace, contentType: 'application/zip' });
+    }
   },
 
   page: async ({ context }, run) => {
