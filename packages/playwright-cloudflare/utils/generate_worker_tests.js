@@ -52,7 +52,7 @@ deleteDir(workerTestsDir);
 
 // generate workerTests/assets.ts file
 const assets = [
-    ...['page', 'library'].flatMap(dir => listFiles(path.join(sourceTestsDir, dir), { recursive: true })).filter(file => file.endsWith('-chromium.png')),
+    ...['page', 'library'].flatMap(dir => listFiles(path.join(sourceTestsDir, dir), { recursive: true })).filter(file => /-chromium\.(png|jpg)/.test(file)),
     ...listFiles(path.join(sourceTestsDir, 'assets'), { recursive: true }),
   ]
   .map(file => path.relative(sourceTestsDir, file).replace(/\\/g, '/'));
