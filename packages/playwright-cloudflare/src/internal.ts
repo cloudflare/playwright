@@ -7,6 +7,8 @@ import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
 import { TestStepInternal } from 'playwright/lib/worker/testInfo';
 
+import { isUnsupportedOperationError } from './cloudflare/unsupportedOperations';
+
 import playwright from '.';
 
 import type { SuiteInfo, TestCaseInfo, TestContext, TestEndPayload } from '../internal';
@@ -161,7 +163,7 @@ export class TestRunner {
         testWorker.testResult(),
         testWorker.runTestGroup({ file, entries: [{ testId, retry: 0 }] }),
       ]);
-      if (result.status === 'failed') {
+      if (result.status === 'failed' && result.errors.some(isUnsupportedOperationError)) {
         return {
           ...result,
           status: 'skipped',
