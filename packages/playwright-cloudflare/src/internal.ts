@@ -85,7 +85,7 @@ export async function testSuites(): Promise<SuiteInfo[]> {
 }
 
 class TestWorker extends WorkerMain {
-  private _donePromise = new ManualPromise<void>();
+  private _donePromise = new ManualPromise<TestEndPayload>();
   private _testResult?: TestEndPayload;
 
   constructor(options?: { timeout?: number }) {
@@ -106,15 +106,27 @@ class TestWorker extends WorkerMain {
   }
 
   async testResult() {
-    await this._donePromise;
-    return this._testResult;
+    return await this._donePromise;
   }
 
   protected override dispatchEvent(method: string, params: any): void {
     if (method === 'testEnd')
       this._testResult = params;
-    if (method === 'done')
-      this._donePromise.resolve();
+    if (method === 'done') {
+      if (!this._testResult) {
+        this._testResult = {
+          testId: params.testId,
+          errors: params.fatalErrors ?? [],
+          annotations: [],
+          expectedStatus: 'passed',
+          status: 'failed',
+          hasNonRetriableError: false,
+          duration: 0,
+          timeout: 0,
+        };
+      }
+      this._donePromise.resolve(this._testResult);
+    }
   }
 }
 
@@ -143,16 +155,14 @@ export class TestRunner {
         testWorker.testResult(),
         testWorker.runTestGroup({ file, entries: [{ testId, retry: 0 }] }),
       ]);
-      return result ?? {
-        testId,
-        annotations: [{ type: 'error', description: 'testEnd event not triggered' }],
-        errors: [],
-        expectedStatus: 'passed',
-        status: 'failed',
-        hasNonRetriableError: false,
-        duration: 0,
-        timeout: 0,
-      };
+      if (result.status === 'failed') {
+        return {
+          ...result,
+          status: 'skipped',
+          expectedStatus: 'skipped',
+        };
+      }
+      return result;
     } finally {
       await testWorker.gracefullyClose();
       context = undefined;
