@@ -1,4 +1,4 @@
-import { asLocator, currentZone, isString, ManualPromise } from 'playwright-core/lib/utils';
+import { asLocator, currentZone, isString, ManualPromise, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
 import { loadConfig } from 'playwright/lib/common/configLoader';
 import { currentTestInfo, setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 import { bindFileSuiteToProject } from 'playwright/lib/common/suiteUtils';
@@ -148,6 +148,12 @@ export class TestRunner {
   }
 
   async runTest(file: string, testId: string): Promise<TestEndPayload> {
+    // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
+    // so we need to set it to the current time inside a event handler, where Date.now() is not 0.
+    // https://stackoverflow.com/a/58491358
+    if (timeOrigin() === 0 && Date.now() !== 0)
+      setTimeOrigin(Date.now());
+
     context = this._testContext;
     const testWorker = new TestWorker(this._options);
     try {
