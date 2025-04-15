@@ -6,12 +6,14 @@ import { env } from 'cloudflare:workers';
 
 import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
 import { wrapClientApis } from './cloudflare/wrapClientApis';
+import { unsupportedOperations } from './cloudflare/unsupportedOperations';
 
 import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
 import type { AcquireResponse, ActiveSession, Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, ConnectOverCDPOptions, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
 
 const playwright = createInProcessPlaywright();
+unsupportedOperations(playwright);
 wrapClientApis();
 
 const HTTP_FAKE_HOST = 'http://fake.host';
