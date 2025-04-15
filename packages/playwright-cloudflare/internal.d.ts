@@ -60,9 +60,19 @@ export type TestContext = {
 
 export function currentTestContext(): TestContext;
 
+export type Attachment = {
+  name: string;
+  body: string;
+  contentType: string;
+};
+
+export type TestResult = TestEndPayload & {
+  attachments?: Attachment[];
+};
+
 export class TestRunner {
   constructor(testContext: TestContext, options?: { timeout?: number });
-  runTest(file: string, testId: string): Promise<TestEndPayload>;
+  runTest(file: string, testId: string): Promise<TestResult>;
 }
 
 interface Debug {

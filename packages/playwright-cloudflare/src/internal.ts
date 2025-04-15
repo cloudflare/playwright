@@ -11,7 +11,7 @@ import { isUnsupportedOperationError } from './cloudflare/unsupportedOperations'
 
 import playwright from '.';
 
-import type { SuiteInfo, TestCaseInfo, TestContext, TestEndPayload } from '../internal';
+import type { Attachment, SuiteInfo, TestCaseInfo, TestContext, TestResult } from '../internal';
 import type { ApiCallData, ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
 
 export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
@@ -62,6 +62,7 @@ function toInfo(test: Suite | TestCase): SuiteInfo | TestCaseInfo {
 }
 
 export const playwrightTestConfig = {
+  preserveOutput: 'failures-only',
   projects: [
     {
       timeout: 5000,
@@ -87,8 +88,9 @@ export async function testSuites(): Promise<SuiteInfo[]> {
 }
 
 class TestWorker extends WorkerMain {
-  private _donePromise = new ManualPromise<TestEndPayload>();
-  private _testResult?: TestEndPayload;
+  private _donePromise = new ManualPromise<TestResult>();
+  private _attachments: Attachment[] = [];
+  private _testResult?: TestResult;
 
   constructor(options?: { timeout?: number }) {
     super({
@@ -112,6 +114,12 @@ class TestWorker extends WorkerMain {
   }
 
   protected override dispatchEvent(method: string, params: any): void {
+    if (method === 'attach') {
+      const { name, body, contentType } = params;
+      if (!body)
+        return;
+      this._attachments.push({ name, body, contentType });
+    }
     if (method === 'testEnd')
       this._testResult = params;
     if (method === 'done') {
@@ -127,7 +135,10 @@ class TestWorker extends WorkerMain {
           timeout: 0,
         };
       }
-      this._donePromise.resolve(this._testResult);
+      this._donePromise.resolve({
+        ...this._testResult,
+        attachments: this._attachments,
+      });
     }
   }
 }
@@ -149,7 +160,7 @@ export class TestRunner {
     this._options = options;
   }
 
-  async runTest(file: string, testId: string): Promise<TestEndPayload> {
+  async runTest(file: string, testId: string): Promise<TestResult> {
     // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
     // so we need to set it to the current time inside a event handler, where Date.now() is not 0.
     // https://stackoverflow.com/a/58491358

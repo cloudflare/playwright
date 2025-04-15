@@ -4,10 +4,10 @@ import fs from 'fs';
 import { test as baseTest } from '@playwright/test';
 
 import type { AcquireResponse, SessionsResponse } from '@cloudflare/playwright';
-import type { TestEndPayload } from '@cloudflare/playwright/internal';
+import type { TestResult } from '@cloudflare/playwright/internal';
 import type { TestInfo } from '@playwright/test';
 
-type TestPayload = Pick<TestEndPayload, 'testId' | 'status' | 'expectedStatus' | 'errors' | 'annotations'>;
+type TestPayload = Pick<TestResult, 'testId' | 'status' | 'expectedStatus' | 'errors' | 'annotations' | 'attachments'>;
 
 export type WorkerFixture = {
   sessionId: string;
@@ -70,7 +70,7 @@ export async function proxyTests(file: string) {
       if (!response.ok)
         throw new Error(`Failed to run test ${fullTitle} (${testId})`);
 
-      const { status, expectedStatus, errors, annotations } = await response.json() as TestPayload;
+      const { status, expectedStatus, errors, annotations, attachments } = await response.json() as TestPayload;
 
       if (annotations)
         testInfo.annotations.push(...annotations);
@@ -82,6 +82,14 @@ export async function proxyTests(file: string) {
 
       testInfo.expectedStatus = status === 'skipped' ? 'skipped' : expectedStatus;
       testInfo.status = status;
+
+      if (attachments) {
+        testInfo.attachments.push(...attachments.map(({ name, body, contentType }) => ({
+          name,
+          body: Buffer.from(body, 'base64'),
+          contentType,
+        })));
+      }
     }
   };
 }
