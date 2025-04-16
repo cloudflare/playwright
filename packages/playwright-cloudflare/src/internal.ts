@@ -1,3 +1,5 @@
+import fs from 'fs';
+
 import { asLocator, currentZone, isString, ManualPromise, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
 import { loadConfig } from 'playwright/lib/common/configLoader';
 import { currentTestInfo, setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
@@ -62,7 +64,6 @@ function toInfo(test: Suite | TestCase): SuiteInfo | TestCaseInfo {
 }
 
 export const playwrightTestConfig = {
-  preserveOutput: 'failures-only',
   projects: [
     {
       timeout: 5000,
@@ -115,13 +116,21 @@ class TestWorker extends WorkerMain {
 
   protected override dispatchEvent(method: string, params: any): void {
     if (method === 'attach') {
-      const { name, body, contentType } = params;
-      if (!body)
-        return;
-      this._attachments.push({ name, body, contentType });
+      const { name, body, path, contentType } = params;
+      let fileContent: string | undefined;
+      if (!body) {
+        if (!path)
+          throw new Error('Either body or path must be provided');
+        if (!fs.existsSync(path))
+          throw new Error(`File does not exist: ${path}`);
+        fileContent = fs.readFileSync(path, 'base64') as string;
+      }
+      this._attachments.push({ name, body: body ?? fileContent, contentType });
     }
+
     if (method === 'testEnd')
       this._testResult = params;
+
     if (method === 'done') {
       if (!this._testResult) {
         this._testResult = {
@@ -170,9 +179,10 @@ export class TestRunner {
     context = this._testContext;
     const testWorker = new TestWorker(this._options);
     try {
+      const { retry } = this._testContext;
       const [result] = await Promise.all([
         testWorker.testResult(),
-        testWorker.runTestGroup({ file, entries: [{ testId, retry: 0 }] }),
+        testWorker.runTestGroup({ file, entries: [{ testId, retry }] }),
       ]);
       if (result.status === 'failed' && result.errors.some(isUnsupportedOperationError)) {
         return {
@@ -223,6 +233,7 @@ function renderApiCall(apiName: string, params: any) {
 }
 
 const tracingGroupSteps: TestStepInternal[] = [];
+// adapted from _setupArtifacts fixture in packages/playwright/src/index.ts
 const expectApiListener: ClientInstrumentationListener = {
   onApiCallBegin: (data: ApiCallData) => {
     const testInfo = currentTestInfo();

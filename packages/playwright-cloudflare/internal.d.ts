@@ -56,6 +56,7 @@ export type TestContext = {
   env: Env;
   sessionId: string;
   assetsUrl: string;
+  retry: number;
 };
 
 export function currentTestContext(): TestContext;
