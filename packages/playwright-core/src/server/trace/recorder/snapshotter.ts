@@ -88,7 +88,10 @@ export class Snapshotter {
     ];
 
     const { javaScriptEnabled } = this._context._options;
-    const initScript = `(${frameSnapshotStreamer})("${this._snapshotStreamer}", ${javaScriptEnabled || javaScriptEnabled === undefined})`;
+    // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+    // See: https://github.com/cloudflare/workers-sdk/issues/7107
+    let initScript = `((__name => (${frameSnapshotStreamer}))(t => t))`;
+    initScript = `(${initScript})("${this._snapshotStreamer}", ${javaScriptEnabled || javaScriptEnabled === undefined})`;
     await this._context.addInitScript(initScript);
     await this._runInAllFrames(initScript);
   }

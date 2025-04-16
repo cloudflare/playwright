@@ -615,7 +615,12 @@ export abstract class BrowserContext extends SdkObject {
         for (const originState of state.origins) {
           const frame = page.mainFrame();
           await frame.goto(metadata, originState.origin);
-          await frame.evaluateExpression(`(${storageScript.restore})(${utilityScriptSerializers.source}, (${ensureBuiltins})(globalThis), ${JSON.stringify(originState)})`, { world: 'utility' });
+          // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+          // See: https://github.com/cloudflare/workers-sdk/issues/7107
+          const restoreScript = `((__name => (${storageScript.restore}))(t => t))`;
+          const utilityScriptSerializersScript = `((__name => (${storageScript.restore}))(t => t))`;
+          const ensureBuiltinsScript = `((__name => (${ensureBuiltins}))(t => t))`;
+          await frame.evaluateExpression(`(${restoreScript})(${utilityScriptSerializersScript}, (${ensureBuiltinsScript})(globalThis), ${JSON.stringify(originState)})`, { world: 'utility' });
         }
         await page.close(internalMetadata);
       }
