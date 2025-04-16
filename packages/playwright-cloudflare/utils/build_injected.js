@@ -1,7 +1,7 @@
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { build } from 'vite';
+import { writeFile } from './utils.js';
 
 const basedir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,25 +20,24 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
       target: 'esnext',
       lib: {
         name: 'frameSnapshotStreamer',
-        entry: path.join(basedir, '../../playwright-core/src/server/trace/recorder/snapshotterInjected.ts'),
+        entry: [
+          path.join(basedir, '../../playwright-core/src/server/trace/recorder/snapshotterInjected.ts'),
+          path.join(basedir, '../../playwright-core/src/server/isomorphic/utilityScriptSerializers.ts'),
+        ],
         formats: ['es'],
       },
       terserOptions: {
         format: {
-          // we need to ensure no comments are preserved          
+          // we need to ensure no comments are preserved
           comments: false
         }
       },
       rollupOptions: {
         output: {
           dir: path.join(basedir, '../src/injected'),
-          entryFileNames: `snapshotterInjected.js`,
+          entryFileNames: `[name].js`,
         },
       },
     },
   });
-
-  const { frameSnapshotStreamer } = await import('../src/injected/snapshotterInjected.js');
-  const body = `export const frameSnapshotStreamer = ${JSON.stringify(frameSnapshotStreamer.toString())};`;
-  fs.writeFileSync(path.join(basedir, '../src/injected/snapshotterInjected.js'), body);
 })();
