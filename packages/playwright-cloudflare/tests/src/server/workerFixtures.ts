@@ -117,7 +117,12 @@ export type PageWorkerFixtures = {
   headless: boolean;
   channel: string;
   screenshot: ScreenshotMode | { mode: ScreenshotMode } & Pick<PageScreenshotOptions, 'fullPage' | 'omitBackground'>;
-  trace: 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'retain-on-first-failure' | 'on-all-retries' | /** deprecated */ 'retry-with-trace';
+  // we can't use trace fixture because plawyright triggers trace start/stop automatically if that fixture is available
+  // and for some reason it causes a timeout, so we implement a simplified version of trace fixture here
+  // See: https://github.com/microsoft/playwright/blob/v1.51.1/packages/playwright/src/worker/workerMain.ts#L342
+  traceMode: 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'retain-on-first-failure' | 'on-all-retries';
+  // the official trace fixture must be set to off
+  trace: 'off';
   video: VideoMode | { mode: VideoMode, size: ViewportSize };
   browserName: 'chromium';
   browserVersion: string;
@@ -164,6 +169,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   headless: [true, { scope: 'worker' }],
   channel: ['stable', { scope: 'worker' }],
   screenshot: ['off', { scope: 'worker' }],
+  traceMode: ['on-first-retry', { scope: 'worker' }],
   trace: ['off', { scope: 'worker' }],
   video: ['off', { scope: 'worker' }],
   browserName: ['chromium', { scope: 'worker' }],
@@ -216,15 +222,43 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await run(_combinedContextOptions);
   },
 
-  context: async ({ contextFactory, _combinedContextOptions }, run, testInfo) => {
+  context: async ({ contextFactory, _combinedContextOptions, traceMode }, run, testInfo) => {
     const context = await contextFactory(_combinedContextOptions);
-    await context.tracing.start({ screenshots: true, snapshots: true });
+    const traceStarted = traceMode === 'on' ||
+      (traceMode === 'retain-on-failure' && testInfo.retry === 0) ||
+      (traceMode === 'on-first-retry' && testInfo.retry === 1) ||
+      (traceMode === 'on-all-retries' && testInfo.retry > 0);
+    if (traceStarted)
+      await context.tracing.start({ screenshots: true, snapshots: true });
+
     await run(context);
-    if (testInfo.status !== 'skipped' && testInfo.status !== testInfo.expectedStatus) {
+
+    const failed = testInfo.status !== testInfo.expectedStatus;
+    let keepTrace = false;
+    if (traceStarted) {
+      switch (traceMode) {
+        case 'on':
+          keepTrace = true;
+          break;
+        case 'on-first-retry':
+          keepTrace = testInfo.retry === 1;
+          break;
+        case 'on-all-retries':
+          keepTrace = testInfo.retry > 0;
+          break;
+        case 'retain-on-failure':
+          keepTrace = failed;
+          break;
+      }
+    }
+
+    if (testInfo.status !== 'skipped' && keepTrace) {
       const tracePath = testInfo.outputPath('trace.zip');
       await context.tracing.stop({ path: tracePath });
-      const trace = await fs.promises.readFile(tracePath);
-      testInfo.attachments.push({ name: 'trace', body: trace, contentType: 'application/zip' });
+      testInfo.attachments.push({ name: 'trace', path: tracePath, contentType: 'application/zip' });
+    } else if (traceStarted) {
+      // stop and discard trace
+      await context.tracing.stop();
     }
   },
 

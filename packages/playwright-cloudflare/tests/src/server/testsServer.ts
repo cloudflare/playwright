@@ -8,6 +8,7 @@ export type TestRequestPayload = {
   testId: string;
   fullTitle: string;
   timeout: number;
+  retry: number;
 };
 
 // eslint-disable-next-line no-console
@@ -30,10 +31,11 @@ export class TestsServer extends DurableObject<Env> {
     if (!sessionId)
       return new Response('sessionId is required', { status: 400 });
     const timeout = parseInt(url.searchParams.get('timeout') ?? '10', 10) * 1000;
-    const { testId, fullTitle } = await request.json() as TestRequestPayload;
+    const { testId, fullTitle, retry } = await request.json() as TestRequestPayload;
     const assetsUrl = url.origin;
     const { env } = this;
-    const testRunner = new TestRunner({ env, sessionId, assetsUrl }, { timeout });
+    const context = { env, sessionId, assetsUrl, retry };
+    const testRunner = new TestRunner(context, { timeout });
     if (skipTestsFullTitles.has(fullTitle)) {
       log(`🚫 Skipping ${fullTitle}`);
       return Response.json({
@@ -48,7 +50,7 @@ export class TestsServer extends DurableObject<Env> {
       } satisfies TestEndPayload);
     }
 
-    log(`🧪 Running ${fullTitle}`);
+    log(`🧪 Running ${fullTitle}${retry ? ` (retry #${retry})` : ''}`);
 
     const result = await testRunner.runTest(file, testId);
     if (!['passed', 'skipped'].includes(result.status))

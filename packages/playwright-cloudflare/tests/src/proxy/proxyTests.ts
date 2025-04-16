@@ -66,7 +66,7 @@ export async function proxyTests(file: string) {
     },
 
     runTest: async ({ testId, fullTitle }: { testId: string, fullTitle: string }, testInfo: TestInfo) => {
-      const response = await fetch(url, { body: JSON.stringify({ testId, fullTitle }), method: 'POST' });
+      const response = await fetch(url, { body: JSON.stringify({ testId, fullTitle, retry: testInfo.retry }), method: 'POST' });
       if (!response.ok)
         throw new Error(`Failed to run test ${fullTitle} (${testId})`);
 
