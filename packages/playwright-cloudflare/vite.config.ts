@@ -48,9 +48,8 @@ export default defineConfig({
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
       '../transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
 
-      // import function injected as string, otherwise snapshotter serializes the function which can have
-      // function declared outside (e.g. `__name(...)`)
       './snapshotterInjected': path.resolve(__dirname, './src/injected/snapshotterInjected'),
+      './isomorphic/utilityScriptSerializers': path.resolve(__dirname, './src/injected/utilityScriptSerializers'),
 
       // It's not needed and this way we don't need to build and import utilsBundleImpl and babelBundleImpl
       './transform': path.resolve(__dirname, './src/mocks/transform'),

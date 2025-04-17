@@ -1,4 +1,6 @@
-import { asLocator, currentZone, isString, ManualPromise } from 'playwright-core/lib/utils';
+import fs from 'fs';
+
+import { asLocator, currentZone, isString, ManualPromise, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
 import { loadConfig } from 'playwright/lib/common/configLoader';
 import { currentTestInfo, setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 import { bindFileSuiteToProject } from 'playwright/lib/common/suiteUtils';
@@ -7,9 +9,11 @@ import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
 import { TestStepInternal } from 'playwright/lib/worker/testInfo';
 
+import { isUnsupportedOperationError } from './cloudflare/unsupportedOperations';
+
 import playwright from '.';
 
-import type { SuiteInfo, TestCaseInfo, TestContext, TestEndPayload } from '../internal';
+import type { Attachment, SuiteInfo, TestCaseInfo, TestContext, TestResult } from '../internal';
 import type { ApiCallData, ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
 
 export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
@@ -85,8 +89,9 @@ export async function testSuites(): Promise<SuiteInfo[]> {
 }
 
 class TestWorker extends WorkerMain {
-  private _donePromise = new ManualPromise<void>();
-  private _testResult?: TestEndPayload;
+  private _donePromise = new ManualPromise<TestResult>();
+  private _attachments: Attachment[] = [];
+  private _testResult?: TestResult;
 
   constructor(options?: { timeout?: number }) {
     super({
@@ -106,15 +111,44 @@ class TestWorker extends WorkerMain {
   }
 
   async testResult() {
-    await this._donePromise;
-    return this._testResult;
+    return await this._donePromise;
   }
 
   protected override dispatchEvent(method: string, params: any): void {
+    if (method === 'attach') {
+      const { name, body, path, contentType } = params;
+      let fileContent: string | undefined;
+      if (!body) {
+        if (!path)
+          throw new Error('Either body or path must be provided');
+        if (!fs.existsSync(path))
+          throw new Error(`File does not exist: ${path}`);
+        fileContent = fs.readFileSync(path, 'base64') as string;
+      }
+      this._attachments.push({ name, body: body ?? fileContent, contentType });
+    }
+
     if (method === 'testEnd')
       this._testResult = params;
-    if (method === 'done')
-      this._donePromise.resolve();
+
+    if (method === 'done') {
+      if (!this._testResult) {
+        this._testResult = {
+          testId: params.testId,
+          errors: params.fatalErrors ?? [],
+          annotations: [],
+          expectedStatus: 'passed',
+          status: 'failed',
+          hasNonRetriableError: false,
+          duration: 0,
+          timeout: 0,
+        };
+      }
+      this._donePromise.resolve({
+        ...this._testResult,
+        attachments: this._attachments,
+      });
+    }
   }
 }
 
@@ -135,24 +169,29 @@ export class TestRunner {
     this._options = options;
   }
 
-  async runTest(file: string, testId: string): Promise<TestEndPayload> {
+  async runTest(file: string, testId: string): Promise<TestResult> {
+    // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
+    // so we need to set it to the current time inside a event handler, where Date.now() is not 0.
+    // https://stackoverflow.com/a/58491358
+    if (timeOrigin() === 0 && Date.now() !== 0)
+      setTimeOrigin(Date.now());
+
     context = this._testContext;
     const testWorker = new TestWorker(this._options);
     try {
+      const { retry } = this._testContext;
       const [result] = await Promise.all([
         testWorker.testResult(),
-        testWorker.runTestGroup({ file, entries: [{ testId, retry: 0 }] }),
+        testWorker.runTestGroup({ file, entries: [{ testId, retry }] }),
       ]);
-      return result ?? {
-        testId,
-        annotations: [{ type: 'error', description: 'testEnd event not triggered' }],
-        errors: [],
-        expectedStatus: 'passed',
-        status: 'failed',
-        hasNonRetriableError: false,
-        duration: 0,
-        timeout: 0,
-      };
+      if (result.status === 'failed' && result.errors.some(isUnsupportedOperationError)) {
+        return {
+          ...result,
+          status: 'skipped',
+          expectedStatus: 'skipped',
+        };
+      }
+      return result;
     } finally {
       await testWorker.gracefullyClose();
       context = undefined;
@@ -194,6 +233,7 @@ function renderApiCall(apiName: string, params: any) {
 }
 
 const tracingGroupSteps: TestStepInternal[] = [];
+// adapted from _setupArtifacts fixture in packages/playwright/src/index.ts
 const expectApiListener: ClientInstrumentationListener = {
   onApiCallBegin: (data: ApiCallData) => {
     const testInfo = currentTestInfo();

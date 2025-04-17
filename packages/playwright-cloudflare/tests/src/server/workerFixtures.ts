@@ -1,8 +1,9 @@
 import { _baseTest, currentTestContext, runWithExpectApiListener } from '@cloudflare/playwright/internal';
 import playwright, { connect } from '@cloudflare/playwright';
+import fs from '@cloudflare/playwright/fs';
 
 import type { TestInfo, ScreenshotMode, VideoMode } from '../../../types/test';
-import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright } from '@cloudflare/playwright/test';
+import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright, APIRequestContext } from '@cloudflare/playwright/test';
 
 export { expect } from '@cloudflare/playwright/test';
 export { mergeTests } from '@cloudflare/playwright/internal';
@@ -19,6 +20,7 @@ export type PlatformWorkerFixtures = {
   isWindows: boolean;
   isMac: boolean;
   isLinux: boolean;
+  macVersion: number;
 };
 
 export const platformTest = _baseTest.extend<{}, PlatformWorkerFixtures>({
@@ -26,16 +28,20 @@ export const platformTest = _baseTest.extend<{}, PlatformWorkerFixtures>({
   isWindows: [({ platform }, run) => run(platform === 'win32'), { scope: 'worker' }],
   isMac: [({ platform }, run) => run(platform === 'darwin'), { scope: 'worker' }],
   isLinux: [({ platform }, run) => run(platform === 'linux'), { scope: 'worker' }],
+  macVersion: [0, { scope: 'worker' }],
 });
 
 export interface PlaywrightWorkerArgs {
+  toImplInWorkerScope: (rpcObject?: any) => any;
   playwright: Playwright;
   browser: Browser;
 }
 
 export type PageTestFixtures = {
+  contextOptions: BrowserContextOptions
   context: BrowserContext;
   page: Page;
+  request: APIRequestContext;
 };
 
 class TestServer {
@@ -103,13 +109,19 @@ export type ServerFixtures = {
   proxyServer: never;
   asset: (p: string) => string;
   loopback?: never;
+  socksPort: number;
 };
 
 export type PageWorkerFixtures = {
   headless: boolean;
   channel: string;
   screenshot: ScreenshotMode | { mode: ScreenshotMode } & Pick<PageScreenshotOptions, 'fullPage' | 'omitBackground'>;
-  trace: 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'retain-on-first-failure' | 'on-all-retries' | /** deprecated */ 'retry-with-trace';
+  // we can't use trace fixture because plawyright triggers trace start/stop automatically if that fixture is available
+  // and for some reason it causes a timeout, so we implement a simplified version of trace fixture here
+  // See: https://github.com/microsoft/playwright/blob/v1.51.1/packages/playwright/src/worker/workerMain.ts#L342
+  traceMode: 'off' | 'on' | 'retain-on-failure' | 'on-first-retry' | 'retain-on-first-failure' | 'on-all-retries';
+  // the official trace fixture must be set to off
+  trace: 'off';
   video: VideoMode | { mode: VideoMode, size: ViewportSize };
   browserName: 'chromium';
   browserVersion: string;
@@ -117,6 +129,7 @@ export type PageWorkerFixtures = {
   isAndroid: boolean;
   isElectron: boolean;
   isWebView2: boolean;
+  electronMajorVersion: number;
 };
 
 export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
@@ -127,14 +140,18 @@ export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
   browserType: BrowserType;
   isAndroid: boolean;
   isElectron: boolean;
+  isHeadlessShell: boolean;
+  nodeVersion: { major: number, minor: number, patch: number };
 };
 
 type BrowserTestTestFixtures = {
   hasTouch: boolean;
-  _combinedContextOptions: BrowserContextOptions,
-  _setupArtifacts: void,
+  _combinedContextOptions: BrowserContextOptions;
+  _setupArtifacts: void;
   contextFactory: (options?: BrowserContextOptions) => Promise<BrowserContext>;
   launchPersistent: () => never;
+  startRemoteServer: () => never;
+  createUserDataDir: () => Promise<string>;
 };
 
 export type TestModeName = 'default' | 'driver' | 'service' | 'service2';
@@ -151,6 +168,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   headless: [true, { scope: 'worker' }],
   channel: ['stable', { scope: 'worker' }],
   screenshot: ['off', { scope: 'worker' }],
+  traceMode: ['on-first-retry', { scope: 'worker' }],
   trace: ['off', { scope: 'worker' }],
   video: ['off', { scope: 'worker' }],
   browserName: ['chromium', { scope: 'worker' }],
@@ -176,6 +194,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   defaultSameSiteCookieValue: ['Lax', { scope: 'worker' }],
 
+  allowsThirdParty: [false, { scope: 'worker' }],
+
   browserMajorVersion: [async ({ browserVersion }, run) => {
     await run(Number(browserVersion.split('.')[0]));
   }, { scope: 'worker' }],
@@ -183,6 +203,9 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   isAndroid: [false, { scope: 'worker' }],
   isElectron: [false, { scope: 'worker' }],
   isWebView2: [false, { scope: 'worker' }],
+  electronMajorVersion: [0, { scope: 'worker' }],
+  isHeadlessShell: [false, { scope: 'worker' }],
+  nodeVersion: [{ major: 20, minor: 0, patch: 0 }, { scope: 'worker' }],
 
   browserType: [async ({ playwright, browserName, }, run) => {
     await run(playwright[browserName]);
@@ -196,14 +219,58 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await browser.close();
   }, { scope: 'worker' }],
 
-  context: async ({ contextFactory, _combinedContextOptions }, run) => {
-    await run(await contextFactory(_combinedContextOptions));
+  contextOptions: async ({ _combinedContextOptions }, run) => {
+    await run(_combinedContextOptions);
+  },
+
+  context: async ({ contextFactory, _combinedContextOptions, traceMode }, run, testInfo) => {
+    const context = await contextFactory(_combinedContextOptions);
+    const traceStarted = traceMode === 'on' ||
+      (traceMode === 'retain-on-failure' && testInfo.retry === 0) ||
+      (traceMode === 'on-first-retry' && testInfo.retry === 1) ||
+      (traceMode === 'on-all-retries' && testInfo.retry > 0);
+    if (traceStarted)
+      await context.tracing.start({ screenshots: true, snapshots: true });
+
+    await run(context);
+
+    const failed = testInfo.status !== testInfo.expectedStatus;
+    let keepTrace = false;
+    if (traceStarted) {
+      switch (traceMode) {
+        case 'on':
+          keepTrace = true;
+          break;
+        case 'on-first-retry':
+          keepTrace = testInfo.retry === 1;
+          break;
+        case 'on-all-retries':
+          keepTrace = testInfo.retry > 0;
+          break;
+        case 'retain-on-failure':
+          keepTrace = failed;
+          break;
+      }
+    }
+
+    if (testInfo.status !== 'skipped' && keepTrace) {
+      const tracePath = testInfo.outputPath('trace.zip');
+      await context.tracing.stop({ path: tracePath });
+      testInfo.attachments.push({ name: 'trace', path: tracePath, contentType: 'application/zip' });
+    } else if (traceStarted) {
+      // stop and discard trace
+      await context.tracing.stop();
+    }
   },
 
   page: async ({ context }, run) => {
     const page = await context.newPage();
     await run(page);
     await page.close();
+  },
+
+  request: async ({}, run, testInfo) => {
+    testInfo.skip(true, 'request not supported, skipping');
   },
 
   server: async ({}, run, testInfo) => {
@@ -233,6 +300,10 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     testInfo.skip(true, 'assets not supported, skipping');
   },
 
+  socksPort: async ({}, run, testInfo) => {
+    testInfo.skip(true, 'socksPort not supported, skipping');
+  },
+
   contextFactory: async ({ browser }: any, run) => {
     const contexts: BrowserContext[] = [];
     await run(async options => {
@@ -248,9 +319,29 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     testInfo.skip(true, 'launchPersistent not supported, skipping');
   },
 
+  startRemoteServer: async ({}, run, testInfo) => {
+    testInfo.skip(true, 'startRemoteServer not supported, skipping');
+  },
+
+  createUserDataDir: async ({ mode }, run) => {
+    const dirs: string[] = [];
+    await run(async () => {
+      const dir = await fs.promises.mkdtemp('/tmp/playwright-test-');
+      dirs.push(dir);
+      return dir;
+    });
+    await Promise.all(dirs.map((dir: string) =>
+      fs.promises.rm(dir, { recursive: true, force: true }).catch(e => e)
+    ));
+  },
+
   _setupArtifacts: [async ({}, use) => {
     await runWithExpectApiListener(use);
   }, { auto: 'all-hooks-included', timeout: 0 } as any],
+
+  toImplInWorkerScope: [async ({ playwright }, use) => {
+    await use((playwright as any)._toImpl);
+  }, { scope: 'worker' }],
 });
 
 export async function rafraf(target: Page | Frame, count = 1) {

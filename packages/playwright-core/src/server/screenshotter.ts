@@ -263,7 +263,10 @@ export class Screenshotter {
     if (disableAnimations)
       progress.log('  disabled all CSS animations');
     const syncAnimations = this._page._delegate.shouldToggleStyleSheetToSyncAnimations();
-    await this._page.safeNonStallingEvaluateInAllFrames('(' + inPagePrepareForScreenshots.toString() + `)(${JSON.stringify(screenshotStyle)}, ${hideCaret}, ${disableAnimations}, ${syncAnimations})`, 'utility');
+    // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
+    // See: https://github.com/cloudflare/workers-sdk/issues/7107
+    const script = `((__name => (${inPagePrepareForScreenshots.toString()}))(t => t))`;
+    await this._page.safeNonStallingEvaluateInAllFrames('(' + script + `)(${JSON.stringify(screenshotStyle)}, ${hideCaret}, ${disableAnimations}, ${syncAnimations})`, 'utility');
     if (!process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY) {
       progress.log('waiting for fonts to load...');
       await frame.nonStallingEvaluateInExistingContext('document.fonts.ready', 'utility').catch(() => {});
