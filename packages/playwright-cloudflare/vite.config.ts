@@ -131,6 +131,7 @@ export default defineConfig({
         'node:url',
         'node:util',
         'node:zlib',
+        'cloudflare:workers',
       ]
     },
     commonjsOptions: {

@@ -1,5 +1,6 @@
 import { _baseTest, currentTestContext, runWithExpectApiListener } from '@cloudflare/playwright/internal';
 import playwright, { connect } from '@cloudflare/playwright';
+import { env } from 'cloudflare:workers';
 
 import type { TestInfo, ScreenshotMode, VideoMode } from '../../../types/test';
 import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright } from '@cloudflare/playwright/test';
@@ -162,9 +163,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     });
   },
 
-  env: [async ({}, run) => {
-    await run(currentTestContext().env);
-  }, { scope: 'worker' }],
+  env: [env, { scope: 'worker' }],
 
   sessionId: [async ({}, run) => {
     await run(currentTestContext().sessionId);
@@ -190,7 +189,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   playwright: [async ({}, run) => run(playwright), { scope: 'worker' }],
 
-  browser: [async ({ env, sessionId }, run) => {
+  browser: [async ({ sessionId }, run) => {
     const browser = await connect(env.BROWSER, sessionId);
     await run(browser);
     await browser.close();

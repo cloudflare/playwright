@@ -196,6 +196,7 @@ ${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(fi
           'node:vm',
           'node:zlib',
 
+          'cloudflare:workers',
           /^@cloudflare\/playwright.*/,
         ]
       },
