@@ -1,4 +1,4 @@
-import { launch, connect, sessions, history, acquire, limits } from '@cloudflare/playwright';
+import { launch, connect, sessions, history, acquire, limits, endpointURLString } from '@cloudflare/playwright';
 import playwright from '@cloudflare/playwright';
 
 import { test, expect } from '../server/workerFixtures';
@@ -84,4 +84,40 @@ test(`should have functions in default exported object`, () => {
   expect(playwright.history).toBe(history);
   expect(playwright.acquire).toBe(acquire);
   expect(playwright.limits).toBe(limits);
+});
+
+test(`should create endpoint url`, async ({ env }) => {
+  const url1 = endpointURLString(env.BROWSER);
+  expect(url1).toContain('http://fake.host/v1/connectDevtools?browser_binding=BROWSER');
+
+  const url2 = endpointURLString('BROWSER');
+  expect(url2).toContain('http://fake.host/v1/connectDevtools?browser_binding=BROWSER');
+
+  // @ts-expect-error
+  expect(() => endpointURLString('UNEXISTENT_BROWSER')).toThrow();
+});
+
+test(`should create browser with persistent context on playwright.chromium.connectOverCDP`, async ({ env, playwright }) => {
+  const url = endpointURLString(env.BROWSER);
+  const browser = await playwright.chromium.connectOverCDP(url);
+  expect(browser.contexts()).toHaveLength(1);
+  const [context] = browser.contexts();
+  expect(context.pages()).toHaveLength(1);
+  const [page] = context.pages();
+  expect(page.viewportSize()).toEqual({ width: 1280, height: 720 });
+  await browser.close();
+});
+
+test(`should launch browser with no persistent context by default`, async ({ env, playwright }) => {
+  const url = endpointURLString(env.BROWSER);
+  const browser = await launch(url);
+  expect(browser.contexts()).toHaveLength(0);
+  await browser.close();
+});
+
+test(`should launch browser with persistent context is persistent=true`, async ({ env, playwright }) => {
+  const url = endpointURLString(env.BROWSER, { persistent: true });
+  const browser = await launch(url);
+  expect(browser.contexts()).toHaveLength(1);
+  await browser.close();
 });

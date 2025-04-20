@@ -1,5 +1,7 @@
 import * as FS from 'fs';
-import { Playwright, Browser } from './types/types';
+import type { Browser } from './types/types';
+import { chromium, request, selectors, devices } from './types/types';
+import { env } from 'cloudflare:workers';
 
 export * from './types/types';
 
@@ -20,6 +22,8 @@ declare module './types/types' {
 export interface BrowserWorker {
   fetch: typeof fetch;
 }
+
+export type BrowserEndpoint = BrowserWorker | string | URL;
 
 /**
  * @public
@@ -84,10 +88,21 @@ export interface WorkersLaunchOptions {
   keep_alive?: number; // milliseconds to keep browser alive even if it has no activity (from 10_000ms to 600_000ms, default is 60_000)
 }
 
-export async function connect(endpoint: BrowserWorker, sessionId: string): Promise<Browser>;
-export async function launch(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<Browser>;
+// Extracts the keys whose values match a specified type `ValueType`
+type KeysByValue<T, ValueType> = {
+  [K in keyof T]: T[K] extends ValueType ? K : never;
+}[keyof T];
 
-export async function acquire(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<AcquireResponse>;
+export type BrowserBindingKey = KeysByValue<typeof env, BrowserWorker>;
+
+export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: { sessionId?: string, persistent?: boolean }): string;
+
+export function connect(endpoint: string | URL): Promise<Browser>;
+export function connect(endpoint: BrowserWorker, sessionIdOrOptions: string | { sessionId: string, persistent?: boolean }): Promise<Browser>;
+
+export function launch(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<Browser>;
+
+export function acquire(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<AcquireResponse>;
 
 /**
  * Returns active sessions
@@ -98,7 +113,7 @@ export async function acquire(endpoint: BrowserWorker, options?: WorkersLaunchOp
  * @param endpoint - Cloudflare worker binding
  * @returns List of active sessions
  */
-export async function sessions(endpoint: BrowserWorker): Promise<ActiveSession[]>;
+export function sessions(endpoint: BrowserEndpoint): Promise<ActiveSession[]>;
 
 /**
  * Returns recent sessions (active and closed)
@@ -106,7 +121,7 @@ export async function sessions(endpoint: BrowserWorker): Promise<ActiveSession[]
  * @param endpoint - Cloudflare worker binding
  * @returns List of recent sessions (active and closed)
  */
-export async function history(endpoint: BrowserWorker): Promise<ClosedSession[]>;
+export function history(endpoint: BrowserEndpoint): Promise<ClosedSession[]>;
 
 /**
  * Returns current limits
@@ -114,9 +129,13 @@ export async function history(endpoint: BrowserWorker): Promise<ClosedSession[]>
  * @param endpoint - Cloudflare worker binding
  * @returns current limits
  */
-export async function limits(endpoint: BrowserWorker): Promise<LimitsResponse>;
+export function limits(endpoint: BrowserEndpoint): Promise<LimitsResponse>;
 
-declare const playwright: Pick<Playwright, 'chromium' | 'selectors' | 'devices' | 'errors' | 'request'> & {
+const playwright = {
+  chromium,
+  selectors,
+  request,
+  devices,
   connect,
   launch,
   limits,

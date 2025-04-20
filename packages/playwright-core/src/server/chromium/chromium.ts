@@ -99,7 +99,9 @@ export class Chromium extends BrowserType {
       await cleanedUp;
     };
     const browserProcess: BrowserProcess = { close: doClose, kill: doClose };
-    const persistent = globalThis.navigator?.userAgent === 'Cloudflare-Workers' ? undefined : { noDefaultViewport: true };
+    // in cloudflare workers, noDefaultViewport will set height to 1px, which is not what we want
+    const noDefaultViewport = globalThis.navigator?.userAgent !== 'Cloudflare-Workers';
+    const persistent = new URL(endpointURL).searchParams.has('persistent') ? { noDefaultViewport } : undefined;
     const browserOptions: BrowserOptions = {
       slowMo: options.slowMo,
       name: 'chromium',
