@@ -57,7 +57,7 @@ export async function proxyTests(file: string) {
   return {
     beforeAll: async ({ sessionId }: WorkerFixture) => {
       if (process.env.CI)
-        url.searchParams.set('timeout', '30');
+        url.searchParams.set('timeout', '60');
       if (sessionId)
         url.searchParams.set('sessionId', sessionId);
     },
