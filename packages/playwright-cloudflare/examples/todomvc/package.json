@@ -7,6 +7,6 @@
   "description": "",
   "devDependencies": {
     "@cloudflare/playwright": "^0.0.9",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.13.0"
   }
 }
