@@ -28,15 +28,14 @@ import { mkdirIfNeeded } from './utils/fileUtils';
 import { HarRecorder } from './har/harRecorder';
 import { helper } from './helper';
 import { SdkObject, serverSideCallMetadata } from './instrumentation';
-import { ensureBuiltins } from './isomorphic/builtins';
-import * as utilityScriptSerializers from './isomorphic/utilityScriptSerializers';
+import { builtins } from '../utils/isomorphic/builtins';
+import * as utilityScriptSerializers from '../utils/isomorphic/utilityScriptSerializers';
 import * as network from './network';
 import { InitScript } from './page';
 import { Page, PageBinding } from './page';
 import { Recorder } from './recorder';
 import { RecorderApp } from './recorder/recorderApp';
 import * as storageScript from './storageScript';
-import * as consoleApiSource from '../generated/consoleApiSource';
 import { Tracing } from './trace/recorder/tracing';
 
 import type { Artifact } from './artifact';
@@ -148,7 +147,7 @@ export abstract class BrowserContext extends SdkObject {
     });
 
     if (debugMode() === 'console')
-      await this.extendInjectedScript(consoleApiSource.source);
+      await this.extendInjectedScript('function Console(injectedScript) { injectedScript.consoleApi.install(); }');
     if (this._options.serviceWorkers === 'block')
       await this.addInitScript(`\nif (navigator.serviceWorker) navigator.serviceWorker.register = async () => { console.warn('Service Worker registration blocked by Playwright'); };\n`);
 
@@ -519,7 +518,7 @@ export abstract class BrowserContext extends SdkObject {
     };
     const originsToSave = new Set(this._origins);
 
-    let collectScript = `(${storageScript.collect})(${utilityScriptSerializers.source}, (${ensureBuiltins})(globalThis), ${this._browser.options.name === 'firefox'}, ${indexedDB})`;
+    let collectScript = `(${storageScript.collect})(${utilityScriptSerializers.source}, (${builtins})(), ${this._browser.options.name === 'firefox'}, ${indexedDB})`;
     // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
     // See: https://github.com/cloudflare/workers-sdk/issues/7107
     collectScript = `((__name => (${collectScript}))(t => t))`;
@@ -618,9 +617,9 @@ export abstract class BrowserContext extends SdkObject {
           // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
           // See: https://github.com/cloudflare/workers-sdk/issues/7107
           const restoreScript = `((__name => (${storageScript.restore}))(t => t))`;
-          const utilityScriptSerializersScript = `((__name => (${storageScript.restore}))(t => t))`;
-          const ensureBuiltinsScript = `((__name => (${ensureBuiltins}))(t => t))`;
-          await frame.evaluateExpression(`(${restoreScript})(${utilityScriptSerializersScript}, (${ensureBuiltinsScript})(globalThis), ${JSON.stringify(originState)})`, { world: 'utility' });
+          const utilityScriptSerializersScript = `((__name => (${utilityScriptSerializers.source}))(t => t))`;
+          const builtinsScript = `((__name => (${builtins}))(t => t))`;
+          await frame.evaluateExpression(`(${restoreScript})(${utilityScriptSerializersScript}, (${builtinsScript})(), ${JSON.stringify(originState)})`, { world: 'utility' });
         }
         await page.close(internalMetadata);
       }
@@ -711,7 +710,7 @@ export function validateBrowserContextOptions(options: types.BrowserContextOptio
   verifyGeolocation(options.geolocation);
 }
 
-export function verifyGeolocation(geolocation?: types.Geolocation) {
+export function verifyGeolocation(geolocation?: types.Geolocation): asserts geolocation is types.Geolocation {
   if (!geolocation)
     return;
   geolocation.accuracy = geolocation.accuracy || 0;

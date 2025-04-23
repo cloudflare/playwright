@@ -416,13 +416,19 @@ it('should ignore presentation and none roles', async ({ page }) => {
   `);
 });
 
-it('should treat input value as text in templates', async ({ page }) => {
+it('should treat input value as text in templates, but not for checkbox/radio/file', async ({ page }) => {
   await page.setContent(`
     <input value='hello world'>
+    <input type=file>
+    <input type=checkbox checked>
+    <input type=radio checked>
   `);
 
   await checkAndMatchSnapshot(page.locator('body'), `
     - textbox: hello world
+    - button "Choose File"
+    - checkbox [checked]
+    - radio [checked]
   `);
 });
 
@@ -678,17 +684,17 @@ it('should generate refs', async ({ page }) => {
   expect(e.message).toContain('Error: Stale aria-ref, expected s2e{number}, got s1e3');
 });
 
-it('ref mode should list iframes', async ({ page }) => {
+it('should list iframes', async ({ page }) => {
   await page.setContent(`
     <h1>Hello</h1>
     <iframe name="foo" src="data:text/html,<h1>World</h1>">
   `);
 
   const snapshot1 = await page.locator('body').ariaSnapshot({ ref: true });
-  expect(snapshot1).toContain('- iframe [ref=s1e4]');
+  expect(snapshot1).toContain('- iframe');
 
-  const frameSnapshot = await page.frameLocator(`aria-ref=s1e4`).locator('body').ariaSnapshot({ ref: true });
-  expect(frameSnapshot).toEqual('- heading "World" [level=1] [ref=s1e3]');
+  const frameSnapshot = await page.frameLocator(`iframe`).locator('body').ariaSnapshot();
+  expect(frameSnapshot).toEqual('- heading "World" [level=1]');
 });
 
 it('ref mode can be used to stitch all frame snapshots', async ({ page, server }) => {
@@ -723,4 +729,62 @@ it('ref mode can be used to stitch all frame snapshots', async ({ page, server }
 - iframe [ref=s1e4]:
   - text: Hi, I'm frame
   `.trim());
+});
+
+it('should not include hidden input elements', async ({ page }) => {
+  await page.setContent(`
+    <button>One</button>
+    <button style="width: 0; height: 0; appearance: none; border: 0; padding: 0;">Two</button>
+    <button>Three</button>
+  `);
+
+  const snapshot = await page.locator('body').ariaSnapshot({ ref: true });
+  expect(snapshot).toContain(`- button "One" [ref=s1e3]
+- button "Two"
+- button "Three" [ref=s1e5]`);
+});
+
+it('emit generic roles for nodes w/o roles', async ({ page }) => {
+  await page.setContent(`
+    <style>
+    input {
+      width: 0;
+      height: 0;
+      opacity: 0;
+    }
+    </style>
+    <div>
+      <label>
+        <span>
+          <input type="radio" value="Apple" checked="">
+        </span>
+        <span>Apple</span>
+      </label>
+      <label>
+        <span>
+          <input type="radio" value="Pear">
+        </span>
+        <span>Pear</span>
+      </label>
+      <label>
+        <span>
+          <input type="radio" value="Orange">
+        </span>
+        <span>Orange</span>
+      </label>
+    </div>
+  `);
+
+  const snapshot = await page.locator('body').ariaSnapshot({ ref: true, emitGeneric: true });
+
+  expect(snapshot).toContain(`- generic [ref=s1e3]:
+  - generic [ref=s1e4]:
+    - radio "Apple" [checked]
+    - text: Apple
+  - generic [ref=s1e8]:
+    - radio "Pear"
+    - text: Pear
+  - generic [ref=s1e12]:
+    - radio "Orange"
+    - text: Orange`);
 });

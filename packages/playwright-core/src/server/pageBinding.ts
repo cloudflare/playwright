@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-import { ensureBuiltins } from './isomorphic/builtins';
-import { source } from './isomorphic/utilityScriptSerializers';
+import { builtins } from '../utils/isomorphic/builtins';
+import { source } from '../utils/isomorphic/utilityScriptSerializers';
 
-import type { Builtins } from './isomorphic/builtins';
-import type { SerializedValue } from './isomorphic/utilityScriptSerializers';
+import type { Builtins } from '../utils/isomorphic/builtins';
+import type { SerializedValue } from '../utils/isomorphic/utilityScriptSerializers';
 
 export type BindingPayload = {
   name: string;
@@ -90,6 +90,6 @@ export function deliverBindingResult(arg: { name: string, seq: number, result?: 
 export function createPageBindingScript(playwrightBinding: string, name: string, needsHandle: boolean) {
   // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
   // See: https://github.com/cloudflare/workers-sdk/issues/7107
-  const script = `(${addPageBinding.toString()})(${JSON.stringify(playwrightBinding)}, ${JSON.stringify(name)}, ${needsHandle}, (${source}), (${ensureBuiltins})(globalThis))`;
+  const script = `(${addPageBinding.toString()})(${JSON.stringify(playwrightBinding)}, ${JSON.stringify(name)}, ${needsHandle}, (${source}), (${builtins})())`;
   return `((__name => (${script}))(t => t))`;
 }

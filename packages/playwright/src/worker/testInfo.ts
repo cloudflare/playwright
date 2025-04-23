@@ -23,16 +23,15 @@ import { TimeoutManager, TimeoutManagerError, kMaxDeadline } from './timeoutMana
 import { filteredStackTrace, getContainedPath, normalizeAndSaveAttachment, trimLongString, windowsFilesystemFriendlyLength } from '../util';
 import { TestTracing } from './testTracing';
 import { testInfoError } from './util';
-import { FloatingPromiseScope } from './floatingPromiseScope';
-import { wrapFunctionWithLocation } from '../transform/transform';
 
 import type { RunnableDescription } from './timeoutManager';
-import type { FullProject, TestAnnotation, TestInfo, TestStatus, TestStepInfo } from '../../types/test';
+import type { FullProject, TestInfo, TestStatus, TestStepInfo, TestAnnotation } from '../../types/test';
 import type { FullConfig, Location } from '../../types/testReporter';
 import type { FullConfigInternal, FullProjectInternal } from '../common/config';
 import type { AttachmentPayload, StepBeginPayload, StepEndPayload, TestInfoErrorImpl, WorkerInitParams } from '../common/ipc';
 import type { TestCase } from '../common/test';
 import type { StackFrame } from '@protocol/channels';
+
 
 export interface TestStepInternal {
   complete(result: { error?: Error | unknown, suggestedRebaseline?: string }): void;
@@ -60,7 +59,6 @@ export class TestInfoImpl implements TestInfo {
   readonly _startTime: number;
   readonly _startWallTime: number;
   readonly _tracing: TestTracing;
-  readonly _floatingPromiseScope: FloatingPromiseScope = new FloatingPromiseScope();
   readonly _uniqueSymbol;
 
   _wasInterrupted = false;
@@ -74,12 +72,6 @@ export class TestInfoImpl implements TestInfo {
   _hasNonRetriableError = false;
   _hasUnhandledError = false;
   _allowSkips = false;
-
-  // ------------ Main methods ------------
-  skip: (arg?: any, description?: string) => void;
-  fixme: (arg?: any, description?: string) => void;
-  fail: (arg?: any, description?: string) => void;
-  slow: (arg?: any, description?: string) => void;
 
   // ------------ TestInfo fields ------------
   readonly testId: string;
@@ -206,14 +198,9 @@ export class TestInfoImpl implements TestInfo {
     };
 
     this._tracing = new TestTracing(this, workerParams.artifactsDir);
-
-    this.skip = wrapFunctionWithLocation((location, ...args) => this._modifier('skip', location, args));
-    this.fixme = wrapFunctionWithLocation((location, ...args) => this._modifier('fixme', location, args));
-    this.fail = wrapFunctionWithLocation((location, ...args) => this._modifier('fail', location, args));
-    this.slow = wrapFunctionWithLocation((location, ...args) => this._modifier('slow', location, args));
   }
 
-  _modifier(type: 'skip' | 'fail' | 'fixme' | 'slow', location: Location, modifierArgs: [arg?: any, description?: string]) {
+  private _modifier(type: 'skip' | 'fail' | 'fixme' | 'slow', modifierArgs: [arg?: any, description?: string]) {
     if (typeof modifierArgs[1] === 'function') {
       throw new Error([
         'It looks like you are calling test.skip() inside the test and pass a callback.',
@@ -228,7 +215,7 @@ export class TestInfoImpl implements TestInfo {
       return;
 
     const description = modifierArgs[1];
-    this.annotations.push({ type, description, location });
+    this.annotations.push({ type, description });
     if (type === 'slow') {
       this._timeoutManager.slow();
     } else if (type === 'skip' || type === 'fixme') {
@@ -492,6 +479,22 @@ export class TestInfoImpl implements TestInfo {
     return this._resolveSnapshotPath(undefined, legacyTemplate, pathSegments);
   }
 
+  skip(...args: [arg?: any, description?: string]) {
+    this._modifier('skip', args);
+  }
+
+  fixme(...args: [arg?: any, description?: string]) {
+    this._modifier('fixme', args);
+  }
+
+  fail(...args: [arg?: any, description?: string]) {
+    this._modifier('fail', args);
+  }
+
+  slow(...args: [arg?: any, description?: string]) {
+    this._modifier('slow', args);
+  }
+
   setTimeout(timeout: number) {
     this._timeoutManager.setTimeout(timeout);
   }
@@ -508,9 +511,9 @@ export class TestStepInfoImpl implements TestStepInfo {
     this._stepId = stepId;
   }
 
-  async _runStepBody<T>(skip: boolean, body: (step: TestStepInfo) => T | Promise<T>, location?: Location) {
+  async _runStepBody<T>(skip: boolean, body: (step: TestStepInfo) => T | Promise<T>) {
     if (skip) {
-      this.annotations.push({ type: 'skip', location });
+      this.annotations.push({ type: 'skip' });
       return undefined as T;
     }
     try {
@@ -530,15 +533,15 @@ export class TestStepInfoImpl implements TestStepInfo {
     this._attachToStep(await normalizeAndSaveAttachment(this._testInfo.outputPath(), name, options));
   }
 
-  skip = wrapFunctionWithLocation((location: Location, ...args: unknown[]) => {
+  skip(...args: unknown[]) {
     // skip();
     // skip(condition: boolean, description: string);
     if (args.length > 0 && !args[0])
       return;
     const description = args[1] as (string|undefined);
-    this.annotations.push({ type: 'skip', description, location });
+    this.annotations.push({ type: 'skip', description });
     throw new StepSkipError(description);
-  });
+  }
 }
 
 export class TestSkipError extends Error {

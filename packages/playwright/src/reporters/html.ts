@@ -324,12 +324,15 @@ class HtmlBuilder {
       async function redirect() {
         const hmrURL = new URL('http://localhost:44224'); // dev server, port is harcoded in build.js
         const popup = window.open(hmrURL);
-        window.addEventListener('message', evt => {
+        const listener = (evt: MessageEvent) => {
           if (evt.source === popup && evt.data === 'ready') {
             popup!.postMessage((window as any).playwrightReportBase64, hmrURL.origin);
+            window.removeEventListener('message', listener);
+            // This is generally not allowed
             window.close();
           }
-        }, { once: true });
+        };
+        window.addEventListener('message', listener);
       }
 
       fs.appendFileSync(redirectFile, `<script>(${redirect.toString()})()</script>`);
@@ -417,7 +420,7 @@ class HtmlBuilder {
         projectName,
         location,
         duration,
-        annotations: this._serializeAnnotations([...test.annotations, ...results.flatMap(r => r.annotations)]),
+        annotations: this._serializeAnnotations(test.annotations),
         tags: test.tags,
         outcome: test.outcome(),
         path,
@@ -503,7 +506,7 @@ class HtmlBuilder {
 
   private _serializeAnnotations(annotations: api.TestCase['annotations']): TestAnnotation[] {
     // Annotations can be pushed directly, with a wrong type.
-    return annotations.map(a => ({ type: a.type, description: a.description ? String(a.description) : a.description, location: a.location }));
+    return annotations.map(a => ({ type: a.type, description: a.description === undefined ? undefined : String(a.description) }));
   }
 
   private _createTestResult(test: api.TestCase, result: api.TestResult): TestResult {
