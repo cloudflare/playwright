@@ -203,6 +203,7 @@ export default {
   errors,
   request,
   _instrumentation,
+  endpointURLString,
   launch,
   connect,
   sessions,
