@@ -19,6 +19,11 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "playwright-core": "1.52.0-next"
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^6.0.0"
+  },
+  "devDependencies": {
+    "@octokit/graphql-schema": "^15.26.0",
+    "@playwright/test": "1.53.0-next"
   }
 }

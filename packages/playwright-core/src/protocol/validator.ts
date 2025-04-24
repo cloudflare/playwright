@@ -327,12 +327,6 @@ scheme.LocalUtilsConnectParams = tObject({
   exposeNetwork: tOptional(tString),
   slowMo: tOptional(tNumber),
   timeout: tOptional(tNumber),
-  proxy: tOptional(tObject({
-    server: tString,
-    bypass: tOptional(tString),
-    username: tOptional(tString),
-    password: tOptional(tString),
-  })),
   socksProxyRedirectPortForTest: tOptional(tNumber),
 });
 scheme.LocalUtilsConnectResult = tObject({
@@ -656,12 +650,6 @@ scheme.BrowserTypeConnectOverCDPParams = tObject({
   headers: tOptional(tArray(tType('NameValue'))),
   slowMo: tOptional(tNumber),
   timeout: tOptional(tNumber),
-  proxy: tOptional(tObject({
-    server: tString,
-    bypass: tOptional(tString),
-    username: tOptional(tString),
-    password: tOptional(tString),
-  })),
 });
 scheme.BrowserTypeConnectOverCDPResult = tObject({
   browser: tChannel(['Browser']),
@@ -1493,6 +1481,7 @@ scheme.FrameAddStyleTagResult = tObject({
 scheme.FrameAriaSnapshotParams = tObject({
   selector: tString,
   ref: tOptional(tBoolean),
+  emitGeneric: tOptional(tBoolean),
   mode: tOptional(tEnum(['raw', 'regex'])),
   timeout: tOptional(tNumber),
 });

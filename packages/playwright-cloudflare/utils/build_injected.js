@@ -22,7 +22,7 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
         name: 'frameSnapshotStreamer',
         entry: [
           path.join(basedir, '../../playwright-core/src/server/trace/recorder/snapshotterInjected.ts'),
-          path.join(basedir, '../../playwright-core/src/server/isomorphic/utilityScriptSerializers.ts'),
+          path.join(basedir, '../../playwright-core/src/utils/isomorphic/utilityScriptSerializers.ts'),
         ],
         formats: ['es'],
       },

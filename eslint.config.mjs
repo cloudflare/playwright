@@ -220,32 +220,27 @@ const noBooleanCompareRules = {
   "@typescript-eslint/no-unnecessary-boolean-literal-compare": 2,
 };
 
-const noWebGlobalsRules = {
-  // This should contain every bulitin from builtins.ts.
-  "no-restricted-globals": [
-    "error",
-    { "name": "window", "message": "Use InjectedScript.window instead" },
-    { "name": "document", "message": "Use InjectedScript.document instead" },
-    { "name": "globalThis", "message": "Use InjectedScript.window instead" },
-    { "name": "setTimeout", "message": "Use InjectedScript.builtins.setTimeout instead" },
-    { "name": "clearTimeout", "message": "Use InjectedScript.builtins.clearTimeout instead" },
-    { "name": "setInterval", "message": "Use InjectedScript.builtins.setInterval instead" },
-    { "name": "clearInterval", "message": "Use InjectedScript.builtins.clearInterval instead" },
-    { "name": "requestAnimationFrame", "message": "Use InjectedScript.builtins.requestAnimationFrame instead" },
-    { "name": "cancelAnimationFrame", "message": "Use InjectedScript.builtins.cancelAnimationFrame instead" },
-    { "name": "requestIdleCallback", "message": "Use InjectedScript.builtins.requestIdleCallback instead" },
-    { "name": "cancelIdleCallback", "message": "Use InjectedScript.builtins.cancelIdleCallback instead" },
-    { "name": "performance", "message": "Use InjectedScript.builtins.performance instead" },
-    { "name": "eval", "message": "Use InjectedScript.builtins.eval instead" },
-    { "name": "Date", "message": "Use InjectedScript.builtins.Date instead" },
-    { "name": "Map", "message": "Use InjectedScript.builtins.Map instead" },
-    { "name": "Set", "message": "Use InjectedScript.builtins.Set instead" },
-  ],
-};
+// This should contain every builtin from builtins.ts.
+const noWebGlobalsRuleList = [
+  { name: "window", message: "Use InjectedScript.window instead" },
+  { name: "document", message: "Use InjectedScript.document instead" },
+  { name: "globalThis", message: "Use InjectedScript.window instead" },
+  { name: "setTimeout", message: "import { setTimeout } from './builtins' instead" },
+  { name: "clearTimeout", message: "import { clearTimeout } from './builtins' instead" },
+  { name: "setInterval", message: "import { setInterval } from './builtins' instead" },
+  { name: "clearInterval", message: "import { clearInterval } from './builtins' instead" },
+  { name: "requestAnimationFrame", message: "import { requestAnimationFrame } from './builtins' instead" },
+  { name: "cancelAnimationFrame", message: "import { cancelAnimationFrame } from './builtins' instead" },
+  { name: "requestIdleCallback", message: "import { requestIdleCallback } from './builtins' instead" },
+  { name: "cancelIdleCallback", message: "import { cancelIdleCallback } from './builtins' instead" },
+  { name: "performance", message: "import { performance } from './builtins' instead" },
+  { name: "eval", message: "Use builtins().eval instead" },
+  { name: "Date", message: "import { Date } from './builtins' instead" },
+  { name: "Map", message: "import { Map } from './builtins' instead" },
+  { name: "Set", message: "import { Set } from './builtins' instead" },
+];
 
-const noNodeGlobalsRules = {
-  "no-restricted-globals": ["error", { name: "process" }],
-};
+const noNodeGlobalsRuleList = [{ name: "process" }];
 
 const importOrderRules = {
   "import/order": [
@@ -372,15 +367,31 @@ export default [
   },
   {
     files: [
-      "packages/playwright-core/src/server/injected/**/*.ts",
-      "packages/playwright-core/src/server/isomorphic/**/*.ts",
-      "packages/playwright-core/src/utils/isomorphic/**/*.ts",
+      "packages/playwright-core/src/utils/**/*.ts",
+    ],
+    languageOptions: languageOptionsWithTsConfig,
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        ...noNodeGlobalsRuleList,
+        ...noWebGlobalsRuleList,
+      ],
+      ...noFloatingPromisesRules,
+      ...noBooleanCompareRules,
+    },
+  },
+  {
+    files: [
+      "packages/injected/src/**/*.ts",
       "packages/playwright-core/src/server/pageBinding.ts",
       "packages/playwright-core/src/server/storageScript.ts",
     ],
     languageOptions: languageOptionsWithTsConfig,
     rules: {
-      ...noWebGlobalsRules,
+      "no-restricted-globals": [
+        "error",
+        ...noWebGlobalsRuleList,
+      ],
       ...noFloatingPromisesRules,
       ...noBooleanCompareRules,
     },
@@ -389,11 +400,13 @@ export default [
     files: [
       "packages/playwright-core/src/client/**/*.ts",
       "packages/playwright-core/src/protocol/**/*.ts",
-      "packages/playwright-core/src/utils/**/*.ts",
     ],
     languageOptions: languageOptionsWithTsConfig,
     rules: {
-      ...noNodeGlobalsRules,
+      "no-restricted-globals": [
+        "error",
+        ...noNodeGlobalsRuleList,
+      ],
       ...noFloatingPromisesRules,
       ...noBooleanCompareRules,
     },

@@ -22,7 +22,6 @@ import { serializeRegexPatterns } from '../isomorphic/teleReceiver';
 
 import type { ReporterV2 } from './reporterV2';
 import type * as reporterTypes from '../../types/testReporter';
-import type { TestAnnotation } from '../../types/test';
 import type * as teleReceiver from '../isomorphic/teleReceiver';
 
 export type TeleReporterEmitterOptions = {
@@ -34,6 +33,7 @@ export class TeleReporterEmitter implements ReporterV2 {
   private _messageSink: (message: teleReceiver.JsonEvent) => void;
   private _rootDir!: string;
   private _emitterOptions: TeleReporterEmitterOptions;
+  private _resultKnownAttachmentCounts = new Map<string, number>();
   // In case there is blob reporter and UI mode, make sure one does override
   // the id assigned by the other.
   private readonly _idSymbol = Symbol('id');
@@ -77,6 +77,7 @@ export class TeleReporterEmitter implements ReporterV2 {
       timeout: test.timeout,
       annotations: []
     };
+    this._sendNewAttachments(result, test.id);
     this._messageSink({
       method: 'onTestEnd',
       params: {
@@ -84,6 +85,8 @@ export class TeleReporterEmitter implements ReporterV2 {
         result: this._serializeResultEnd(result),
       }
     });
+
+    this._resultKnownAttachmentCounts.delete((result as any)[this._idSymbol]);
   }
 
   onStepBegin(test: reporterTypes.TestCase, result: reporterTypes.TestResult, step: reporterTypes.TestStep): void {
@@ -99,11 +102,15 @@ export class TeleReporterEmitter implements ReporterV2 {
   }
 
   onStepEnd(test: reporterTypes.TestCase, result: reporterTypes.TestResult, step: reporterTypes.TestStep): void {
+    // Create synthetic onAttach event so we serialize the entire attachment along with the step
+    const resultId = (result as any)[this._idSymbol] as string;
+    this._sendNewAttachments(result, test.id);
+
     this._messageSink({
       method: 'onStepEnd',
       params: {
         testId: test.id,
-        resultId: (result as any)[this._idSymbol],
+        resultId,
         step: this._serializeStepEnd(step, result)
       }
     });
@@ -217,7 +224,7 @@ export class TeleReporterEmitter implements ReporterV2 {
       retries: test.retries,
       tags: test.tags,
       repeatEachIndex: test.repeatEachIndex,
-      annotations: this._relativeAnnotationLocations(test.annotations),
+      annotations: test.annotations,
     };
   }
 
@@ -237,17 +244,35 @@ export class TeleReporterEmitter implements ReporterV2 {
       duration: result.duration,
       status: result.status,
       errors: result.errors,
-      attachments: this._serializeAttachments(result.attachments),
-      annotations: result.annotations?.length ? this._relativeAnnotationLocations(result.annotations) : undefined,
+      annotations: result.annotations?.length ? result.annotations : undefined,
     };
+  }
+
+  private _sendNewAttachments(result: reporterTypes.TestResult, testId: string) {
+    const resultId = (result as any)[this._idSymbol] as string;
+    // Track whether this step (or something else since the last step) has added attachments and send them
+    const knownAttachmentCount = this._resultKnownAttachmentCounts.get(resultId) ?? 0;
+    if (result.attachments.length > knownAttachmentCount) {
+      this._messageSink({
+        method: 'onAttach',
+        params: {
+          testId,
+          resultId,
+          attachments: this._serializeAttachments((result.attachments.slice(knownAttachmentCount))),
+        }
+      });
+    }
+
+    this._resultKnownAttachmentCounts.set(resultId, result.attachments.length);
   }
 
   _serializeAttachments(attachments: reporterTypes.TestResult['attachments']): teleReceiver.JsonAttachment[] {
     return attachments.map(a => {
+      const { body, ...rest } = a;
       return {
-        ...a,
+        ...rest,
         // There is no Buffer in the browser, so there is no point in sending the data there.
-        base64: (a.body && !this._emitterOptions.omitBuffers) ? a.body.toString('base64') : undefined,
+        base64: (body && !this._emitterOptions.omitBuffers) ? body.toString('base64') : undefined,
       };
     });
   }
@@ -269,16 +294,8 @@ export class TeleReporterEmitter implements ReporterV2 {
       duration: step.duration,
       error: step.error,
       attachments: step.attachments.length ? step.attachments.map(a => result.attachments.indexOf(a)) : undefined,
-      annotations: step.annotations.length ? this._relativeAnnotationLocations(step.annotations) : undefined,
+      annotations: step.annotations.length ? step.annotations : undefined,
     };
-  }
-
-  private _relativeAnnotationLocations(annotations: TestAnnotation[]): TestAnnotation[] {
-    return annotations.map(annotation => {
-      if (annotation.location)
-        annotation.location = this._relativeLocation(annotation.location);
-      return annotation;
-    });
   }
 
   private _relativeLocation(location: reporterTypes.Location): reporterTypes.Location;

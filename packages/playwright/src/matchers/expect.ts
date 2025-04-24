@@ -34,6 +34,7 @@ import {
   toBeInViewport,
   toBeOK,
   toBeVisible,
+  toContainClass,
   toContainText,
   toHaveAccessibleDescription,
   toHaveAccessibleErrorMessage,
@@ -257,6 +258,7 @@ const customAsyncMatchers = {
   toBeOK,
   toBeVisible,
   toContainText,
+  toContainClass,
   toHaveAccessibleDescription,
   toHaveAccessibleName,
   toHaveAccessibleErrorMessage,
@@ -383,10 +385,8 @@ class ExpectMetaInfoProxyHandler implements ProxyHandler<any> {
         setMatcherCallContext({ expectInfo: this._info, testInfo, step: step.info });
         const callback = () => matcher.call(target, ...args);
         const result = currentZone().with('stepZone', step).run(callback);
-        if (result instanceof Promise) {
-          const promise = result.then(finalizer).catch(reportStepError);
-          return testInfo._floatingPromiseScope.wrapPromiseAPIResult(promise);
-        }
+        if (result instanceof Promise)
+          return result.then(finalizer).catch(reportStepError);
         finalizer();
         return result;
       } catch (e) {

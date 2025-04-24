@@ -293,8 +293,6 @@ export class WorkerMain extends ProcessRunner {
     for (const annotation of test.annotations)
       processAnnotation(annotation);
 
-    const staticAnnotations = new Set(testInfo.annotations);
-
     // Process existing annotations dynamically set for parent suites.
     for (const suite of suites) {
       const extraAnnotations = this._activeSuites.get(suite) || [];
@@ -313,7 +311,7 @@ export class WorkerMain extends ProcessRunner {
     if (isSkipped && nextTest && !hasAfterAllToRunBeforeNextTest) {
       // Fast path - this test is skipped, and there are more tests that will handle cleanup.
       testInfo.status = 'skipped';
-      this.dispatchEvent('testEnd', buildTestEndPayload(testInfo, staticAnnotations));
+      this.dispatchEvent('testEnd', buildTestEndPayload(testInfo));
       return;
     }
 
@@ -430,12 +428,6 @@ export class WorkerMain extends ProcessRunner {
         throw firstAfterHooksError;
     }).catch(() => {});  // Ignore the top-level error, it is already inside TestInfo.errors.
 
-    // Create warning if any of the async calls were not awaited in various stages.
-    if (!process.env.PW_DISABLE_FLOATING_PROMISES_WARNING && testInfo._floatingPromiseScope.hasFloatingPromises()) {
-      testInfo.annotations.push({ type: 'warning', description: `Some async calls were not awaited by the end of the test. This can cause flakiness.` });
-      testInfo._floatingPromiseScope.clear();
-    }
-
     if (testInfo._isFailure())
       this._isStopped = true;
 
@@ -485,7 +477,7 @@ export class WorkerMain extends ProcessRunner {
 
     this._currentTest = null;
     setCurrentTestInfo(null);
-    this.dispatchEvent('testEnd', buildTestEndPayload(testInfo, staticAnnotations));
+    this.dispatchEvent('testEnd', buildTestEndPayload(testInfo));
 
     const preserveOutput = this._config.config.preserveOutput === 'always' ||
       (this._config.config.preserveOutput === 'failures-only' && testInfo._isFailure());
@@ -502,7 +494,7 @@ export class WorkerMain extends ProcessRunner {
         continue;
       const fn = async (fixtures: any) => {
         const result = await modifier.fn(fixtures);
-        testInfo._modifier(modifier.type, modifier.location, [!!result, modifier.description]);
+        testInfo[modifier.type](!!result, modifier.description);
       };
       inheritFixtureNames(modifier.fn, fn);
       runnables.push({
@@ -605,7 +597,7 @@ function buildTestBeginPayload(testInfo: TestInfoImpl): TestBeginPayload {
   };
 }
 
-function buildTestEndPayload(testInfo: TestInfoImpl, staticAnnotations: Set<TestAnnotation>): TestEndPayload {
+function buildTestEndPayload(testInfo: TestInfoImpl): TestEndPayload {
   return {
     testId: testInfo.testId,
     duration: testInfo.duration,
@@ -613,7 +605,7 @@ function buildTestEndPayload(testInfo: TestInfoImpl, staticAnnotations: Set<Test
     errors: testInfo.errors,
     hasNonRetriableError: testInfo._hasNonRetriableError,
     expectedStatus: testInfo.expectedStatus,
-    annotations: testInfo.annotations.filter(a => !staticAnnotations.has(a)),
+    annotations: testInfo.annotations,
     timeout: testInfo.timeout,
   };
 }

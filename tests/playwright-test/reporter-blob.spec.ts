@@ -25,6 +25,7 @@ import extractZip from '../../packages/playwright-core/bundles/zip/node_modules/
 import * as yazl from '../../packages/playwright-core/bundles/zip/node_modules/yazl';
 import { getUserAgent } from '../../packages/playwright-core/lib/server/utils/userAgent';
 import { Readable } from 'stream';
+import type { JSONReportTestResult } from '../../packages/playwright-test/reporter';
 
 const DOES_NOT_SUPPORT_UTF8_IN_TERMINAL = process.platform === 'win32' && process.env.TERM_PROGRAM !== 'vscode' && !process.env.WT_SESSION;
 const POSITIVE_STATUS_MARK = DOES_NOT_SUPPORT_UTF8_IN_TERMINAL ? 'ok' : '✓ ';
@@ -706,7 +707,7 @@ test('generate html with attachment urls', async ({ runInlineTest, mergeReports,
   await page.goBack();
 
   // Check that trace loads.
-  await page.getByRole('link', { name: 'View Failing Trace' }).click();
+  await page.locator('.test-file-test').filter({ hasText: /failing 1/ }).getByRole('link', { name: 'View Trace' }).click();
   await expect(page).toHaveTitle('Playwright Trace Viewer');
   await expect(page.getByTestId('actions-tree').locator('div').filter({ hasText: /^expect\.toBe$/ })).toBeVisible();
 });
@@ -1721,9 +1722,6 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
           console.log('test:', test.location.file);
           console.log('test title:', test.titlePath()[2]);
         }
-        onTestEnd(test) {
-          console.log('annotations:', test.annotations.map(a => 'type: ' + a.type + ', description: ' + a.description + ', file: ' + a.location.file).join(','));
-        }
       };
     `,
     'merge.config.ts': `module.exports = {
@@ -1735,7 +1733,7 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
     };`,
     'dir1/tests1/a.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 1', { annotation: { type: 'warning', description: 'Some warning' } }, async ({}) => { });
+      test('math 1', async ({}) => { });
     `,
   };
   await runInlineTest(files1, { workers: 1 }, undefined, { additionalArgs: ['--config', test.info().outputPath('dir1/playwright.config.ts')] });
@@ -1746,7 +1744,7 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
     };`,
     'dir2/tests2/b.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 2', { annotation: { type: 'issue' } }, async ({}) => { });
+      test('math 2', async ({}) => { });
     `,
   };
   await runInlineTest(files2, { workers: 1 }, undefined, { additionalArgs: ['--config', test.info().outputPath('dir2/playwright.config.ts')] });
@@ -1768,16 +1766,12 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
 
   {
     const { exitCode, output } = await mergeReports(allReportsDir, undefined, { additionalArgs: ['--config', 'merge.config.ts'] });
-    const testPath1 = test.info().outputPath('mergeRoot', 'tests1', 'a.test.js');
-    const testPath2 = test.info().outputPath('mergeRoot', 'tests2', 'b.test.js');
     expect(exitCode).toBe(0);
     expect(output).toContain(`rootDir: ${test.info().outputPath('mergeRoot')}`);
-    expect(output).toContain(`test: ${testPath1}`);
+    expect(output).toContain(`test: ${test.info().outputPath('mergeRoot', 'tests1', 'a.test.js')}`);
     expect(output).toContain(`test title: ${'tests1' + path.sep + 'a.test.js'}`);
-    expect(output).toContain(`annotations: type: warning, description: Some warning, file: ${testPath1}`);
-    expect(output).toContain(`test: ${testPath2}`);
+    expect(output).toContain(`test: ${test.info().outputPath('mergeRoot', 'tests2', 'b.test.js')}`);
     expect(output).toContain(`test title: ${'tests2' + path.sep + 'b.test.js'}`);
-    expect(output).toContain(`annotations: type: issue, description: undefined, file: ${testPath2}`);
   }
 });
 
@@ -1793,9 +1787,6 @@ test('merge reports without --config preserves path separators', async ({ runInl
           console.log('test:', test.location.file);
           console.log('test title:', test.titlePath()[2]);
         }
-        onTestEnd(test) {
-          console.log('annotations:', test.annotations.map(a => 'type: ' + a.type + ', description: ' + a.description + ', file: ' + a.location.file).join(','));
-        }
       };
     `,
     'dir1/playwright.config.ts': `module.exports = {
@@ -1803,11 +1794,11 @@ test('merge reports without --config preserves path separators', async ({ runInl
     };`,
     'dir1/tests1/a.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 1', { annotation: { type: 'warning', description: 'Some warning' } }, async ({}) => { });
+      test('math 1', async ({}) => { });
     `,
     'dir1/tests2/b.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 2', { annotation: { type: 'issue' } }, async ({}) => { });
+      test('math 2', async ({}) => { });
     `,
   };
   await runInlineTest(files1, { workers: 1 }, undefined, { additionalArgs: ['--config', test.info().outputPath('dir1/playwright.config.ts')] });
@@ -1827,15 +1818,97 @@ test('merge reports without --config preserves path separators', async ({ runInl
   const { exitCode, output } = await mergeReports(allReportsDir, undefined, { additionalArgs: ['--reporter', './echo-reporter.js'] });
   expect(exitCode).toBe(0);
   const otherSeparator = path.sep === '/' ? '\\' : '/';
-  const testPath1 = test.info().outputPath('dir1', 'tests1', 'a.test.js').replaceAll(path.sep, otherSeparator);
-  const testPath2 = test.info().outputPath('dir1', 'tests2', 'b.test.js').replaceAll(path.sep, otherSeparator);
   expect(output).toContain(`rootDir: ${test.info().outputPath('dir1').replaceAll(path.sep, otherSeparator)}`);
-  expect(output).toContain(`test: ${testPath1}`);
+  expect(output).toContain(`test: ${test.info().outputPath('dir1', 'tests1', 'a.test.js').replaceAll(path.sep, otherSeparator)}`);
   expect(output).toContain(`test title: ${'tests1' + otherSeparator + 'a.test.js'}`);
-  expect(output).toContain(`annotations: type: warning, description: Some warning, file: ${testPath1}`);
-  expect(output).toContain(`test: ${testPath2}`);
+  expect(output).toContain(`test: ${test.info().outputPath('dir1', 'tests2', 'b.test.js').replaceAll(path.sep, otherSeparator)}`);
   expect(output).toContain(`test title: ${'tests2' + otherSeparator + 'b.test.js'}`);
-  expect(output).toContain(`annotations: type: issue, description: undefined, file: ${testPath2}`);
+});
+
+test('merge reports should preserve attachments', async ({ runInlineTest, mergeReports, showReport, page }) => {
+  const reportDir = test.info().outputPath('blob-report-orig');
+  const files = {
+    'playwright.config.ts': `
+      module.exports = {
+        retries: 1,
+        reporter: [['blob', { outputDir: '${reportDir.replace(/\\/g, '/')}' }]]
+      };
+    `,
+    'a.test.js': `
+      import { test, expect } from '@playwright/test';
+      import * as fs from 'fs';
+      test('attachment A', async ({}) => {
+        const attachmentPath = test.info().outputPath('foo.txt');
+        fs.writeFileSync(attachmentPath, 'hello!');
+        await test.info().attach('file-attachment1', { path: attachmentPath });
+        await test.info().attachments.push({ name: 'file-attachment2', path: attachmentPath, contentType: 'text/html' });
+        await test.info().attach('file-attachment3', { path: attachmentPath });
+        await test.info().attach('file-attachment4', { path: attachmentPath });
+        await test.info().attachments.push({ name: 'file-attachment5', path: attachmentPath, contentType: 'text/html' });
+        await test.info().attachments.push({ name: 'file-attachment6', path: attachmentPath, contentType: 'text/html' });
+        await test.info().attach('file-attachment7', { path: attachmentPath });
+      });
+    `,
+    'b.test.js': `
+      import { test, expect } from '@playwright/test';
+      import * as fs from 'fs';
+      test('attachment B', async ({}) => {
+        const attachmentPath = test.info().outputPath('bar.txt');
+        fs.writeFileSync(attachmentPath, 'goodbye!');
+        await test.info().attach('file-attachment8', { path: attachmentPath });
+        await test.info().attachments.push({ name: 'file-attachment9', path: attachmentPath, contentType: 'application/json' });
+      });
+    `
+  };
+  await runInlineTest(files, { shard: `1/2` }, { PWTEST_BLOB_DO_NOT_REMOVE: '1' });
+  await runInlineTest(files, { shard: `2/2` }, { PWTEST_BLOB_DO_NOT_REMOVE: '1' });
+
+  const reportFiles = await fs.promises.readdir(reportDir);
+  reportFiles.sort();
+  expect(reportFiles).toEqual(['report-1.zip', 'report-2.zip']);
+  const { exitCode } = await mergeReports(reportDir, { 'PLAYWRIGHT_HTML_OPEN': 'never' }, { additionalArgs: ['--reporter', 'blob,html'] });
+  expect(exitCode).toBe(0);
+
+  const reportZipFile = test.info().outputPath('blob-report', 'report.zip');
+  const events = await extractReport(reportZipFile, test.info().outputPath('tmp'));
+
+  type Attachment = Omit<JSONReportTestResult['attachments'][number], 'path'> & {
+    path: any
+  };
+
+  const attachment1: Attachment = { name: 'file-attachment1', path: expect.stringContaining(''), contentType: 'text/plain' };
+  const attachment2: Attachment = { name: 'file-attachment2', path: expect.stringContaining(''), contentType: 'text/html' };
+  const attachment3: Attachment = { name: 'file-attachment3', path: expect.stringContaining(''), contentType: 'text/plain' };
+  const attachment4: Attachment = { name: 'file-attachment4', path: expect.stringContaining(''), contentType: 'text/plain' };
+  const attachment5: Attachment = { name: 'file-attachment5', path: expect.stringContaining(''), contentType: 'text/html' };
+  const attachment6: Attachment = { name: 'file-attachment6', path: expect.stringContaining(''), contentType: 'text/html' };
+  const attachment7: Attachment = { name: 'file-attachment7', path: expect.stringContaining(''), contentType: 'text/plain' };
+  const attachment8: Attachment = { name: 'file-attachment8', path: expect.stringContaining(''), contentType: 'text/plain' };
+  const attachment9: Attachment = { name: 'file-attachment9', path: expect.stringContaining(''), contentType: 'application/json' };
+
+  const aAttachments = [attachment1, attachment2, attachment3, attachment4, attachment5, attachment6, attachment7];
+  const bAttachments = [attachment8, attachment9];
+
+  const allStepAttachments = events.flatMap(e => e.method === 'onStepEnd' ? e?.params?.step?.attachments ?? [] : []);
+  expect(allStepAttachments).toEqual([0, 2, 3, 6, 0]);
+
+  const allTestAttachments = events.flatMap(e => e.method === 'onAttach' ? e?.params?.attachments ?? [] : []);
+  expect(allTestAttachments).toEqual([...aAttachments, ...bAttachments]);
+
+  await showReport();
+
+  {
+    await page.getByRole('link', { name: 'Attachment A' }).click();
+    for (const attachment of aAttachments)
+      await expect(page.getByRole('link', { name: attachment.name })).toBeVisible();
+    await page.goBack();
+  }
+  {
+    await page.getByRole('link', { name: 'Attachment B' }).click();
+    for (const attachment of bAttachments)
+      await expect(page.getByRole('link', { name: attachment.name })).toBeVisible();
+    await page.goBack();
+  }
 });
 
 test('merge reports must not change test ids when there is no need to', async ({ runInlineTest, mergeReports }) => {

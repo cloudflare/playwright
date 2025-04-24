@@ -540,12 +540,6 @@ export type LocalUtilsConnectParams = {
   exposeNetwork?: string,
   slowMo?: number,
   timeout?: number,
-  proxy?: {
-    server: string,
-    bypass?: string,
-    username?: string,
-    password?: string,
-  },
   socksProxyRedirectPortForTest?: number,
 };
 export type LocalUtilsConnectOptions = {
@@ -553,12 +547,6 @@ export type LocalUtilsConnectOptions = {
   exposeNetwork?: string,
   slowMo?: number,
   timeout?: number,
-  proxy?: {
-    server: string,
-    bypass?: string,
-    username?: string,
-    password?: string,
-  },
   socksProxyRedirectPortForTest?: number,
 };
 export type LocalUtilsConnectResult = {
@@ -1177,23 +1165,11 @@ export type BrowserTypeConnectOverCDPParams = {
   headers?: NameValue[],
   slowMo?: number,
   timeout?: number,
-  proxy?: {
-    server: string,
-    bypass?: string,
-    username?: string,
-    password?: string,
-  },
 };
 export type BrowserTypeConnectOverCDPOptions = {
   headers?: NameValue[],
   slowMo?: number,
   timeout?: number,
-  proxy?: {
-    server: string,
-    bypass?: string,
-    username?: string,
-    password?: string,
-  },
 };
 export type BrowserTypeConnectOverCDPResult = {
   browser: BrowserChannel,
@@ -2712,11 +2688,13 @@ export type FrameAddStyleTagResult = {
 export type FrameAriaSnapshotParams = {
   selector: string,
   ref?: boolean,
+  emitGeneric?: boolean,
   mode?: 'raw' | 'regex',
   timeout?: number,
 };
 export type FrameAriaSnapshotOptions = {
   ref?: boolean,
+  emitGeneric?: boolean,
   mode?: 'raw' | 'regex',
   timeout?: number,
 };

@@ -16,7 +16,7 @@
 
 import { eventsHelper } from '../utils/eventsHelper';
 import { Browser } from '../browser';
-import { BrowserContext, assertBrowserContextIsNotOwned } from '../browserContext';
+import { BrowserContext, assertBrowserContextIsNotOwned, verifyGeolocation } from '../browserContext';
 import * as network from '../network';
 import { BidiConnection } from './bidiConnection';
 import { bidiBytesValueToString } from './bidiNetworkManager';
@@ -205,6 +205,7 @@ export class BidiBrowser extends Browser {
 export class BidiBrowserContext extends BrowserContext {
   declare readonly _browser: BidiBrowser;
   private _initScriptIds: bidi.Script.PreloadScript[] = [];
+  private _originToPermissions = new Map<string, string[]>();
 
   constructor(browser: BidiBrowser, browserContextId: string | undefined, options: types.BrowserContextOptions) {
     super(browser, options, browserContextId);
@@ -230,6 +231,8 @@ export class BidiBrowserContext extends BrowserContext {
         userContexts: [this._userContextId()],
       }));
     }
+    if (this._options.geolocation)
+      promises.push(this.setGeolocation(this._options.geolocation));
     await Promise.all(promises);
   }
 
@@ -306,12 +309,43 @@ export class BidiBrowserContext extends BrowserContext {
   }
 
   async doGrantPermissions(origin: string, permissions: string[]) {
+    const currentPermissions = this._originToPermissions.get(origin) || [];
+    const toGrant = permissions.filter(permission => !currentPermissions.includes(permission));
+    this._originToPermissions.set(origin, [...currentPermissions, ...toGrant]);
+    await Promise.all(toGrant.map(permission => this._setPermission(origin, permission, bidi.Permissions.PermissionState.Granted)));
   }
 
   async doClearPermissions() {
+    const currentPermissions = [...this._originToPermissions.entries()];
+    this._originToPermissions = new Map();
+    await Promise.all(currentPermissions.map(([origin, permissions]) => permissions.map(
+        p => this._setPermission(origin, p, bidi.Permissions.PermissionState.Prompt))));
+  }
+
+  private async _setPermission(origin: string, permission: string, state: bidi.Permissions.PermissionState) {
+    await this._browser._browserSession.send('permissions.setPermission', {
+      descriptor: {
+        name: permission,
+      },
+      state,
+      origin,
+      userContext: this._browserContextId || 'default',
+    });
   }
 
   async setGeolocation(geolocation?: types.Geolocation): Promise<void> {
+    verifyGeolocation(geolocation);
+    this._options.geolocation = geolocation;
+    // Setting geolocation on the user context automatically applies it to all existing
+    // pages in the context in Bidi.
+    await this._browser._browserSession.send('emulation.setGeolocationOverride', {
+      coordinates: {
+        latitude: geolocation?.latitude,
+        longitude: geolocation?.longitude,
+        accuracy: geolocation?.accuracy,
+      },
+      userContexts: [this._browserContextId || 'default'],
+    });
   }
 
   async setExtraHTTPHeaders(headers: types.HeadersArray): Promise<void> {

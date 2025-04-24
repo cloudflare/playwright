@@ -136,6 +136,7 @@ const playwright = {
   selectors,
   request,
   devices,
+  endpointURLString,
   connect,
   launch,
   limits,
