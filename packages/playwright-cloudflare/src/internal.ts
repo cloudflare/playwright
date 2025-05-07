@@ -16,7 +16,7 @@ import playwright from '.';
 import type { Attachment, SuiteInfo, TestCaseInfo, TestContext, TestResult } from '../internal';
 import type { ApiCallData, ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
 
-export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
+export { isUnderTest } from 'playwright-core/lib/utils';
 export { debug } from 'playwright-core/lib/utilsBundle';
 export { mergeTests } from 'playwright/lib/common/testType';
 
