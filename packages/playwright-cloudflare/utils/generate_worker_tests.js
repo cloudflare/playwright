@@ -205,7 +205,7 @@ ${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(fi
         extensions: ['.ts', '.js'],
         include: [
           path.resolve(basedir, '../../../tests/**/*'),
-          path.resolve(basedir, '../../playwright-core/src/**/*'),
+          path.resolve(basedir, '../../playwright-core/**/*'),
           /node_modules/,
         ],
       },
