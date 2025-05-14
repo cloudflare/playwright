@@ -1,3 +1,5 @@
+import './polyfills/process';
+
 import fs from 'fs';
 
 import { asLocator, currentZone, isString, ManualPromise, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
