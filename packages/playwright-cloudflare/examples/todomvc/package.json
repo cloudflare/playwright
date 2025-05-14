@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
-    "@cloudflare/playwright": "^0.0.9",
+    "@cloudflare/playwright": "^0.0.10",
     "typescript": "^5.8.3",
     "wrangler": "^4.13.0"
   }
