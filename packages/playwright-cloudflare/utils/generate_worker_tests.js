@@ -1,4 +1,3 @@
-import fs from 'fs';
 import path from "path";
 import { fileURLToPath } from "url";
 import { build } from "vite";
@@ -167,35 +166,7 @@ ${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(fi
           chunkFileNames: '[name].js',
         },
         external: [
-          'node:async_hooks',
-          'node:assert',
-          'node:buffer',
-          'node:child_process',
-          'node:constants',
-          'node:crypto',
-          'node:dns',
-          'node:domain',
-          'node:events',
-          'node:http',
-          'node:http2',
-          'node:https',
-          'node:inspector',
-          'node:module',
-          'node:net',
-          'node:os',
-          'node:path',
-          'node:querystring',
-          'node:process',
-          'node:readline',
-          'node:stream',
-          'node:string_decoder',
-          'node:timers',
-          'node:tls',
-          'node:url',
-          'node:util',
-          'node:vm',
-          'node:zlib',
-
+          /^node:/,
           'cloudflare:workers',
           /^@cloudflare\/playwright.*/,
         ]
