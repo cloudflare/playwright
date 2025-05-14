@@ -133,9 +133,11 @@ export async function launch(endpoint: BrowserEndpoint, launchOptions?: WorkersL
 
 export async function acquire(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<AcquireResponse> {
   options = { ...extractOptions(endpoint), ...options };
-  let acquireUrl = `${HTTP_FAKE_HOST}/v1/acquire`;
+  const acquireUrl = new URL(`${HTTP_FAKE_HOST}/v1/acquire`);
   if (options?.keep_alive)
-    acquireUrl = `${acquireUrl}?keep_alive=${options.keep_alive}`;
+    acquireUrl.searchParams.append('keep_alive', String(options.keep_alive));
+  if (options?.location)
+    acquireUrl.searchParams.set('location', options.location);
 
   const res = await getBrowserBinding(endpoint).fetch(acquireUrl);
   const status = res.status;
