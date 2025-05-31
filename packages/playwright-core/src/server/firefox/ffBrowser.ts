@@ -19,11 +19,10 @@ import { assert } from '../../utils';
 import { Browser } from '../browser';
 import { BrowserContext, verifyGeolocation } from '../browserContext';
 import { TargetClosedError } from '../errors';
-import { kPlaywrightBinding } from '../javascript';
 import * as network from '../network';
-import { kUtilityInitScript } from '../page';
 import { ConnectionEvents, FFConnection  } from './ffConnection';
 import { FFPage } from './ffPage';
+import { PageBinding } from '../page';
 
 import type { BrowserOptions } from '../browser';
 import type { SdkObject } from '../instrumentation';
@@ -185,7 +184,6 @@ export class FFBrowserContext extends BrowserContext {
     const browserContextId = this._browserContextId;
     const promises: Promise<any>[] = [
       super._initialize(),
-      this._browser.session.send('Browser.addBinding', { browserContextId: this._browserContextId, name: kPlaywrightBinding, script: '' }),
       this._updateInitScripts(),
     ];
     if (this._options.acceptDownloads !== 'internal-browser-default') {
@@ -281,7 +279,7 @@ export class FFBrowserContext extends BrowserContext {
     return this._ffPages().map(ffPage => ffPage._page);
   }
 
-  override async doCreateNewPage(): Promise<Page> {
+  override async doCreateNewPage(markAsServerSideOnly?: boolean): Promise<Page> {
     const { targetId } = await this._browser.session.send('Browser.newPage', {
       browserContextId: this._browserContextId
     }).catch(e =>  {
@@ -289,7 +287,11 @@ export class FFBrowserContext extends BrowserContext {
         throw new Error(`Invalid timezone ID: ${this._options.timezoneId}`);
       throw e;
     });
-    return this._browser._ffPages.get(targetId)!._page;
+    const page = this._browser._ffPages.get(targetId)!._page;
+    if (markAsServerSideOnly)
+      page.markAsServerSideOnly();
+    return page;
+
   }
 
   async doGetCookies(urls: string[]): Promise<channels.NetworkCookie[]> {
@@ -371,21 +373,27 @@ export class FFBrowserContext extends BrowserContext {
     await this._updateInitScripts();
   }
 
-  async doRemoveNonInternalInitScripts() {
+  async doRemoveInitScripts(initScripts: InitScript[]) {
     await this._updateInitScripts();
   }
 
   private async _updateInitScripts() {
     const bindingScripts = [...this._pageBindings.values()].map(binding => binding.initScript.source);
+    if (this.bindingsInitScript)
+      bindingScripts.unshift(this.bindingsInitScript.source);
     const initScripts = this.initScripts.map(script => script.source);
-    await this._browser.session.send('Browser.setInitScripts', { browserContextId: this._browserContextId, scripts: [kUtilityInitScript.source, ...bindingScripts, ...initScripts].map(script => ({ script })) });
+    await this._browser.session.send('Browser.setInitScripts', { browserContextId: this._browserContextId, scripts: [...bindingScripts, ...initScripts].map(script => ({ script })) });
   }
 
   async doUpdateRequestInterception(): Promise<void> {
     await Promise.all([
-      this._browser.session.send('Browser.setRequestInterception', { browserContextId: this._browserContextId, enabled: !!this._requestInterceptor }),
-      this._browser.session.send('Browser.setCacheDisabled', { browserContextId: this._browserContextId, cacheDisabled: !!this._requestInterceptor }),
+      this._browser.session.send('Browser.setRequestInterception', { browserContextId: this._browserContextId, enabled: this.requestInterceptors.length > 0 }),
+      this._browser.session.send('Browser.setCacheDisabled', { browserContextId: this._browserContextId, cacheDisabled: this.requestInterceptors.length > 0 }),
     ]);
+  }
+
+  override async doExposePlaywrightBinding() {
+    this._browser.session.send('Browser.addBinding', { browserContextId: this._browserContextId, name: PageBinding.kBindingName, script: '' });
   }
 
   onClosePersistent() {}

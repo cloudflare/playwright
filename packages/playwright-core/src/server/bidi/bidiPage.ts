@@ -16,10 +16,8 @@
 
 import { assert } from '../../utils';
 import { eventsHelper } from '../utils/eventsHelper';
-import { BrowserContext } from '../browserContext';
 import * as dialog from '../dialog';
 import * as dom from '../dom';
-import { kPlaywrightBinding } from '../javascript';
 import { Page } from '../page';
 import { BidiExecutionContext, createHandle } from './bidiExecutionContext';
 import { RawKeyboardImpl, RawMouseImpl, RawTouchscreenImpl } from './bidiInput';
@@ -47,12 +45,11 @@ export class BidiPage implements PageDelegate {
   readonly _page: Page;
   readonly _session: BidiSession;
   readonly _opener: BidiPage | null;
-  private readonly _realmToContext: Map<string, dom.FrameExecutionContext>;
+  readonly _realmToContext: Map<string, dom.FrameExecutionContext>;
   private _sessionListeners: RegisteredListener[] = [];
   readonly _browserContext: BidiBrowserContext;
   readonly _networkManager: BidiNetworkManager;
   private readonly _pdf: BidiPDF;
-  private _initScriptIds: bidi.Script.PreloadScript[] = [];
 
   constructor(browserContext: BidiBrowserContext, bidiSession: BidiSession, opener: BidiPage | null) {
     this._session = bidiSession;
@@ -93,6 +90,12 @@ export class BidiPage implements PageDelegate {
     await Promise.all([
       this.updateHttpCredentials(),
       this.updateRequestInterception(),
+      // If the page is created by the Playwright client's call, some initialization
+      // may be pending. Wait for it to complete before reporting the page as new.
+      //
+      // TODO: ideally we'd wait only for the commands that created this page, but currently
+      // there is no way in Bidi to track which command created this page.
+      this._browserContext.waitForBlockingPageCreations(),
     ]);
   }
 
@@ -216,7 +219,7 @@ export class BidiPage implements PageDelegate {
   }
 
   private _onUserPromptOpened(event: bidi.BrowsingContext.UserPromptOpenedParameters) {
-    this._page.emitOnContext(BrowserContext.Events.Dialog, new dialog.Dialog(
+    this._page.browserContext.dialogManager.dialogDidOpen(new dialog.Dialog(
         this._page,
         event.type as dialog.DialogType,
         event.message,
@@ -263,10 +266,10 @@ export class BidiPage implements PageDelegate {
 
   async updateEmulatedViewportSize(): Promise<void> {
     const options = this._browserContext._options;
-    const deviceSize = this._page.emulatedSize();
-    if (deviceSize === null)
+    const emulatedSize = this._page.emulatedSize();
+    if (!emulatedSize)
       return;
-    const viewportSize = deviceSize.viewport;
+    const viewportSize = emulatedSize.viewport;
     await this._session.send('browsingContext.setViewport', {
       context: this._session.sessionId,
       viewport: {
@@ -338,14 +341,11 @@ export class BidiPage implements PageDelegate {
       // TODO: push to iframes?
       contexts: [this._session.sessionId],
     });
-    if (!initScript.internal)
-      this._initScriptIds.push(script);
+    initScript.auxData = script;
   }
 
-  async removeNonInternalInitScripts() {
-    const promises = this._initScriptIds.map(script => this._session.send('script.removePreloadScript', { script }));
-    this._initScriptIds = [];
-    await Promise.all(promises);
+  async removeInitScripts(initScripts: InitScript[]): Promise<void> {
+    await Promise.all(initScripts.map(script => this._session.send('script.removePreloadScript', { script: script.auxData })));
   }
 
   async closePage(runBeforeUnload: boolean): Promise<void> {
@@ -537,9 +537,6 @@ export class BidiPage implements PageDelegate {
     return true;
   }
 }
-
-export const addMainBindingSource =
-  `function addMainBinding(callback) { globalThis['${kPlaywrightBinding}'] = callback; }`;
 
 function toBidiExecutionContext(executionContext: dom.FrameExecutionContext): BidiExecutionContext {
   return executionContext.delegate as BidiExecutionContext;

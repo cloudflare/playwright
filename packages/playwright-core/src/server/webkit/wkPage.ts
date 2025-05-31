@@ -30,8 +30,7 @@ import * as dom from '../dom';
 import { TargetClosedError } from '../errors';
 import { helper } from '../helper';
 import * as network from '../network';
-import { kPlaywrightBinding } from '../javascript';
-import { Page } from '../page';
+import { Page, PageBinding } from '../page';
 import { getAccessibilityTree } from './wkAccessibility';
 import { WKSession } from './wkConnection';
 import { createHandle, WKExecutionContext } from './wkExecutionContext';
@@ -109,7 +108,7 @@ export class WKPage implements PageDelegate {
       const viewportSize = helper.getViewportSizeFromWindowFeatures(opener._nextWindowOpenPopupFeatures);
       opener._nextWindowOpenPopupFeatures = undefined;
       if (viewportSize)
-        this._page.setEmulatedSize({ viewport: viewportSize, screen: viewportSize });
+        this._page.setEmulatedSizeFromWindowOpen({ viewport: viewportSize, screen: viewportSize });
     }
   }
 
@@ -176,12 +175,13 @@ export class WKPage implements PageDelegate {
     const promises: Promise<any>[] = [
       // Resource tree should be received before first execution context.
       session.send('Runtime.enable'),
-      session.send('Runtime.addBinding', { name: kPlaywrightBinding }),
       session.send('Page.createUserWorld', { name: UTILITY_WORLD_NAME }).catch(_ => {}),  // Worlds are per-process
       session.send('Console.enable'),
       session.send('Network.enable'),
       this._workers.initializeSession(session)
     ];
+    if (this._page.browserContext.needsPlaywrightBinding())
+      promises.push(session.send('Runtime.addBinding', { name: PageBinding.kBindingName }));
     if (this._page.needsRequestInterception()) {
       promises.push(session.send('Network.setInterceptionEnabled', { enabled: true }));
       promises.push(session.send('Network.setResourceCachingDisabled', { disabled: true }));
@@ -593,7 +593,7 @@ export class WKPage implements PageDelegate {
   }
 
   _onDialog(event: Protocol.Dialog.javascriptDialogOpeningPayload) {
-    this._page.emitOnContext(BrowserContext.Events.Dialog, new dialog.Dialog(
+    this._page.browserContext.dialogManager.dialogDidOpen(new dialog.Dialog(
         this._page,
         event.type as dialog.DialogType,
         event.message,
@@ -676,7 +676,7 @@ export class WKPage implements PageDelegate {
   }
 
   async updateEmulatedViewportSize(): Promise<void> {
-    this._browserContext._validateEmulatedViewport(this._page.viewportSize());
+    this._browserContext._validateEmulatedViewport(this._page.emulatedSize()?.viewport);
     await this._updateViewport();
   }
 
@@ -693,11 +693,11 @@ export class WKPage implements PageDelegate {
 
   async _updateViewport(): Promise<void> {
     const options = this._browserContext._options;
-    const deviceSize = this._page.emulatedSize();
-    if (deviceSize === null)
+    const emulatedSize = this._page.emulatedSize();
+    if (!emulatedSize)
       return;
-    const viewportSize = deviceSize.viewport;
-    const screenSize = deviceSize.screen;
+    const viewportSize = emulatedSize.viewport;
+    const screenSize = emulatedSize.screen;
     const promises: Promise<any>[] = [
       this._pageProxySession.send('Emulation.setDeviceMetricsOverride', {
         width: viewportSize.width,
@@ -768,8 +768,12 @@ export class WKPage implements PageDelegate {
     await this._updateBootstrapScript();
   }
 
-  async removeNonInternalInitScripts() {
+  async removeInitScripts(initScripts: InitScript[]): Promise<void> {
     await this._updateBootstrapScript();
+  }
+
+  async exposePlaywrightBinding() {
+    await this._updateState('Runtime.addBinding', { name: PageBinding.kBindingName });
   }
 
   private _calculateBootstrapScript(): string {

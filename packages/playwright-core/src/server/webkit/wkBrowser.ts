@@ -244,9 +244,12 @@ export class WKBrowserContext extends BrowserContext {
     return this._wkPages().map(wkPage => wkPage._page);
   }
 
-  override async doCreateNewPage(): Promise<Page> {
+  override async doCreateNewPage(markAsServerSideOnly?: boolean): Promise<Page> {
     const { pageProxyId } = await this._browser._browserSession.send('Playwright.createPage', { browserContextId: this._browserContextId });
-    return this._browser._wkPages.get(pageProxyId)!._page;
+    const page = this._browser._wkPages.get(pageProxyId)!._page;
+    if (markAsServerSideOnly)
+      page.markAsServerSideOnly();
+    return page;
   }
 
   async doGetCookies(urls: string[]): Promise<channels.NetworkCookie[]> {
@@ -316,7 +319,7 @@ export class WKBrowserContext extends BrowserContext {
       await (page.delegate as WKPage)._updateBootstrapScript();
   }
 
-  async doRemoveNonInternalInitScripts() {
+  async doRemoveInitScripts(initScripts: InitScript[]) {
     for (const page of this.pages())
       await (page.delegate as WKPage)._updateBootstrapScript();
   }
@@ -324,6 +327,11 @@ export class WKBrowserContext extends BrowserContext {
   async doUpdateRequestInterception(): Promise<void> {
     for (const page of this.pages())
       await (page.delegate as WKPage).updateRequestInterception();
+  }
+
+  override async doExposePlaywrightBinding() {
+    for (const page of this.pages())
+      await (page.delegate as WKPage).exposePlaywrightBinding();
   }
 
   onClosePersistent() {}
@@ -350,7 +358,7 @@ export class WKBrowserContext extends BrowserContext {
     await this._browser._browserSession.send('Playwright.cancelDownload', { uuid });
   }
 
-  _validateEmulatedViewport(viewportSize?: types.Size | null) {
+  _validateEmulatedViewport(viewportSize: types.Size | undefined) {
     if (!viewportSize)
       return;
     if (process.platform === 'win32' && this._browser.options.headful && (viewportSize.width < 250 || viewportSize.height < 240))

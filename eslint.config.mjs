@@ -48,6 +48,7 @@ const ignores = [
   "**/.wrangler/",
   "packages/playwright-cloudflare/src/bundles/*",
   "packages/playwright-cloudflare/src/injected/*",
+  "packages/playwright-core/bundles/zip/src/third_party/",
   "packages/playwright-core/src/generated/*",
   "packages/playwright-core/src/third_party/",
   "packages/playwright-core/types/*",
@@ -221,9 +222,21 @@ const noBooleanCompareRules = {
 };
 
 const noWebGlobalsRuleList = [
+  // Keep in sync with builtins from utilityScript.ts
   { name: "window", message: "Use InjectedScript.window instead" },
   { name: "document", message: "Use InjectedScript.document instead" },
   { name: "globalThis", message: "Use InjectedScript.window instead" },
+  { name: "setTimeout", message: "Use InjectedScript.utils.builtins.setTimeout instead" },
+  { name: "clearTimeout", message: "Use InjectedScript.utils.builtins.clearTimeout instead" },
+  { name: "setInterval", message: "Use InjectedScript.utils.builtins.setInterval instead" },
+  { name: "clearInterval", message: "Use InjectedScript.utils.builtins.clearInterval instead" },
+  { name: "requestAnimationFrame", message: "Use InjectedScript.utils.builtins.requestAnimationFrame instead" },
+  { name: "cancelAnimationFrame", message: "Use InjectedScript.utils.builtins.cancelAnimationFrame instead" },
+  { name: "requestIdleCallback", message: "Use InjectedScript.utils.builtins.requestIdleCallback instead" },
+  { name: "cancelIdleCallback", message: "Use InjectedScript.utils.builtins.cancelIdleCallback instead" },
+  { name: "Date", message: "Use InjectedScript.utils.builtins.Date instead" },
+  { name: "Intl", message: "Use InjectedScript.utils.builtins.Intl instead" },
+  { name: "performance", message: "Use InjectedScript.utils.builtins.performance instead" },
 ];
 
 const noNodeGlobalsRuleList = [{ name: "process" }];

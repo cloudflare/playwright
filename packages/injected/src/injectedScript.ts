@@ -32,7 +32,7 @@ import { elementMatchesText, elementText, getElementLabels } from './selectorUti
 import { createVueEngine } from './vueSelectorEngine';
 import { XPathEngine } from './xpathSelectorEngine';
 import { ConsoleAPI } from './consoleApi';
-import { ensureUtilityScript } from './utilityScript';
+import { UtilityScript } from './utilityScript';
 
 import type { AriaTemplateNode } from '@isomorphic/ariaSnapshot';
 import type { CSSComplexSelectorList } from '@isomorphic/cssParser';
@@ -66,7 +66,7 @@ interface WebKitLegacyDeviceMotionEvent extends DeviceMotionEvent {
 }
 
 export type InjectedScriptOptions = {
-  isUnderTest?: boolean;
+  isUnderTest: boolean;
   sdkLanguage: Language;
   // For strict error and codegen
   testIdAttributeName: string;
@@ -108,6 +108,7 @@ export class InjectedScript {
     isInsideScope,
     normalizeWhiteSpace,
     parseAriaSnapshot,
+    // Builtins protect injected code from clock emulation.
     builtins: null as unknown as Builtins,
   };
 
@@ -123,11 +124,10 @@ export class InjectedScript {
   constructor(window: Window & typeof globalThis, options: InjectedScriptOptions) {
     this.window = window;
     this.document = window.document;
+    this.isUnderTest = options.isUnderTest;
     // Make sure builtins are created from "window". This is important for InjectedScript instantiated
     // inside a trace viewer snapshot, where "window" differs from "globalThis".
-    const utilityScript = ensureUtilityScript(window);
-    this.isUnderTest = options.isUnderTest ?? utilityScript.isUnderTest;
-    this.utils.builtins = utilityScript.builtins;
+    this.utils.builtins = new UtilityScript(window, options.isUnderTest).builtins;
     this._sdkLanguage = options.sdkLanguage;
     this._testIdAttributeNameForStrictErrorAndConsoleCodegen = options.testIdAttributeName;
     this._evaluator = new SelectorEvaluatorImpl();
@@ -227,7 +227,8 @@ export class InjectedScript {
     this._engines.set('internal:attr', this._createNamedAttributeEngine());
     this._engines.set('internal:testid', this._createNamedAttributeEngine());
     this._engines.set('internal:role', createRoleEngine(true));
-    this._engines.set('aria-ref', this._createAriaIdEngine());
+    this._engines.set('internal:describe', this._createDescribeEngine());
+    this._engines.set('aria-ref', this._createAriaRefEngine());
 
     for (const { name, source } of options.customEngines)
       this._engines.set(name, this.eval(source));
@@ -297,16 +298,11 @@ export class InjectedScript {
     return new Set<Element>(result.map(r => r.element));
   }
 
-  ariaSnapshot(node: Node, options?: { mode?: 'raw' | 'regex', ref?: boolean, emitGeneric?: boolean }): string {
+  ariaSnapshot(node: Node, options?: { mode?: 'raw' | 'regex', forAI?: boolean, refPrefix?: string }): string {
     if (node.nodeType !== Node.ELEMENT_NODE)
       throw this.createStacklessError('Can only capture aria snapshot of Element nodes.');
-    const generation = (this._lastAriaSnapshot?.generation || 0) + 1;
-    this._lastAriaSnapshot = generateAriaTree(node as Element, generation, options);
+    this._lastAriaSnapshot = generateAriaTree(node as Element, options);
     return renderAriaTree(this._lastAriaSnapshot, options);
-  }
-
-  ariaSnapshotElement(snapshot: AriaSnapshot, elementId: number): Element | null {
-    return snapshot.elements.get(elementId) || null;
   }
 
   getAllByAria(document: Document, template: AriaTemplateNode): Element[] {
@@ -484,6 +480,15 @@ export class InjectedScript {
     return { queryAll };
   }
 
+  private _createDescribeEngine(): SelectorEngine {
+    const queryAll = (root: SelectorRoot): Element[] => {
+      if (root.nodeType !== 1 /* Node.ELEMENT_NODE */)
+        return [];
+      return [root as Element];
+    };
+    return { queryAll };
+  }
+
   private _createControlEngine(): SelectorEngine {
     return {
       queryAll(root: SelectorRoot, body: any) {
@@ -559,7 +564,7 @@ export class InjectedScript {
       observer.observe(element);
       // Firefox doesn't call IntersectionObserver callback unless
       // there are rafs.
-      requestAnimationFrame(() => {});
+      this.utils.builtins.requestAnimationFrame(() => {});
     });
   }
 
@@ -640,7 +645,7 @@ export class InjectedScript {
         return 'error:notconnected';
 
       // Drop frames that are shorter than 16ms - WebKit Win bug.
-      const time = performance.now();
+      const time = this.utils.builtins.performance.now();
       if (this._stableRafCount > 1 && time - lastTime < 15)
         return continuePolling;
       lastTime = time;
@@ -668,25 +673,19 @@ export class InjectedScript {
         if (success !== continuePolling)
           fulfill(success);
         else
-          requestAnimationFrame(raf);
+          this.utils.builtins.requestAnimationFrame(raf);
       } catch (e) {
         reject(e);
       }
     };
-    requestAnimationFrame(raf);
+    this.utils.builtins.requestAnimationFrame(raf);
 
     return result;
   }
 
-  _createAriaIdEngine() {
+  _createAriaRefEngine() {
     const queryAll = (root: SelectorRoot, selector: string): Element[] => {
-      const match = selector.match(/^s(\d+)e(\d+)$/);
-      if (!match)
-        throw this.createStacklessError('Invalid aria-ref selector, should be of form s<number>e<number>');
-      const [, generation, elementId] = match;
-      if (this._lastAriaSnapshot?.generation !== +generation)
-        throw this.createStacklessError(`Stale aria-ref, expected s${this._lastAriaSnapshot?.generation}e{number}, got ${selector}`);
-      const result = this._lastAriaSnapshot?.elements?.get(+elementId);
+      const result = this._lastAriaSnapshot?.elements?.get(selector);
       return result && result.isConnected ? [result] : [];
     };
     return { queryAll };

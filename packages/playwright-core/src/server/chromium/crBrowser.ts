@@ -30,7 +30,6 @@ import { CRPage } from './crPage';
 import { saveProtocolStream } from './crProtocolHelper';
 import { CRServiceWorker } from './crServiceWorker';
 
-import type { Dialog } from '../dialog';
 import type { InitScript, Worker } from '../page';
 import type { ConnectionTransport } from '../transport';
 import type * as types from '../types';
@@ -371,9 +370,12 @@ export class CRBrowserContext extends BrowserContext {
     return this._crPages().map(crPage => crPage._page);
   }
 
-  override async doCreateNewPage(): Promise<Page> {
+  override async doCreateNewPage(markAsServerSideOnly?: boolean): Promise<Page> {
     const { targetId } = await this._browser._session.send('Target.createTarget', { url: 'about:blank', browserContextId: this._browserContextId });
-    return this._browser._crPages.get(targetId)!._page;
+    const page = this._browser._crPages.get(targetId)!._page;
+    if (markAsServerSideOnly)
+      page.markAsServerSideOnly();
+    return page;
   }
 
   async doGetCookies(urls: string[]): Promise<channels.NetworkCookie[]> {
@@ -473,9 +475,9 @@ export class CRBrowserContext extends BrowserContext {
       await (page.delegate as CRPage).addInitScript(initScript);
   }
 
-  async doRemoveNonInternalInitScripts() {
+  async doRemoveInitScripts(initScripts: InitScript[]) {
     for (const page of this.pages())
-      await (page.delegate as CRPage).removeNonInternalInitScripts();
+      await (page.delegate as CRPage).removeInitScripts(initScripts);
   }
 
   async doUpdateRequestInterception(): Promise<void> {
@@ -485,17 +487,17 @@ export class CRBrowserContext extends BrowserContext {
       await (sw as CRServiceWorker).updateRequestInterception();
   }
 
+  override async doExposePlaywrightBinding() {
+    for (const page of this._crPages())
+      await page.exposePlaywrightBinding();
+  }
+
   async doClose(reason: string | undefined) {
     // Headful chrome cannot dispose browser context with opened 'beforeunload'
     // dialogs, so we should close all that are currently opened.
     // We also won't get new ones since `Target.disposeBrowserContext` does not trigger
     // beforeunload.
-    const openedBeforeUnloadDialogs: Dialog[] = [];
-    for (const crPage of this._crPages()) {
-      const dialogs = [...crPage._page.frameManager._openedDialogs].filter(dialog => dialog.type() === 'beforeunload');
-      openedBeforeUnloadDialogs.push(...dialogs);
-    }
-    await Promise.all(openedBeforeUnloadDialogs.map(dialog => dialog.dismiss()));
+    await this.dialogManager.closeBeforeUnloadDialogs();
 
     if (!this._browserContextId) {
       await this.stopVideoRecording();
