@@ -38,7 +38,7 @@ import LiteYouTube from '@site/src/components/LiteYouTube';
 ### Miscellaneous
 
 - New option [`option: APIRequest.newContext.maxRedirects`] in [`method: APIRequest.newContext`] to control the maximum number of redirects.
-- New option [`option: Locator.ariaSnapshot.ref`] in [`method: Locator.ariaSnapshot`] to generate reference for each element in the snapshot which can later be used to locate the element.
+- New option `ref` in [`method: Locator.ariaSnapshot`] to generate reference for each element in the snapshot which can later be used to locate the element.
 - HTML reporter now supports *NOT filtering* via `!@my-tag` or `!my-file.spec.ts` or `!p:my-project`.
 
 ### Breaking Changes
@@ -841,7 +841,7 @@ test('test customer login', {
 npx playwright test --grep @fast
 ```
 
-- `--project` command line [flag](./test-cli#reference) now supports '*' wildcard:
+- `--project` command line [flag](./test-cli#all-options) now supports '*' wildcard:
 ```sh
 npx playwright test --project='*mobile*'
 ```

@@ -9551,6 +9551,12 @@ export interface Browser {
     behavior?: 'wait'|'ignoreErrors'|'default'
   }): Promise<void>;
   /**
+   * Emitted when a new [BrowserContext](https://playwright.dev/docs/api/class-browsercontext) is created in the
+   * browser.
+   */
+  on(event: 'context', listener: (browserContext: BrowserContext) => any): this;
+
+  /**
    * Emitted when Browser gets disconnected from the browser application. This might happen because of one of the
    * following:
    * - Browser application is closed or crashed.
@@ -9561,7 +9567,18 @@ export interface Browser {
   /**
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
    */
+  once(event: 'context', listener: (browserContext: BrowserContext) => any): this;
+
+  /**
+   * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
+   */
   once(event: 'disconnected', listener: (browser: Browser) => any): this;
+
+  /**
+   * Emitted when a new [BrowserContext](https://playwright.dev/docs/api/class-browsercontext) is created in the
+   * browser.
+   */
+  addListener(event: 'context', listener: (browserContext: BrowserContext) => any): this;
 
   /**
    * Emitted when Browser gets disconnected from the browser application. This might happen because of one of the
@@ -9574,12 +9591,28 @@ export interface Browser {
   /**
    * Removes an event listener added by `on` or `addListener`.
    */
+  removeListener(event: 'context', listener: (browserContext: BrowserContext) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
   removeListener(event: 'disconnected', listener: (browser: Browser) => any): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
    */
+  off(event: 'context', listener: (browserContext: BrowserContext) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
   off(event: 'disconnected', listener: (browser: Browser) => any): this;
+
+  /**
+   * Emitted when a new [BrowserContext](https://playwright.dev/docs/api/class-browsercontext) is created in the
+   * browser.
+   */
+  prependListener(event: 'context', listener: (browserContext: BrowserContext) => any): this;
 
   /**
    * Emitted when Browser gets disconnected from the browser application. This might happen because of one of the
@@ -9882,6 +9915,7 @@ export interface Browser {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -12501,17 +12535,6 @@ export interface Locator {
    */
   ariaSnapshot(options?: {
     /**
-     * Generate `generic` aria nodes for elements w/o roles (similar to Chrome DevTools).
-     */
-    emitGeneric?: boolean;
-
-    /**
-     * Generate symbolic reference for each element. One can use `aria-ref=<ref>` locator immediately after capturing the
-     * snapshot to perform actions on the element.
-     */
-    ref?: boolean;
-
-    /**
      * Maximum time in milliseconds. Defaults to `0` - no timeout. The default value can be changed via `actionTimeout`
      * option in the config, or by using the
      * [browserContext.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-browsercontext#browser-context-set-default-timeout)
@@ -12919,6 +12942,13 @@ export interface Locator {
      */
     trial?: boolean;
   }): Promise<void>;
+
+  /**
+   * Describes the locator, description is used in the trace viewer and reports. Returns the locator pointing to the
+   * same element.
+   * @param description Locator description.
+   */
+  describe(description: string): Locator;
 
   /**
    * Programmatically dispatch an event on the matching element.
@@ -14910,6 +14940,9 @@ export interface BrowserType<Unused = {}> {
     /**
      * Firefox user preferences. Learn more about the Firefox user preferences at
      * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+     *
+     * You can also provide a path to a custom [`policies.json` file](https://mozilla.github.io/policy-templates/) via
+     * `PLAYWRIGHT_FIREFOX_POLICIES_JSON` environment variable.
      */
     firefoxUserPrefs?: { [key: string]: string|number|boolean; };
 
@@ -15026,6 +15059,7 @@ export interface BrowserType<Unused = {}> {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -15334,6 +15368,9 @@ export interface BrowserType<Unused = {}> {
     /**
      * Firefox user preferences. Learn more about the Firefox user preferences at
      * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+     *
+     * You can also provide a path to a custom [`policies.json` file](https://mozilla.github.io/policy-templates/) via
+     * `PLAYWRIGHT_FIREFOX_POLICIES_JSON` environment variable.
      */
     firefoxUserPrefs?: { [key: string]: string|number|boolean; };
 
@@ -15377,6 +15414,7 @@ export interface BrowserType<Unused = {}> {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -15490,7 +15528,7 @@ export interface CDPSession {
  *
  * **Mocking**
  *
- * By default, the routed WebSocket will not connect to the server. This way, you can mock entire communcation over
+ * By default, the routed WebSocket will not connect to the server. This way, you can mock entire communication over
  * the WebSocket. Here is an example that responds to a `"request"` with a `"response"`.
  *
  * ```js
@@ -16779,6 +16817,7 @@ export interface AndroidDevice {
 
     /**
      * Logger sink for Playwright logging.
+     * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
      */
     logger?: Logger;
 
@@ -21175,6 +21214,15 @@ export interface Touchscreen {
  * API for collecting and saving Playwright traces. Playwright traces can be opened in
  * [Trace Viewer](https://playwright.dev/docs/trace-viewer) after Playwright script runs.
  *
+ * **NOTE** You probably want to
+ * [enable tracing in your config file](https://playwright.dev/docs/api/class-testoptions#test-options-trace) instead
+ * of using `context.tracing`.
+ *
+ * The `context.tracing` API captures browser operations and network activity, but it doesn't record test assertions
+ * (like `expect` calls). We recommend
+ * [enabling tracing through Playwright Test configuration](https://playwright.dev/docs/api/class-testoptions#test-options-trace),
+ * which includes those assertions and provides a more complete trace for debugging test failures.
+ *
  * Start recording a trace before performing actions. At the end, stop tracing and save it to a file.
  *
  * ```js
@@ -21183,6 +21231,7 @@ export interface Touchscreen {
  * await context.tracing.start({ screenshots: true, snapshots: true });
  * const page = await context.newPage();
  * await page.goto('https://playwright.dev');
+ * expect(page.url()).toBe('https://playwright.dev');
  * await context.tracing.stop({ path: 'trace.zip' });
  * ```
  *
@@ -21230,12 +21279,22 @@ export interface Tracing {
   /**
    * Start tracing.
    *
+   * **NOTE** You probably want to
+   * [enable tracing in your config file](https://playwright.dev/docs/api/class-testoptions#test-options-trace) instead
+   * of using `Tracing.start`.
+   *
+   * The `context.tracing` API captures browser operations and network activity, but it doesn't record test assertions
+   * (like `expect` calls). We recommend
+   * [enabling tracing through Playwright Test configuration](https://playwright.dev/docs/api/class-testoptions#test-options-trace),
+   * which includes those assertions and provides a more complete trace for debugging test failures.
+   *
    * **Usage**
    *
    * ```js
    * await context.tracing.start({ screenshots: true, snapshots: true });
    * const page = await context.newPage();
    * await page.goto('https://playwright.dev');
+   * expect(page.url()).toBe('https://playwright.dev');
    * await context.tracing.stop({ path: 'trace.zip' });
    * ```
    *
@@ -21721,6 +21780,9 @@ export interface LaunchOptions {
   /**
    * Firefox user preferences. Learn more about the Firefox user preferences at
    * [`about:config`](https://support.mozilla.org/en-US/kb/about-config-editor-firefox).
+   *
+   * You can also provide a path to a custom [`policies.json` file](https://mozilla.github.io/policy-templates/) via
+   * `PLAYWRIGHT_FIREFOX_POLICIES_JSON` environment variable.
    */
   firefoxUserPrefs?: { [key: string]: string|number|boolean; };
 
@@ -21757,6 +21819,7 @@ export interface LaunchOptions {
 
   /**
    * Logger sink for Playwright logging.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -21806,7 +21869,7 @@ export interface LaunchOptions {
 
 export interface ConnectOverCDPOptions {
   /**
-   * Deprecated, use the first argument instead. Optional.
+   * @deprecated Use the first argument instead.
    */
   endpointURL?: string;
 
@@ -21817,6 +21880,7 @@ export interface ConnectOverCDPOptions {
 
   /**
    * Logger sink for Playwright logging. Optional.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -21858,6 +21922,7 @@ export interface ConnectOptions {
 
   /**
    * Logger sink for Playwright logging. Optional.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -22140,6 +22205,7 @@ export interface BrowserContextOptions {
 
   /**
    * Logger sink for Playwright logging.
+   * @deprecated The logs received by the logger are incomplete. Please use tracing instead.
    */
   logger?: Logger;
 
@@ -22636,14 +22702,22 @@ type Devices = {
   "Galaxy S8 landscape": DeviceDescriptor;
   "Galaxy S9+": DeviceDescriptor;
   "Galaxy S9+ landscape": DeviceDescriptor;
+  "Galaxy S24": DeviceDescriptor;
+  "Galaxy S24 landscape": DeviceDescriptor;
+  "Galaxy A55": DeviceDescriptor;
+  "Galaxy A55 landscape": DeviceDescriptor;
   "Galaxy Tab S4": DeviceDescriptor;
   "Galaxy Tab S4 landscape": DeviceDescriptor;
+  "Galaxy Tab S9": DeviceDescriptor;
+  "Galaxy Tab S9 landscape": DeviceDescriptor;
   "iPad (gen 5)": DeviceDescriptor;
   "iPad (gen 5) landscape": DeviceDescriptor;
   "iPad (gen 6)": DeviceDescriptor;
   "iPad (gen 6) landscape": DeviceDescriptor;
   "iPad (gen 7)": DeviceDescriptor;
   "iPad (gen 7) landscape": DeviceDescriptor;
+  "iPad (gen 11)": DeviceDescriptor;
+  "iPad (gen 11) landscape": DeviceDescriptor;
   "iPad Mini": DeviceDescriptor;
   "iPad Mini landscape": DeviceDescriptor;
   "iPad Pro 11": DeviceDescriptor;
@@ -22662,6 +22736,8 @@ type Devices = {
   "iPhone 8 Plus landscape": DeviceDescriptor;
   "iPhone SE": DeviceDescriptor;
   "iPhone SE landscape": DeviceDescriptor;
+  "iPhone SE (3rd gen)": DeviceDescriptor;
+  "iPhone SE (3rd gen) landscape": DeviceDescriptor;
   "iPhone X": DeviceDescriptor;
   "iPhone X landscape": DeviceDescriptor;
   "iPhone XR": DeviceDescriptor;
