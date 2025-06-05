@@ -28,14 +28,17 @@ import { linkifyText } from '@web/renderUtils';
 import { hashStringToInt, msToString } from './utils';
 import { clsx } from '@web/uiUtils';
 import { CopyToClipboardContainer } from './copyToClipboard';
+import { HeaderView } from './headerView';
+import type { MetadataWithCommitInfo } from '@playwright/isomorphic/types';
 
 export const TestCaseView: React.FC<{
   projectNames: string[],
   test: TestCase,
+  testRunMetadata: MetadataWithCommitInfo | undefined,
   next: TestCaseSummary | undefined,
   prev: TestCaseSummary | undefined,
   run: number,
-}> = ({ projectNames, test, run, next, prev }) => {
+}> = ({ projectNames, test, testRunMetadata, run, next, prev }) => {
   const [selectedResultIndex, setSelectedResultIndex] = React.useState(run);
   const searchParams = React.useContext(SearchParamsContext);
 
@@ -44,14 +47,15 @@ export const TestCaseView: React.FC<{
   const visibleTestAnnotations = test.annotations.filter(a => !a.type.startsWith('_')) ?? [];
 
   return <>
-    <div className='hbox'>
-      <div className='test-case-path'>{test.path.join(' › ')}</div>
-      <div style={{ flex: 'auto' }}></div>
-      <div className={clsx(!prev && 'hidden')}><Link href={testResultHref({ test: prev }) + filterParam}>« previous</Link></div>
-      <div style={{ width: 10 }}></div>
-      <div className={clsx(!next && 'hidden')}><Link href={testResultHref({ test: next }) + filterParam}>next »</Link></div>
-    </div>
-    <div className='test-case-title'>{test.title}</div>
+    <HeaderView
+      title={test.title}
+      leftSuperHeader={<div className='test-case-path'>{test.path.join(' › ')}</div>}
+      rightSuperHeader={<>
+        <div className={clsx(!prev && 'hidden')}><Link href={testResultHref({ test: prev }) + filterParam}>« previous</Link></div>
+        <div style={{ width: 10 }}></div>
+        <div className={clsx(!next && 'hidden')}><Link href={testResultHref({ test: next }) + filterParam}>next »</Link></div>
+      </>}
+    />
     <div className='hbox'>
       <div className='test-case-location'>
         <CopyToClipboardContainer value={`${test.location.file}:${test.location.line}`}>
@@ -81,7 +85,7 @@ export const TestCaseView: React.FC<{
             {!!visibleAnnotations.length && <AutoChip header='Annotations' dataTestId='test-case-annotations'>
               {visibleAnnotations.map((annotation, index) => <TestCaseAnnotationView key={index} annotation={annotation} />)}
             </AutoChip>}
-            <TestResultView test={test!} result={result} />
+            <TestResultView test={test!} result={result} testRunMetadata={testRunMetadata} />
           </>;
         },
       })) || []} selectedTab={String(selectedResultIndex)} setSelectedTab={id => setSelectedResultIndex(+id)} />
