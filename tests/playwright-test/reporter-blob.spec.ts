@@ -21,7 +21,7 @@ import url from 'url';
 import type { HttpServer } from '../../packages/playwright-core/lib/server/utils/httpServer';
 import { startHtmlReportServer } from '../../packages/playwright/lib/reporters/html';
 import { expect as baseExpect, test as baseTest, stripAnsi } from './playwright-test-fixtures';
-import extractZip from '../../packages/playwright-core/bundles/zip/node_modules/extract-zip';
+import extractZip from '../../packages/playwright-core/bundles/zip/src/third_party/extract-zip';
 import * as yazl from '../../packages/playwright-core/bundles/zip/node_modules/yazl';
 import { getUserAgent } from '../../packages/playwright-core/lib/server/utils/userAgent';
 import { Readable } from 'stream';
@@ -709,7 +709,10 @@ test('generate html with attachment urls', async ({ runInlineTest, mergeReports,
   // Check that trace loads.
   await page.locator('.test-file-test').filter({ hasText: /failing 1/ }).getByRole('link', { name: 'View Trace' }).click();
   await expect(page).toHaveTitle('Playwright Trace Viewer');
-  await expect(page.getByTestId('actions-tree').locator('div').filter({ hasText: /^expect\.toBe$/ })).toBeVisible();
+  await expect(page.getByTestId('actions-tree')).toMatchAriaSnapshot(`
+    - tree:
+      - treeitem /Expect "toBe" \\d+[hmsp]+/ [selected]
+  `);
 });
 
 test('resource names should not clash between runs', async ({ runInlineTest, showReport, mergeReports, page }) => {
@@ -1207,15 +1210,15 @@ test('preserve steps in html report', async ({ runInlineTest, mergeReports, show
 
   await page.getByText('Before Hooks').click();
   await page.getByText('beforeAll hook').click();
-  await expect(page.getByText('expect.toBe')).toBeVisible();
+  await expect(page.getByText('Expect "toBe"')).toBeVisible();
   // Collapse hooks.
   await page.getByText('Before Hooks').click();
-  await expect(page.getByText('expect.toBe')).not.toBeVisible();
+  await expect(page.getByText('Expect "toBe"')).not.toBeVisible();
 
   // Check that 'my step' location is relative.
   await expect(page.getByText('— tests/a.test.js:7')).toBeVisible();
   await page.getByText('my step').click();
-  await expect(page.getByText('expect.toBe')).toBeVisible();
+  await expect(page.getByText('Expect "toBe"')).toBeVisible();
 });
 
 test('support fileName option', async ({ runInlineTest, mergeReports }) => {
