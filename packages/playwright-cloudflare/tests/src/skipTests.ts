@@ -13,5 +13,9 @@ export const skipTests: string[][] = [
   ["page/page-event-popup.spec.ts", "should work @smoke"],
   ["page/page-history.spec.ts", "page.goBack should work @smoke"],
   ["page/page-route.spec.ts", "should intercept @smoke"],
-  ["proxyTests/library/capabilities.spec.ts", "should play audio @smoke"],
+  [
+    "[workers]",
+    "proxyTests/library/capabilities.spec.ts",
+    "should play audio @smoke",
+  ],
 ];
