@@ -122,13 +122,11 @@ test(`should launch browser with persistent context is persistent=true`, async (
   await browser.close();
 });
 
-test(`should launch the browser with a specific user agent`, async ({ env, playwright }) => {
+test(`should launch the browser with a specific user agent`, async ({ env, page }) => {
   const url = endpointURLString(env.BROWSER, { persistent: true });
   const browser = await launch(url);
   expect(browser.contexts()).toHaveLength(1);
-  const page = await browser.newPage();
   await page.setContent(``);
   await page.evaluate("document.write(navigator.userAgent)")
   expect(await page.content()).toContain("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
-  await browser.close();
 });
