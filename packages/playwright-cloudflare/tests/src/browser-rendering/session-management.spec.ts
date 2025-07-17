@@ -122,7 +122,7 @@ test(`should launch browser with persistent context is persistent=true`, async (
   await browser.close();
 });
 
-test(`should launch browser with persistent context is persistent=true`, async ({ env, playwright }) => {
+test(`should launch the browser with a specific user agent`, async ({ env, playwright }) => {
   const url = endpointURLString(env.BROWSER, { persistent: true });
   const browser = await launch(url);
   expect(browser.contexts()).toHaveLength(1);
