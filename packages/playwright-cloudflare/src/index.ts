@@ -7,6 +7,7 @@ import { env } from 'cloudflare:workers';
 import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
 import { wrapClientApis } from './cloudflare/wrapClientApis';
 import { unsupportedOperations } from './cloudflare/unsupportedOperations';
+import * as packageJson from '../package.json';
 
 import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
@@ -42,7 +43,8 @@ async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: 
     url.searchParams.set('persistent', 'true');
   const response = await getBrowserBinding(endpoint).fetch(url, {
     headers: {
-      Upgrade: 'websocket'
+      'Upgrade': 'websocket',
+      'cf-brapi-client': `@cloudflare/playwright@${packageJson.version}`,
     },
   });
   const webSocket = response.webSocket!;
