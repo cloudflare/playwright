@@ -17,7 +17,7 @@
 
 // No dependencies as it is used from the Electron loader.
 
-const disabledFeatures = (assistantMode?: boolean) => [
+const disabledFeatures = [
   // See https://github.com/microsoft/playwright/pull/10380
   'AcceptCHFrame',
   // See https://github.com/microsoft/playwright/pull/10679
@@ -47,10 +47,9 @@ const disabledFeatures = (assistantMode?: boolean) => [
   'ThirdPartyStoragePartitioning',
   // See https://github.com/microsoft/playwright/issues/16126
   'Translate',
-  assistantMode ? 'AutomationControlled' : '',
-].filter(Boolean);
+];
 
-export const chromiumSwitches = (assistantMode?: boolean, channel?: string) => [
+export const chromiumSwitches = [
   '--disable-field-trial-config', // https://source.chromium.org/chromium/chromium/src/+/main:testing/variations/README.md
   '--disable-background-networking',
   '--disable-background-timer-throttling',
@@ -64,8 +63,7 @@ export const chromiumSwitches = (assistantMode?: boolean, channel?: string) => [
   '--disable-default-apps',
   '--disable-dev-shm-usage',
   '--disable-extensions',
-  '--disable-features=' + disabledFeatures(assistantMode).join(','),
-  channel === 'chromium-tip-of-tree' ? '--enable-features=CDPScreenshotNewSurface' : '',
+  '--disable-features=' + disabledFeatures.join(','),
   '--allow-pre-commit-input',
   '--disable-hang-monitor',
   '--disable-ipc-flooding-protection',
@@ -75,6 +73,7 @@ export const chromiumSwitches = (assistantMode?: boolean, channel?: string) => [
   '--force-color-profile=srgb',
   '--metrics-recording-only',
   '--no-first-run',
+  '--enable-automation',
   '--password-store=basic',
   '--use-mock-keychain',
   // See https://chromium-review.googlesource.com/c/chromium/src/+/2436773
@@ -84,5 +83,4 @@ export const chromiumSwitches = (assistantMode?: boolean, channel?: string) => [
   '--disable-search-engine-choice-screen',
   // https://issues.chromium.org/41491762
   '--unsafely-disable-devtools-self-xss-warnings',
-  assistantMode ? '' : '--enable-automation',
-].filter(Boolean);
+];

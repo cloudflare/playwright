@@ -16,7 +16,7 @@
 
 .test-case-column {
   border-radius: 6px;
-  margin-bottom: 24px;
+  margin: 12px 0 24px 0;
 }
 
 .test-case-column .tab-element.selected {
@@ -34,6 +34,14 @@
   color: var(--color-fg-default);
 }
 
+.test-case-title {
+  flex: none;
+  padding: 8px;
+  font-weight: 400;
+  font-size: 32px !important;
+  line-height: 1.25 !important;
+}
+
 .test-case-location,
 .test-case-duration {
   flex: none;
@@ -43,15 +51,14 @@
 }
 
 .test-case-run-duration {
-  color: var(--color-fg-muted);
+  color: var(--color-fg-subtle);
   padding-left: 8px;
 }
 
-.header-view .test-case-path {
+.test-case-path {
   flex: none;
-  flex-shrink: 1;
   align-items: center;
-  padding-right: 8px;
+  padding: 0 8px;
 }
 
 .test-case-annotation {

@@ -2,17 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Load SimpleChannel in browser-process global.
-Services.scriptloader.loadSubScript('chrome://juggler/content/SimpleChannel.js');
+var EXPORTED_SYMBOLS = ["Juggler", "JugglerFactory"];
 
-const {XPCOMUtils} = ChromeUtils.importESModule("resource://gre/modules/XPCOMUtils.sys.mjs");
-const {ComponentUtils} = ChromeUtils.importESModule("resource://gre/modules/ComponentUtils.sys.mjs");
-const {Dispatcher} = ChromeUtils.importESModule("chrome://juggler/content/protocol/Dispatcher.js");
-const {BrowserHandler} = ChromeUtils.importESModule("chrome://juggler/content/protocol/BrowserHandler.js");
-const {NetworkObserver} = ChromeUtils.importESModule("chrome://juggler/content/NetworkObserver.js");
-const {TargetRegistry} = ChromeUtils.importESModule("chrome://juggler/content/TargetRegistry.js");
-const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
-const {ActorManagerParent} = ChromeUtils.importESModule('resource://gre/modules/ActorManagerParent.sys.mjs');
+const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+const {ComponentUtils} = ChromeUtils.import("resource://gre/modules/ComponentUtils.jsm");
+const {Dispatcher} = ChromeUtils.import("chrome://juggler/content/protocol/Dispatcher.js");
+const {BrowserHandler} = ChromeUtils.import("chrome://juggler/content/protocol/BrowserHandler.js");
+const {NetworkObserver} = ChromeUtils.import("chrome://juggler/content/NetworkObserver.js");
+const {TargetRegistry} = ChromeUtils.import("chrome://juggler/content/TargetRegistry.js");
+const {Helper} = ChromeUtils.import('chrome://juggler/content/Helper.js');
+const {ActorManagerParent} = ChromeUtils.import('resource://gre/modules/ActorManagerParent.jsm');
 const helper = new Helper();
 
 const Cc = Components.classes;
@@ -22,10 +21,10 @@ const Ci = Components.interfaces;
 ActorManagerParent.addJSWindowActors({
   JugglerFrame: {
     parent: {
-      esModuleURI: 'chrome://juggler/content/JugglerFrameParent.jsm',
+      moduleURI: 'chrome://juggler/content/JugglerFrameParent.jsm',
     },
     child: {
-      esModuleURI: 'chrome://juggler/content/content/JugglerFrameChild.jsm',
+      moduleURI: 'chrome://juggler/content/content/JugglerFrameChild.jsm',
       events: {
         // Normally, we instantiate an actor when a new window is created.
         DOMWindowCreated: {},
@@ -46,7 +45,7 @@ ActorManagerParent.addJSWindowActors({
 let browserStartupFinishedCallback;
 let browserStartupFinishedPromise = new Promise(x => browserStartupFinishedCallback = x);
 
-export class Juggler {
+class Juggler {
   get classDescription() { return "Sample command-line handler"; }
   get classID() { return Components.ID('{f7a74a33-e2ab-422d-b022-4fb213dd2639}'); }
   get contractID() { return "@mozilla.org/remote/juggler;1" }
@@ -155,7 +154,7 @@ export class Juggler {
 const jugglerInstance = new Juggler();
 
 // This is used by the XPCOM codepath which expects a constructor
-export var JugglerFactory = function() {
+var JugglerFactory = function() {
   return jugglerInstance;
 };
 

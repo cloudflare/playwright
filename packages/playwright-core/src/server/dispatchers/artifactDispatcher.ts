@@ -16,7 +16,7 @@
 
 import fs from 'fs';
 
-import { Dispatcher } from './dispatcher';
+import { Dispatcher, existingDispatcher } from './dispatcher';
 import { StreamDispatcher } from './streamDispatcher';
 import { mkdirIfNeeded } from '../utils/fileUtils';
 
@@ -35,7 +35,7 @@ export class ArtifactDispatcher extends Dispatcher<Artifact, channels.ArtifactCh
   static fromNullable(parentScope: DispatcherScope, artifact: Artifact): ArtifactDispatcher | undefined {
     if (!artifact)
       return undefined;
-    const result = parentScope.connection.existingDispatcher<ArtifactDispatcher>(artifact);
+    const result = existingDispatcher<ArtifactDispatcher>(artifact);
     return result || new ArtifactDispatcher(parentScope, artifact);
   }
 

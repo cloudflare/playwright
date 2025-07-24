@@ -19,6 +19,7 @@ import os from 'os';
 import path from 'path';
 import * as readline from 'readline';
 
+import { TimeoutSettings } from '../timeoutSettings';
 import { ManualPromise } from '../../utils';
 import { wrapInASCIIBox } from '../utils/ascii';
 import { RecentLogsCollector } from '../utils/debugLogger';
@@ -63,6 +64,7 @@ export class ElectronApplication extends SdkObject {
   private _nodeSession: CRSession;
   private _nodeExecutionContext: js.ExecutionContext | undefined;
   _nodeElectronHandlePromise: ManualPromise<js.JSHandle<typeof import('electron')>> = new ManualPromise();
+  readonly _timeoutSettings = new TimeoutSettings();
   private _process: childProcess.ChildProcess;
 
   constructor(parent: SdkObject, browser: CRBrowser, nodeConnection: CRConnection, process: childProcess.ChildProcess) {
@@ -140,7 +142,7 @@ export class ElectronApplication extends SdkObject {
 
   async browserWindow(page: Page): Promise<js.JSHandle<BrowserWindow>> {
     // Assume CRPage as Electron is always Chromium.
-    const targetId = (page.delegate as CRPage)._targetId;
+    const targetId = (page._delegate as CRPage)._targetId;
     const electronHandle = await this._nodeElectronHandlePromise;
     return await electronHandle.evaluateHandle(({ BrowserWindow, webContents }, targetId) => {
       const wc = webContents.fromDevToolsTargetId(targetId);
@@ -282,14 +284,14 @@ export class Electron extends SdkObject {
         artifactsDir,
         downloadsPath: artifactsDir,
         tracesDir: options.tracesDir || artifactsDir,
-        originalLaunchOptions: { timeout: options.timeout },
+        originalLaunchOptions: {},
       };
       validateBrowserContextOptions(contextOptions, browserOptions);
       const browser = await CRBrowser.connect(this.attribution.playwright, chromeTransport, browserOptions);
       app = new ElectronApplication(this, browser, nodeConnection, launchedProcess);
       await app.initialize();
       return app;
-    }, options.timeout);
+    }, TimeoutSettings.launchTimeout(options));
   }
 }
 

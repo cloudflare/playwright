@@ -340,7 +340,7 @@ function createPhasesTask(): Task<TestRun> {
             const projectSuite = projectToSuite.get(project)!;
             const testGroups = createTestGroups(projectSuite, testRun.config.config.workers);
             phase.projects.push({ project, projectSuite, testGroups });
-            testGroupsInPhase += Math.min(project.workers ?? Number.MAX_SAFE_INTEGER, testGroups.length);
+            testGroupsInPhase += testGroups.length;
           }
           debug('pw:test:task')(`created phase #${testRun.phases.length} with ${phase.projects.map(p => p.project.project.name).sort()} projects, ${testGroupsInPhase} testGroups`);
           maxConcurrentTestGroups = Math.max(maxConcurrentTestGroups, testGroupsInPhase);

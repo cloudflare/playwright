@@ -18,16 +18,15 @@ import { createGuid } from './utils/crypto';
 import { InvalidSelectorError,  parseSelector, stringifySelector, visitAllSelectorParts } from '../utils/isomorphic/selectorParser';
 
 import type { ParsedSelector } from '../utils/isomorphic/selectorParser';
-import type * as channels from '@protocol/channels';
 
 export class Selectors {
   private readonly _builtinEngines: Set<string>;
   private readonly _builtinEnginesInMainWorld: Set<string>;
-  readonly _engines: Map<string, channels.SelectorEngine>;
+  readonly _engines: Map<string, { source: string, contentScript: boolean }>;
   readonly guid = `selectors@${createGuid()}`;
-  private _testIdAttributeName: string;
+  private _testIdAttributeName: string = 'data-testid';
 
-  constructor(engines: channels.SelectorEngine[], testIdAttributeName: string | undefined) {
+  constructor() {
     // Note: keep in sync with InjectedScript class.
     this._builtinEngines = new Set([
       'css', 'css:light',
@@ -42,28 +41,23 @@ export class Selectors {
       'internal:has', 'internal:has-not',
       'internal:has-text', 'internal:has-not-text',
       'internal:and', 'internal:or', 'internal:chain',
-      'role', 'internal:attr', 'internal:label', 'internal:text',
-      'internal:role', 'internal:testid', 'internal:describe',
-      'aria-ref'
+      'role', 'internal:attr', 'internal:label', 'internal:text', 'internal:role', 'internal:testid', 'aria-ref'
     ]);
     this._builtinEnginesInMainWorld = new Set([
       '_react', '_vue',
     ]);
     this._engines = new Map();
-    this._testIdAttributeName = testIdAttributeName ?? 'data-testid';
-    for (const engine of engines)
-      this.register(engine);
   }
 
-  register(engine: channels.SelectorEngine) {
-    if (!engine.name.match(/^[a-zA-Z_0-9-]+$/))
+  async register(name: string, source: string, contentScript: boolean = false): Promise<void> {
+    if (!name.match(/^[a-zA-Z_0-9-]+$/))
       throw new Error('Selector engine name may only contain [a-zA-Z0-9_] characters');
     // Note: we keep 'zs' for future use.
-    if (this._builtinEngines.has(engine.name) || engine.name === 'zs' || engine.name === 'zs:light')
-      throw new Error(`"${engine.name}" is a predefined selector engine`);
-    if (this._engines.has(engine.name))
-      throw new Error(`"${engine.name}" selector engine has been already registered`);
-    this._engines.set(engine.name, engine);
+    if (this._builtinEngines.has(name) || name === 'zs' || name === 'zs:light')
+      throw new Error(`"${name}" is a predefined selector engine`);
+    if (this._engines.has(name))
+      throw new Error(`"${name}" selector engine has been already registered`);
+    this._engines.set(name, { source, contentScript });
   }
 
   testIdAttributeName(): string {
@@ -72,6 +66,10 @@ export class Selectors {
 
   setTestIdAttributeName(testIdAttributeName: string) {
     this._testIdAttributeName = testIdAttributeName;
+  }
+
+  unregisterAll() {
+    this._engines.clear();
   }
 
   parseSelector(selector: string | ParsedSelector, strict: boolean) {

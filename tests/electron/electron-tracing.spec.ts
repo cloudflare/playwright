@@ -28,9 +28,9 @@ test('should record trace', async ({ newWindow, server, runAndTrace }) => {
     expect(await window.evaluate('result')).toBe('Clicked');
   });
   await expect(traceViewer.actionTitles).toHaveText([
-    /Navigate/,
-    /Click/,
-    /Evaluate/,
+    /page.goto/,
+    /page.click/,
+    /page.evaluate/,
   ]);
 });
 
@@ -42,7 +42,7 @@ test('should support custom protocol', async ({ electronApp, newWindow, server, 
   const traceViewer = await runAndTrace(async () => {
     await window.click('button');
   });
-  const frame = await traceViewer.snapshotFrame('Click');
+  const frame = await traceViewer.snapshotFrame('page.click');
   await expect(frame.locator('button')).toHaveCSS('color', 'rgb(255, 0, 0)');
   await expect(frame.locator('button')).toHaveCSS('font-weight', '700');
 });

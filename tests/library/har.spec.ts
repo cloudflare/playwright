@@ -42,6 +42,11 @@ async function pageWithHar(contextFactory: (options?: BrowserContextOptions) => 
   };
 }
 
+it('should throw without path', async ({ browser }) => {
+  const error = await browser.newContext({ recordHar: {} as any }).catch(e => e);
+  expect(error.message).toContain('recordHar.path: expected string, got undefined');
+});
+
 it('should have version and creator', async ({ contextFactory, server }, testInfo) => {
   const { page, getLog } = await pageWithHar(contextFactory, testInfo);
   await page.goto(server.EMPTY_PAGE);
@@ -85,8 +90,17 @@ it('should have pages in persistent context', async ({ launchPersistent, browser
   await page.waitForLoadState('domcontentloaded');
   await context.close();
   const log = JSON.parse(fs.readFileSync(harPath).toString())['log'];
-  expect(log.pages.length).toBe(1);
-  const pageEntry = log.pages[0];
+  let pageEntry;
+  if (browserName === 'webkit') {
+  // Explicit locale emulation forces a new page creation when
+  // doing a new context.
+  // See https://github.com/microsoft/playwright/blob/13dd41c2e36a63f35ddef5dc5dec322052d670c6/packages/playwright-core/src/server/browserContext.ts#L232-L242
+    expect(log.pages.length).toBe(2);
+    pageEntry = log.pages[1];
+  } else {
+    expect(log.pages.length).toBe(1);
+    pageEntry = log.pages[0];
+  }
   expect(pageEntry.id).toBeTruthy();
   expect(pageEntry.title).toBe('Hello');
 });

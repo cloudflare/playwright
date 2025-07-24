@@ -52,9 +52,7 @@ it('should work', async ({ playwright, browser }) => {
   await context.close();
 });
 
-it('should work when registered on global', async ({ browser, mode }) => {
-  it.skip(mode === 'driver', 'We expect registering selectors on the right Playwright instance.');
-
+it('should work when registered on global', async ({ browser }) => {
   await require('@playwright/test').selectors.register('oop-tag', `(${createTagSelector.toString()})()`);
 
   const context = await browser.newContext();

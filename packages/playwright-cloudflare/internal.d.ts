@@ -84,6 +84,7 @@ interface Debug {
 
 export const debug: Debug;
 
+export function setUnderTest(underTest: boolean): boolean;
 export function isUnderTest(): boolean;
 
 export async function runWithExpectApiListener<T>(fn: () => Promise<T>): Promise<T>;

@@ -23,10 +23,9 @@ import { assert } from '../utils/isomorphic/assert';
 import { mkdirIfNeeded } from './fileUtils';
 import { headersObjectToArray } from '../utils/isomorphic/headers';
 import { isString } from '../utils/isomorphic/rtti';
-import { TimeoutSettings } from './timeoutSettings';
 
 import type { Playwright } from './playwright';
-import type { ClientCertificate, FilePayload, Headers, SetStorageState, StorageState, TimeoutOptions } from './types';
+import type { ClientCertificate, FilePayload, Headers, SetStorageState, StorageState } from './types';
 import type { Serializable } from '../../types/structs';
 import type * as api from '../../types/types';
 import type { HeadersArray, NameValue } from '../utils/isomorphic/types';
@@ -64,9 +63,10 @@ export class APIRequest implements api.APIRequest {
     this._playwright = playwright;
   }
 
-  async newContext(options: NewContextOptions & TimeoutOptions = {}): Promise<APIRequestContext> {
+  async newContext(options: NewContextOptions = {}): Promise<APIRequestContext> {
     options = {
       ...this._playwright._defaultContextOptions,
+      timeout: this._playwright._defaultContextTimeout,
       ...options,
     };
     const storageState = typeof options.storageState === 'string' ?
@@ -81,7 +81,6 @@ export class APIRequest implements api.APIRequest {
     })).request);
     this._contexts.add(context);
     context._request = this;
-    context._timeoutSettings.setDefaultTimeout(options.timeout ?? this._playwright._defaultContextTimeout);
     context._tracing._tracesDir = this._playwright._defaultLaunchOptions?.tracesDir;
     await context._instrumentation.runAfterCreateRequestContext(context);
     return context;
@@ -92,7 +91,6 @@ export class APIRequestContext extends ChannelOwner<channels.APIRequestContextCh
   _request?: APIRequest;
   readonly _tracing: Tracing;
   private _closeReason: string | undefined;
-  _timeoutSettings: TimeoutSettings;
 
   static from(channel: channels.APIRequestContextChannel): APIRequestContext {
     return (channel as any)._object;
@@ -101,7 +99,6 @@ export class APIRequestContext extends ChannelOwner<channels.APIRequestContextCh
   constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.APIRequestContextInitializer) {
     super(parent, type, guid, initializer);
     this._tracing = Tracing.from(initializer.tracing);
-    this._timeoutSettings = new TimeoutSettings(this._platform);
   }
 
   async [Symbol.asyncDispose]() {
@@ -253,7 +250,7 @@ export class APIRequestContext extends ChannelOwner<channels.APIRequestContextCh
         jsonData,
         formData,
         multipartData,
-        timeout: this._timeoutSettings.timeout(options),
+        timeout: options.timeout,
         failOnStatusCode: options.failOnStatusCode,
         ignoreHTTPSErrors: options.ignoreHTTPSErrors,
         maxRedirects: options.maxRedirects,
@@ -352,7 +349,7 @@ export class APIResponse implements api.APIResponse {
           throw new Error('Response has been disposed');
         throw e;
       }
-    }, { internal: true });
+    }, true);
   }
 
   async text(): Promise<string> {

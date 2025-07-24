@@ -3,43 +3,43 @@
   "browsers": [
     {
       "name": "chromium",
-      "revision": "1178",
+      "revision": "1170",
       "installByDefault": true,
-      "browserVersion": "138.0.7204.15"
+      "browserVersion": "136.0.7103.33"
     },
     {
       "name": "chromium-headless-shell",
-      "revision": "1178",
+      "revision": "1170",
       "installByDefault": true,
-      "browserVersion": "138.0.7204.15"
+      "browserVersion": "136.0.7103.33"
     },
     {
       "name": "chromium-tip-of-tree",
-      "revision": "1337",
+      "revision": "1324",
       "installByDefault": false,
-      "browserVersion": "139.0.7216.0"
+      "browserVersion": "137.0.7129.0"
     },
     {
       "name": "chromium-tip-of-tree-headless-shell",
-      "revision": "1337",
+      "revision": "1324",
       "installByDefault": false,
-      "browserVersion": "139.0.7216.0"
+      "browserVersion": "137.0.7129.0"
     },
     {
       "name": "firefox",
-      "revision": "1487",
+      "revision": "1482",
       "installByDefault": true,
-      "browserVersion": "139.0"
+      "browserVersion": "137.0"
     },
     {
       "name": "firefox-beta",
-      "revision": "1482",
+      "revision": "1477",
       "installByDefault": false,
-      "browserVersion": "138.0b10"
+      "browserVersion": "137.0b2"
     },
     {
       "name": "webkit",
-      "revision": "2182",
+      "revision": "2161",
       "installByDefault": true,
       "revisionOverrides": {
         "debian11-x64": "2105",
@@ -55,7 +55,7 @@
         "ubuntu20.04-x64": "2092",
         "ubuntu20.04-arm64": "2092"
       },
-      "browserVersion": "18.5"
+      "browserVersion": "18.4"
     },
     {
       "name": "ffmpeg",

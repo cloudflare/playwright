@@ -20,7 +20,7 @@ const ts = require('typescript');
 /**
  * @param {string} filePath
  * @param {(className: string) => string} commentForClass
- * @param {(className: string, methodName: string, overloadIndex: number, indent: string) => string} commentForMethod
+ * @param {(className: string, methodName: string, overloadIndex: number) => string} commentForMethod
  * @param {(className: string) => string} extraForClass
  */
 async function parseOverrides(filePath, commentForClass, commentForMethod, extraForClass) {
@@ -41,18 +41,6 @@ async function parseOverrides(filePath, commentForClass, commentForMethod, extra
     src = src.substring(0, replacer.pos) + replacer.text + src.substring(replacer.pos);
   }
   return src;
-
-  /**
-   * @param {number} pos
-   * @returns {string}
-   */
-  function getIndentationAtPos(pos) {
-    const text = file.text;
-    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-    const textBeforeNodeOnLine = text.substring(lineStart, pos);
-    const match = textBeforeNodeOnLine.match(/^(\s*)/);
-    return match ? match[1] : '';
-  }
 
     /**
    * @param {!ts.Node} node
@@ -95,7 +83,7 @@ async function parseOverrides(filePath, commentForClass, commentForMethod, extra
         const pos = declaration.getStart(file, false);
         replacers.push({
           pos,
-          text: commentForMethod(className, name, index, getIndentationAtPos(pos)),
+          text: commentForMethod(className, name, index),
         });
         if (ts.isPropertySignature(declaration))
           ts.forEachChild(declaration, child => visitProperties(className, name, child));
@@ -120,14 +108,14 @@ async function parseOverrides(filePath, commentForClass, commentForMethod, extra
       const pos = node.getStart(file, false);
       replacers.push({
         pos,
-        text: commentForMethod(className, `${prefix}.${name}`, 0, getIndentationAtPos(pos)),
+        text: commentForMethod(className, `${prefix}.${name}`, 0),
       });
       ts.forEachChild(node, child => visitProperties(className, `${prefix}.${name}`, child));
     } else if (ts.isCallSignatureDeclaration(node)) {
       const pos = node.getStart(file, false);
       replacers.push({
         pos,
-        text: commentForMethod(className, `${prefix}`, 0, getIndentationAtPos(pos)),
+        text: commentForMethod(className, `${prefix}`, 0),
       });
     } else if (ts.isIntersectionTypeNode(node) || ts.isTypeLiteralNode(node)) {
       ts.forEachChild(node, child => visitProperties(className, prefix, child));

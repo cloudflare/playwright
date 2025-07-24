@@ -92,7 +92,7 @@ class TypesGenerator {
         return '';
       handledClasses.add(className);
       return this.writeComment(docClass.comment, '') + '\n';
-    }, (className, methodName, overloadIndex, indent) => {
+    }, (className, methodName, overloadIndex) => {
       if (methodName === '__call')
         methodName = '(call)';
       const docClass = this.docClassForName(className);
@@ -110,7 +110,7 @@ class TypesGenerator {
           return '';
         throw new Error(`Unknown override method "${className}.${methodName}"`);
       }
-      return this.memberJSDOC(method, indent).trimLeft();
+      return this.memberJSDOC(method, '  ').trimLeft();
     }, (className) => {
       const docClass = this.docClassForName(className);
       if (!docClass || !this.shouldGenerate(docClass.name))

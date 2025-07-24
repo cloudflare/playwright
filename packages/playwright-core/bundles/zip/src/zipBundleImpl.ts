@@ -16,5 +16,5 @@
 
 export * as yazl from 'yazl';
 export * as yauzl from 'yauzl';
-const extractZip = require('./third_party/extract-zip');
+import extractZip from 'extract-zip';
 export const extract = extractZip;

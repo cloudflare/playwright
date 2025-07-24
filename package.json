@@ -1,7 +1,7 @@
 {
   "name": "playwright-internal",
   "private": true,
-  "version": "1.53.0",
+  "version": "1.53.0-next",
   "description": "A high-level API to automate web browsers",
   "repository": {
     "type": "git",
@@ -51,12 +51,10 @@
   ],
   "devDependencies": {
     "@actions/core": "^1.10.0",
-    "@actions/github": "^6.0.0",
     "@babel/code-frame": "^7.26.2",
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.19.0",
-    "@octokit/graphql-schema": "^15.26.0",
     "@stylistic/eslint-plugin": "^3.0.1",
     "@types/codemirror": "^5.60.7",
     "@types/formidable": "^2.0.4",
@@ -74,7 +72,7 @@
     "@zip.js/zip.js": "^2.7.29",
     "ansi-styles": "^4.3.0",
     "chokidar": "^3.5.3",
-    "chromium-bidi": "^5.3.1",
+    "chromium-bidi": "^3.2.1",
     "colors": "^1.4.0",
     "concurrently": "^6.2.1",
     "cross-env": "^7.0.3",
@@ -95,8 +93,7 @@
     "react-dom": "^18.1.0",
     "ssim.js": "^3.5.0",
     "typescript": "^5.8.2",
-    "vite": "^6.3.4",
-    "wrangler": "^4.19.1",
+    "vite": "^6.2.6",
     "ws": "^8.17.1",
     "xml2js": "^0.5.0",
     "yaml": "2.6.0"

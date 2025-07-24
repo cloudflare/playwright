@@ -38,7 +38,6 @@ type Options = {
   socksProxyPattern: string | undefined,
   browserName: string | null,
   launchOptions: LaunchOptions,
-  sharedBrowser?: boolean,
 };
 
 type PreLaunched = {
@@ -139,7 +138,7 @@ export class PlaywrightConnection {
       this.close({ code: 1001, reason: 'Browser closed' });
     });
 
-    return new PlaywrightDispatcher(scope, playwright, { socksProxy: ownedSocksProxy, preLaunchedBrowser: browser });
+    return new PlaywrightDispatcher(scope, playwright, ownedSocksProxy, browser);
   }
 
   private async _initPreLaunchedBrowserMode(scope: RootDispatcher) {
@@ -155,11 +154,7 @@ export class PlaywrightConnection {
       this.close({ code: 1001, reason: 'Browser closed' });
     });
 
-    const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, {
-      socksProxy: this._preLaunched.socksProxy,
-      preLaunchedBrowser: browser,
-      sharedBrowser: this._options.sharedBrowser,
-    });
+    const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, this._preLaunched.socksProxy, browser);
     // In pre-launched mode, keep only the pre-launched browser.
     for (const b of playwright.allBrowsers()) {
       if (b !== browser)
@@ -177,7 +172,7 @@ export class PlaywrightConnection {
       // Underlying browser did close for some reason - force disconnect the client.
       this.close({ code: 1001, reason: 'Android device disconnected' });
     });
-    const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, { preLaunchedAndroidDevice: androidDevice });
+    const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, undefined, undefined, androidDevice);
     this._cleanups.push(() => playwrightDispatcher.cleanup());
     return playwrightDispatcher;
   }
@@ -238,7 +233,7 @@ export class PlaywrightConnection {
       }
     });
 
-    const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, { preLaunchedBrowser: browser });
+    const playwrightDispatcher = new PlaywrightDispatcher(scope, playwright, undefined, browser);
     return playwrightDispatcher;
   }
 
@@ -316,7 +311,7 @@ function filterLaunchOptions(options: LaunchOptions, allowFSPaths: boolean): Lau
   };
 }
 
-const defaultLaunchOptions: Partial<LaunchOptions> = {
+const defaultLaunchOptions: LaunchOptions = {
   ignoreAllDefaultArgs: false,
   handleSIGINT: false,
   handleSIGTERM: false,
@@ -327,6 +322,5 @@ const defaultLaunchOptions: Partial<LaunchOptions> = {
 
 const optionsThatAllowBrowserReuse: (keyof LaunchOptions)[] = [
   'headless',
-  'timeout',
   'tracesDir',
 ];

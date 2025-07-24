@@ -1,4 +1,4 @@
-import { TestRunner, TestEndPayload, isUnderTest } from '@cloudflare/playwright/internal';
+import { TestRunner, setUnderTest, TestEndPayload } from '@cloudflare/playwright/internal';
 import { DurableObject } from 'cloudflare:workers';
 import '@workerTests/index';
 
@@ -16,15 +16,15 @@ const log = console.log.bind(console);
 
 const skipTestsFullTitles = new Set(skipTests.map(t => t.join(' > ')));
 
+// ensure we are in test mode
+setUnderTest(true);
+
 export class TestsServer extends DurableObject<Env> {
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
   }
 
   async fetch(request: Request): Promise<Response> {
-    if (!isUnderTest())
-      return new Response('Not under test', { status: 500 });
-
     const url = new URL(request.url);
     const file = url.pathname.substring(1);
     const sessionId = url.searchParams.get('sessionId');

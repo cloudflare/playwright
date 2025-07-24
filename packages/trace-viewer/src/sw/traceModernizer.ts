@@ -19,8 +19,6 @@ import type * as traceV3 from './versions/traceV3';
 import type * as traceV4 from './versions/traceV4';
 import type * as traceV5 from './versions/traceV5';
 import type * as traceV6 from './versions/traceV6';
-import type * as traceV7 from './versions/traceV7';
-import type * as traceV8 from './versions/traceV8';
 import type { ActionEntry, ContextEntry, PageEntry } from '../types/entries';
 import type { SnapshotStorage } from './snapshotStorage';
 
@@ -31,9 +29,7 @@ export class TraceVersionError extends Error {
   }
 }
 
-// 6 => 10/2023 ~1.40
-// 7 => 05/2024 ~1.45
-const latestVersion: trace.VERSION = 8;
+const latestVersion: trace.VERSION = 7;
 
 export class TraceModernizer {
   private _contextEntry: ContextEntry;
@@ -191,9 +187,10 @@ export class TraceModernizer {
   }
 
   private _modernize(event: any): trace.TraceEvent[] {
-    // First record does not have this._version, but should have a version in the event entry itself.
-    // Test traces before 7 (including 6) did not have version in the first entry, run the modernizer for 6=>*.
-    let version = this._version ?? event.version ?? 6;
+    // In trace 6->7 we also need to modernize context-options event.
+    let version = this._version || event.version;
+    if (version === undefined)
+      return [event];
     let events = [event];
     for (; version < latestVersion; ++version)
       events = (this as any)[`_modernize_${version}_to_${version + 1}`].call(this, events);
@@ -379,16 +376,16 @@ export class TraceModernizer {
     return result;
   }
 
-  _modernize_6_to_7(events: traceV6.TraceEvent[]): traceV7.TraceEvent[] {
-    const result: traceV7.TraceEvent[] = [];
+  _modernize_6_to_7(events: traceV6.TraceEvent[]): trace.TraceEvent[] {
+    const result: trace.TraceEvent[] = [];
     if (!this._processedContextCreatedEvent() && events[0].type !== 'context-options') {
-      const event: traceV7.ContextCreatedTraceEvent = {
+      const event: trace.ContextCreatedTraceEvent = {
         type: 'context-options',
         origin: 'testRunner',
-        version: 6,
+        version: 7,
         browserName: '',
         options: {},
-        platform: 'unknown',
+        platform: process.platform,
         wallTime: 0,
         monotonicTime: 0,
         sdkLanguage: 'javascript',
@@ -396,42 +393,17 @@ export class TraceModernizer {
       };
       result.push(event);
     }
-
     for (const event of events) {
       if (event.type === 'context-options') {
         result.push({ ...event, monotonicTime: 0, origin: 'library', contextId: '' });
         continue;
       }
-      if (event.type === 'before' || event.type === 'action') {
-        // Take wall and monotonic time from the first event.
-        if (!this._contextEntry.wallTime)
-          this._contextEntry.wallTime = event.wallTime;
-        const eventAsV6 = event as traceV6.BeforeActionTraceEvent;
-        const eventAsV7 = event as traceV7.BeforeActionTraceEvent;
-        eventAsV7.stepId = `${eventAsV6.apiName}@${eventAsV6.wallTime}`;
-        result.push(eventAsV7);
-      } else {
-        result.push(event);
-      }
-    }
-    return result;
-  }
-
-  _modernize_7_to_8(events: traceV7.TraceEvent[]): traceV8.TraceEvent[] {
-    const result: traceV8.TraceEvent[] = [];
-    for (const event of events) {
-      if (event.type === 'before' || event.type === 'action') {
-        const eventAsV7 = event as traceV7.BeforeActionTraceEvent;
-        const eventAsV8 = event as traceV8.BeforeActionTraceEvent;
-        if (eventAsV7.apiName) {
-          eventAsV8.title = eventAsV7.apiName;
-          delete (eventAsV8 as any).apiName;
-        }
-        eventAsV8.stepId = eventAsV7.stepId ?? eventAsV7.callId;
-        result.push(eventAsV8);
-      } else {
-        result.push(event);
-      }
+      // Take wall and monotonic time from the first event.
+      if (!this._contextEntry.wallTime && event.type === 'before')
+        this._contextEntry.wallTime = event.wallTime;
+      if (!this._contextEntry.startTime && event.type === 'before')
+        this._contextEntry.startTime = event.startTime;
+      result.push(event);
     }
     return result;
   }

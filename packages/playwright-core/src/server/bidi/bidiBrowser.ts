@@ -16,12 +16,11 @@
 
 import { eventsHelper } from '../utils/eventsHelper';
 import { Browser } from '../browser';
-import { BrowserContext, verifyGeolocation } from '../browserContext';
+import { BrowserContext, assertBrowserContextIsNotOwned, verifyGeolocation } from '../browserContext';
 import * as network from '../network';
 import { BidiConnection } from './bidiConnection';
 import { bidiBytesValueToString } from './bidiNetworkManager';
-import { BidiPage, kPlaywrightBindingChannel } from './bidiPage';
-import { PageBinding } from '../page';
+import { addMainBinding, BidiPage, kPlaywrightBindingChannel } from './bidiPage';
 import * as bidi from './third_party/bidiProtocol';
 
 import type { RegisteredListener } from '../utils/eventsHelper';
@@ -124,9 +123,7 @@ export class BidiBrowser extends Browser {
   }
 
   async doCreateNewContext(options: types.BrowserContextOptions): Promise<BrowserContext> {
-    const { userContext } = await this._browserSession.send('browser.createUserContext', {
-      acceptInsecureCerts: options.ignoreHTTPSErrors,
-    });
+    const { userContext } = await this._browserSession.send('browser.createUserContext', {});
     const context = new BidiBrowserContext(this, userContext, options);
     await context._initialize();
     this._contexts.set(userContext, context);
@@ -153,12 +150,12 @@ export class BidiBrowser extends Browser {
     if (event.parent) {
       const parentFrameId = event.parent;
       for (const page of this._bidiPages.values()) {
-        const parentFrame = page._page.frameManager.frame(parentFrameId);
+        const parentFrame = page._page._frameManager.frame(parentFrameId);
         if (!parentFrame)
           continue;
         page._session.addFrameBrowsingContext(event.context);
-        page._page.frameManager.frameAttached(event.context, parentFrameId);
-        const frame = page._page.frameManager.frame(event.context);
+        page._page._frameManager.frameAttached(event.context, parentFrameId);
+        const frame = page._page._frameManager.frame(event.context);
         if (frame)
           frame._url = event.url;
         return;
@@ -182,10 +179,10 @@ export class BidiBrowser extends Browser {
       this._browserSession.removeFrameBrowsingContext(event.context);
       const parentFrameId = event.parent;
       for (const page of this._bidiPages.values()) {
-        const parentFrame = page._page.frameManager.frame(parentFrameId);
+        const parentFrame = page._page._frameManager.frame(parentFrameId);
         if (!parentFrame)
           continue;
-        page._page.frameManager.frameDetached(event.context);
+        page._page._frameManager.frameDetached(event.context);
         return;
       }
       return;
@@ -207,9 +204,8 @@ export class BidiBrowser extends Browser {
 
 export class BidiBrowserContext extends BrowserContext {
   declare readonly _browser: BidiBrowser;
+  private _initScriptIds: bidi.Script.PreloadScript[] = [];
   private _originToPermissions = new Map<string, string[]>();
-  private _blockingPageCreations: Set<Promise<unknown>> = new Set();
-  private _initScriptIds = new Map<InitScript, string>();
 
   constructor(browser: BidiBrowser, browserContextId: string | undefined, options: types.BrowserContextOptions) {
     super(browser, options, browserContextId);
@@ -223,6 +219,7 @@ export class BidiBrowserContext extends BrowserContext {
   override async _initialize() {
     const promises: Promise<any>[] = [
       super._initialize(),
+      this._installMainBinding(),
     ];
     if (this._options.viewport) {
       promises.push(this._browser._browserSession.send('browsingContext.setViewport', {
@@ -239,34 +236,34 @@ export class BidiBrowserContext extends BrowserContext {
     await Promise.all(promises);
   }
 
+  // TODO: consider calling this only when bindings are added.
+  private async _installMainBinding() {
+    const functionDeclaration = addMainBinding.toString();
+    const args: bidi.Script.ChannelValue[] = [{
+      type: 'channel',
+      value: {
+        channel: kPlaywrightBindingChannel,
+        ownership: bidi.Script.ResultOwnership.Root,
+      }
+    }];
+    await this._browser._browserSession.send('script.addPreloadScript', {
+      functionDeclaration,
+      arguments: args,
+      userContexts: [this._userContextId()],
+    });
+  }
+
   override possiblyUninitializedPages(): Page[] {
     return this._bidiPages().map(bidiPage => bidiPage._page);
   }
 
-  override async doCreateNewPage(markAsServerSideOnly?: boolean): Promise<Page> {
-    const promise = this._createNewPageImpl(markAsServerSideOnly);
-    if (markAsServerSideOnly)
-      this._blockingPageCreations.add(promise);
-    try {
-      return await promise;
-    } finally {
-      this._blockingPageCreations.delete(promise);
-    }
-  }
-
-  private async _createNewPageImpl(markAsServerSideOnly?: boolean): Promise<Page> {
+  override async doCreateNewPage(): Promise<Page> {
+    assertBrowserContextIsNotOwned(this);
     const { context } = await this._browser._browserSession.send('browsingContext.create', {
       type: bidi.BrowsingContext.CreateType.Window,
       userContext: this._browserContextId,
     });
-    const page = this._browser._bidiPages.get(context)!._page;
-    if (markAsServerSideOnly)
-      page.markAsServerSideOnly();
-    return page;
-  }
-
-  async waitForBlockingPageCreations() {
-    await Promise.all([...this._blockingPageCreations].map(command => command.catch(() => {})));
+    return this._browser._bidiPages.get(context)!._page;
   }
 
   async doGetCookies(urls: string[]): Promise<channels.NetworkCookie[]> {
@@ -342,11 +339,11 @@ export class BidiBrowserContext extends BrowserContext {
     // Setting geolocation on the user context automatically applies it to all existing
     // pages in the context in Bidi.
     await this._browser._browserSession.send('emulation.setGeolocationOverride', {
-      coordinates: geolocation ? {
-        latitude: geolocation.latitude,
-        longitude: geolocation.longitude,
-        accuracy: geolocation.accuracy,
-      } : null,
+      coordinates: {
+        latitude: geolocation?.latitude,
+        longitude: geolocation?.longitude,
+        accuracy: geolocation?.accuracy,
+      },
       userContexts: [this._browserContextId || 'default'],
     });
   }
@@ -363,7 +360,7 @@ export class BidiBrowserContext extends BrowserContext {
   async doSetHTTPCredentials(httpCredentials?: types.Credentials): Promise<void> {
     this._options.httpCredentials = httpCredentials;
     for (const page of this.pages())
-      await (page.delegate as BidiPage).updateHttpCredentials();
+      await (page._delegate as BidiPage).updateHttpCredentials();
   }
 
   async doAddInitScript(initScript: InitScript) {
@@ -372,51 +369,17 @@ export class BidiBrowserContext extends BrowserContext {
       functionDeclaration: `() => { return ${initScript.source} }`,
       userContexts: [this._browserContextId || 'default'],
     });
-    this._initScriptIds.set(initScript, script);
+    if (!initScript.internal)
+      this._initScriptIds.push(script);
   }
 
-  async doRemoveInitScripts(initScripts: InitScript[]) {
-    const ids: string[] = [];
-    for (const script of initScripts) {
-      const id = this._initScriptIds.get(script);
-      if (id)
-        ids.push(id);
-      this._initScriptIds.delete(script);
-    }
-    await Promise.all(ids.map(script => this._browser._browserSession.send('script.removePreloadScript', { script })));
+  async doRemoveNonInternalInitScripts() {
+    const promise = Promise.all(this._initScriptIds.map(script => this._browser._browserSession.send('script.removePreloadScript', { script })));
+    this._initScriptIds = [];
+    await promise;
   }
 
   async doUpdateRequestInterception(): Promise<void> {
-  }
-
-  override async doExposePlaywrightBinding() {
-    const args: bidi.Script.ChannelValue[] = [{
-      type: 'channel',
-      value: {
-        channel: kPlaywrightBindingChannel,
-        ownership: bidi.Script.ResultOwnership.Root,
-      }
-    }];
-    const functionDeclaration = `function addMainBinding(callback) { globalThis['${PageBinding.kBindingName}'] = callback; }`;
-    const promises = [];
-    promises.push(this._browser._browserSession.send('script.addPreloadScript', {
-      functionDeclaration,
-      arguments: args,
-      userContexts: [this._userContextId()],
-    }));
-    promises.push(...this._bidiPages().map(page => {
-      const realms = [...page._realmToContext].filter(([realm, context]) => context.world === 'main').map(([realm, context]) => realm);
-      return Promise.all(realms.map(realm => {
-        return page._session.send('script.callFunction', {
-          functionDeclaration,
-          arguments: args,
-          target: { realm },
-          awaitPromise: false,
-          userActivation: false,
-        });
-      }));
-    }));
-    await Promise.all(promises);
   }
 
   onClosePersistent() {}

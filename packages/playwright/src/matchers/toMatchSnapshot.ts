@@ -17,11 +17,16 @@
 import fs from 'fs';
 import path from 'path';
 
-import { compareBuffersOrStrings, getComparator, isString } from 'playwright-core/lib/utils';
+import { compareBuffersOrStrings, getComparator, isString, sanitizeForFilePath } from 'playwright-core/lib/utils';
 import { colors } from 'playwright-core/lib/utils';
 import { mime } from 'playwright-core/lib/utilsBundle';
 
-import { addSuffixToFilePath, callLogText, expectTypes } from '../util';
+import {
+  addSuffixToFilePath, callLogText,
+  expectTypes,
+  sanitizeFilePathBeforeExtension,
+  trimLongString,
+  windowsFilesystemFriendlyLength } from '../util';
 import {  matcherHint } from './matcherHint';
 import { currentTestInfo } from '../common/globals';
 
@@ -34,6 +39,12 @@ import type { ExpectScreenshotOptions, Page as PageEx } from 'playwright-core/li
 import type { Comparator, ImageComparatorOptions } from 'playwright-core/lib/utils';
 
 type NameOrSegments = string | string[];
+const snapshotNamesSymbol = Symbol('snapshotNames');
+
+type SnapshotNames = {
+  anonymousSnapshotIndex: number;
+  namedSnapshotIndex: { [key: string]: number };
+};
 
 type ImageMatcherResult = MatcherResult<string, string> & { diff?: string };
 
@@ -84,9 +95,9 @@ class SnapshotHelper {
 
   constructor(
     testInfo: TestInfoImpl,
-    matcherName: 'toMatchSnapshot' | 'toHaveScreenshot',
+    matcherName: string,
     locator: Locator | undefined,
-    anonymousSnapshotExtension: string | undefined,
+    anonymousSnapshotExtension: string,
     configOptions: ToHaveScreenshotConfigOptions,
     nameOrOptions: NameOrSegments | { name?: NameOrSegments } & ToHaveScreenshotOptions,
     optOptions: ToHaveScreenshotOptions,
@@ -101,11 +112,48 @@ class SnapshotHelper {
       name = nameFromOptions;
     }
 
-    const resolvedPaths = testInfo._resolveSnapshotPaths(matcherName === 'toHaveScreenshot' ? 'screenshot' : 'snapshot', name, 'updateSnapshotIndex', anonymousSnapshotExtension);
-    this.expectedPath = resolvedPaths.absoluteSnapshotPath;
-    this.attachmentBaseName = resolvedPaths.relativeOutputPath;
+    let snapshotNames = (testInfo as any)[snapshotNamesSymbol] as SnapshotNames;
+    if (!(testInfo as any)[snapshotNamesSymbol]) {
+      snapshotNames = {
+        anonymousSnapshotIndex: 0,
+        namedSnapshotIndex: {},
+      };
+      (testInfo as any)[snapshotNamesSymbol] = snapshotNames;
+    }
 
-    const outputBasePath = testInfo._getOutputPath(resolvedPaths.relativeOutputPath);
+    let expectedPathSegments: string[];
+    let outputBasePath: string;
+    if (!name) {
+      // Consider the use case below. We should save actual to different paths.
+      // Therefore we auto-increment |anonymousSnapshotIndex|.
+      //
+      //   expect.toMatchSnapshot('a.png')
+      //   // noop
+      //   expect.toMatchSnapshot('a.png')
+      const fullTitleWithoutSpec = [
+        ...testInfo.titlePath.slice(1),
+        ++snapshotNames.anonymousSnapshotIndex,
+      ].join(' ');
+      // Note: expected path must not ever change for backwards compatibility.
+      expectedPathSegments = [sanitizeForFilePath(trimLongString(fullTitleWithoutSpec)) + '.' + anonymousSnapshotExtension];
+      // Trim the output file paths more aggressively to avoid hitting Windows filesystem limits.
+      const sanitizedName = sanitizeForFilePath(trimLongString(fullTitleWithoutSpec, windowsFilesystemFriendlyLength)) + '.' + anonymousSnapshotExtension;
+      outputBasePath = testInfo._getOutputPath(sanitizedName);
+      this.attachmentBaseName = sanitizedName;
+    } else {
+      // We intentionally do not sanitize user-provided array of segments, assuming
+      // it is a file system path. See https://github.com/microsoft/playwright/pull/9156.
+      // Note: expected path must not ever change for backwards compatibility.
+      expectedPathSegments = Array.isArray(name) ? name : [sanitizeFilePathBeforeExtension(name)];
+      const joinedName = Array.isArray(name) ? name.join(path.sep) : sanitizeFilePathBeforeExtension(trimLongString(name, windowsFilesystemFriendlyLength));
+      snapshotNames.namedSnapshotIndex[joinedName] = (snapshotNames.namedSnapshotIndex[joinedName] || 0) + 1;
+      const index = snapshotNames.namedSnapshotIndex[joinedName];
+      const sanitizedName = index > 1 ? addSuffixToFilePath(joinedName, `-${index - 1}`) : joinedName;
+      outputBasePath = testInfo._getOutputPath(sanitizedName);
+      this.attachmentBaseName = sanitizedName;
+    }
+    const defaultTemplate = '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}{-snapshotSuffix}{ext}';
+    this.expectedPath = testInfo._resolveSnapshotPath(configOptions.pathTemplate, defaultTemplate, expectedPathSegments);
     this.legacyExpectedPath = addSuffixToFilePath(outputBasePath, '-expected');
     this.previousPath = addSuffixToFilePath(outputBasePath, '-previous');
     this.actualPath = addSuffixToFilePath(outputBasePath, '-actual');
@@ -261,7 +309,7 @@ export function toMatchSnapshot(
 
   const configOptions = testInfo._projectInternal.expect?.toMatchSnapshot || {};
   const helper = new SnapshotHelper(
-      testInfo, 'toMatchSnapshot', undefined, '.' + determineFileExtension(received),
+      testInfo, 'toMatchSnapshot', undefined, determineFileExtension(received),
       configOptions, nameOrOptions, optOptions);
 
   if (this.isNot) {
@@ -332,7 +380,7 @@ export async function toHaveScreenshot(
   expectTypes(pageOrLocator, ['Page', 'Locator'], 'toHaveScreenshot');
   const [page, locator] = pageOrLocator.constructor.name === 'Page' ? [(pageOrLocator as PageEx), undefined] : [(pageOrLocator as Locator).page() as PageEx, pageOrLocator as Locator];
   const configOptions = testInfo._projectInternal.expect?.toHaveScreenshot || {};
-  const helper = new SnapshotHelper(testInfo, 'toHaveScreenshot', locator, undefined, configOptions, nameOrOptions, optOptions);
+  const helper = new SnapshotHelper(testInfo, 'toHaveScreenshot', locator, 'png', configOptions, nameOrOptions, optOptions);
   if (!helper.expectedPath.toLowerCase().endsWith('.png'))
     throw new Error(`Screenshot name "${path.basename(helper.expectedPath)}" must have '.png' extension`);
   expectTypes(pageOrLocator, ['Page', 'Locator'], 'toHaveScreenshot');

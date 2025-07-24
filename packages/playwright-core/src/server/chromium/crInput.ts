@@ -108,8 +108,7 @@ export class RawMouseImpl implements input.RawMouse {
         buttons: toButtonsMask(buttons),
         x,
         y,
-        modifiers: toModifiersMask(modifiers),
-        force: buttons.size > 0 ? 0.5 : 0,
+        modifiers: toModifiersMask(modifiers)
       });
     };
     if (forClick) {
@@ -130,8 +129,7 @@ export class RawMouseImpl implements input.RawMouse {
       x,
       y,
       modifiers: toModifiersMask(modifiers),
-      clickCount,
-      force: buttons.size > 0 ? 0.5 : 0,
+      clickCount
     });
   }
 

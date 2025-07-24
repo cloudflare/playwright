@@ -24,6 +24,7 @@ import { DebugController } from './debugController';
 import { Electron } from './electron/electron';
 import { Firefox } from './firefox/firefox';
 import { SdkObject, createInstrumentation } from './instrumentation';
+import { Selectors } from './selectors';
 import { WebKit } from './webkit/webkit';
 
 import type { BrowserType } from './browserType';
@@ -40,6 +41,7 @@ type PlaywrightOptions = {
 };
 
 export class Playwright extends SdkObject {
+  readonly selectors: Selectors;
   readonly chromium: BrowserType;
   readonly android: Android;
   readonly electron: Electron;
@@ -72,6 +74,7 @@ export class Playwright extends SdkObject {
     this.webkit = new WebKit(this);
     this.electron = new Electron(this);
     this.android = new Android(this, new AdbBackend());
+    this.selectors = new Selectors();
     this.debugController = new DebugController(this);
   }
 

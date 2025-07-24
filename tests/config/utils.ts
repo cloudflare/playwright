@@ -24,7 +24,6 @@ import type { ActionTreeItem } from '../../packages/trace-viewer/src/ui/modelUti
 import { buildActionTree, MultiTraceModel } from '../../packages/trace-viewer/src/ui/modelUtil';
 import type { ActionTraceEvent, ConsoleMessageTraceEvent, EventTraceEvent, TraceEvent } from '@trace/trace';
 import style from 'ansi-styles';
-import { renderTitleForCall } from '../../packages/playwright-core/lib/utils/isomorphic/protocolFormatter';
 
 export async function attachFrame(page: Page, frameId: string, url: string): Promise<Frame> {
   const handle = await page.evaluateHandle(async ({ frameId, url }) => {
@@ -152,13 +151,13 @@ export async function parseTraceRaw(file: string): Promise<{ events: any[], reso
   return {
     events,
     resources,
-    actions: actionObjects.map(a => renderTitleForCall({ ...a, type: a.class })),
+    actions: actionObjects.map(a => a.apiName),
     actionObjects,
     stacks,
   };
 }
 
-export async function parseTrace(file: string): Promise<{ resources: Map<string, Buffer>, events: (EventTraceEvent | ConsoleMessageTraceEvent)[], actions: ActionTraceEvent[], titles: string[], traceModel: TraceModel, model: MultiTraceModel, actionTree: string[], errors: string[] }> {
+export async function parseTrace(file: string): Promise<{ resources: Map<string, Buffer>, events: (EventTraceEvent | ConsoleMessageTraceEvent)[], actions: ActionTraceEvent[], apiNames: string[], traceModel: TraceModel, model: MultiTraceModel, actionTree: string[], errors: string[] }> {
   const backend = new TraceBackend(file);
   const traceModel = new TraceModel();
   await traceModel.load(backend, () => {});
@@ -166,14 +165,13 @@ export async function parseTrace(file: string): Promise<{ resources: Map<string,
   const { rootItem } = buildActionTree(model.actions);
   const actionTree: string[] = [];
   const visit = (actionItem: ActionTreeItem, indent: string) => {
-    const title = renderTitleForCall({ ...actionItem.action, type: actionItem.action.class });
-    actionTree.push(`${indent}${title || actionItem.id}`);
+    actionTree.push(`${indent}${actionItem.action?.apiName || actionItem.id}`);
     for (const child of actionItem.children)
       visit(child, indent + '  ');
   };
   rootItem.children.forEach(a => visit(a, ''));
   return {
-    titles: model.actions.map(a => renderTitleForCall({ ...a, type: a.class })),
+    apiNames: model.actions.map(a => a.apiName),
     resources: backend.entries,
     actions: model.actions,
     events: model.events,

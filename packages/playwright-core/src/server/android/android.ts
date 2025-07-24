@@ -19,6 +19,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { TimeoutSettings } from '../timeoutSettings';
 import { PipeTransport } from '../utils/pipeTransport';
 import { createGuid } from '../utils/crypto';
 import { isUnderTest } from '../utils/debug';
@@ -67,10 +68,16 @@ export interface SocketBackend extends EventEmitter {
 export class Android extends SdkObject {
   private _backend: Backend;
   private _devices = new Map<string, AndroidDevice>();
+  readonly _timeoutSettings: TimeoutSettings;
 
   constructor(parent: SdkObject, backend: Backend) {
     super(parent, 'android');
     this._backend = backend;
+    this._timeoutSettings = new TimeoutSettings();
+  }
+
+  setDefaultTimeout(timeout: number) {
+    this._timeoutSettings.setDefaultTimeout(timeout);
   }
 
   async devices(options: channels.AndroidDevicesOptions): Promise<AndroidDevice[]> {
@@ -104,6 +111,7 @@ export class AndroidDevice extends SdkObject {
   private _lastId = 0;
   private _callbacks = new Map<number, { fulfill: (result: any) => void, reject: (error: Error) => void }>();
   private _pollingWebViews: NodeJS.Timeout | undefined;
+  readonly _timeoutSettings: TimeoutSettings;
   private _webViews = new Map<string, channels.AndroidWebView>();
 
   static Events = {
@@ -123,6 +131,7 @@ export class AndroidDevice extends SdkObject {
     this.model = model;
     this.serial = backend.serial;
     this._options = options;
+    this._timeoutSettings = new TimeoutSettings(android._timeoutSettings);
   }
 
   static async create(android: Android, backend: DeviceBackend, options: channels.AndroidDevicesOptions): Promise<AndroidDevice> {
@@ -143,6 +152,10 @@ export class AndroidDevice extends SdkObject {
           }), 500);
     };
     poll();
+  }
+
+  setDefaultTimeout(timeout: number) {
+    this._timeoutSettings.setDefaultTimeout(timeout);
   }
 
   async shell(command: string): Promise<Buffer> {
@@ -224,15 +237,8 @@ export class AndroidDevice extends SdkObject {
   }
 
   async send(method: string, params: any = {}): Promise<any> {
-    params = {
-      ...params,
-      // Patch the timeout in, just in case it's missing in one of the commands.
-      timeout: params.timeout || 0,
-    };
-    if (params.androidSelector) {
-      params.selector = params.androidSelector;
-      delete params.androidSelector;
-    }
+    // Patch the timeout in!
+    params.timeout = this._timeoutSettings.timeout(params);
     const driver = await this._driver();
     if (!driver)
       throw new Error('Device is closed');
@@ -279,7 +285,7 @@ export class AndroidDevice extends SdkObject {
       '--disable-fre',
       '--no-default-browser-check',
       `--remote-debugging-socket-name=${socketName}`,
-      ...chromiumSwitches(),
+      ...chromiumSwitches,
       ...this._innerDefaultArgs(options)
     ];
     return chromeArguments;
@@ -338,7 +344,7 @@ export class AndroidDevice extends SdkObject {
       proxy: options.proxy,
       protocolLogger: helper.debugProtocolLogger(),
       browserLogsCollector: new RecentLogsCollector(),
-      originalLaunchOptions: { timeout: 0 },
+      originalLaunchOptions: {},
     };
     validateBrowserContextOptions(options, browserOptions);
 

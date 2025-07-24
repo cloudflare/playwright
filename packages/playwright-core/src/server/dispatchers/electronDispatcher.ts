@@ -16,7 +16,8 @@
 
 import { BrowserContextDispatcher } from './browserContextDispatcher';
 import { Dispatcher } from './dispatcher';
-import { JSHandleDispatcher, parseArgument, serializeResult } from './jsHandleDispatcher';
+import { ElementHandleDispatcher } from './elementHandlerDispatcher';
+import { parseArgument, serializeResult } from './jsHandleDispatcher';
 import { ElectronApplication } from '../electron/electron';
 
 import type { RootDispatcher } from './dispatcher';
@@ -46,7 +47,7 @@ export class ElectronApplicationDispatcher extends Dispatcher<ElectronApplicatio
 
   constructor(scope: ElectronDispatcher, electronApplication: ElectronApplication) {
     super(scope, electronApplication, 'ElectronApplication', {
-      context: BrowserContextDispatcher.from(scope, electronApplication.context())
+      context: new BrowserContextDispatcher(scope, electronApplication.context())
     });
     this.addObjectListener(ElectronApplication.Events.Close, () => {
       this._dispatchEvent('close');
@@ -58,7 +59,7 @@ export class ElectronApplicationDispatcher extends Dispatcher<ElectronApplicatio
       this._dispatchEvent('console', {
         type: message.type(),
         text: message.text(),
-        args: message.args().map(a => JSHandleDispatcher.fromJSHandle(this, a)),
+        args: message.args().map(a => ElementHandleDispatcher.fromJSHandle(this, a)),
         location: message.location()
       });
     });
@@ -66,7 +67,7 @@ export class ElectronApplicationDispatcher extends Dispatcher<ElectronApplicatio
 
   async browserWindow(params: channels.ElectronApplicationBrowserWindowParams): Promise<channels.ElectronApplicationBrowserWindowResult> {
     const handle = await this._object.browserWindow((params.page as PageDispatcher).page());
-    return { handle: JSHandleDispatcher.fromJSHandle(this, handle) };
+    return { handle: ElementHandleDispatcher.fromJSHandle(this, handle) };
   }
 
   async evaluateExpression(params: channels.ElectronApplicationEvaluateExpressionParams): Promise<channels.ElectronApplicationEvaluateExpressionResult> {
@@ -77,7 +78,7 @@ export class ElectronApplicationDispatcher extends Dispatcher<ElectronApplicatio
   async evaluateExpressionHandle(params: channels.ElectronApplicationEvaluateExpressionHandleParams): Promise<channels.ElectronApplicationEvaluateExpressionHandleResult> {
     const handle = await this._object._nodeElectronHandlePromise;
     const result = await handle.evaluateExpressionHandle(params.expression, { isFunction: params.isFunction }, parseArgument(params.arg));
-    return { handle: JSHandleDispatcher.fromJSHandle(this, result) };
+    return { handle: ElementHandleDispatcher.fromJSHandle(this, result) };
   }
 
   async updateSubscription(params: channels.ElectronApplicationUpdateSubscriptionParams): Promise<void> {

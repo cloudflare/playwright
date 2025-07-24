@@ -16,16 +16,15 @@
 
 import fs from 'fs';
 import path from 'path';
-import util from 'util';
 
 import { installRootRedirect, openTraceInBrowser, openTraceViewerApp, registry, startTraceViewerServer } from 'playwright-core/lib/server';
 import { ManualPromise, isUnderTest, gracefullyProcessExitDoNotHang } from 'playwright-core/lib/utils';
-import { open, debug } from 'playwright-core/lib/utilsBundle';
+import { open } from 'playwright-core/lib/utilsBundle';
 
 import { createErrorCollectingReporter, createReporterForTestServer, createReporters } from './reporters';
 import { SigIntWatcher } from './sigIntWatcher';
 import { TestRun, createApplyRebaselinesTask, createClearCacheTask, createGlobalSetupTasks, createListFilesTask, createLoadTask, createReportBeginTask, createRunTestsTasks, createStartDevServerTask, runTasks, runTasksDeferCleanup } from './tasks';
-import { loadConfig, resolveConfigLocation } from '../common/configLoader';
+import { loadConfig, resolveConfigLocation, restartWithExperimentalTsEsm } from '../common/configLoader';
 import { Watcher } from '../fsWatcher';
 import { baseFullConfig } from '../isomorphic/teleReceiver';
 import { addGitCommitInfoPlugin } from '../plugins/gitCommitInfoPlugin';
@@ -45,7 +44,6 @@ import type { ReporterV2 } from '../reporters/reporterV2';
 import type { TraceViewerRedirectOptions, TraceViewerServerOptions } from 'playwright-core/lib/server/trace/viewer/traceViewer';
 import type { HttpServer, Transport } from 'playwright-core/lib/utils';
 
-const originalDebugLog = debug.log;
 const originalStdoutWrite = process.stdout.write;
 const originalStderrWrite = process.stderr.write;
 
@@ -316,6 +314,7 @@ export class TestServerDispatcher implements TestServerInterface {
         ...(params.headed !== undefined ? { headless: !params.headed } : {}),
         _optionContextReuseMode: params.reuseContext ? 'when-possible' : undefined,
         _optionConnectOptions: params.connectWsEndpoint ? { wsEndpoint: params.connectWsEndpoint } : undefined,
+        _optionErrorContext: params.errorContext,
       },
       ...(params.updateSnapshots ? { updateSnapshots: params.updateSnapshots } : {}),
       ...(params.updateSourceMethod ? { updateSourceMethod: params.updateSourceMethod } : {}),
@@ -388,13 +387,6 @@ export class TestServerDispatcher implements TestServerInterface {
     if (process.env.PWTEST_DEBUG)
       return;
     if (intercept) {
-      if (debug.log === originalDebugLog) {
-        // Only if debug.log hasn't already been tampered with, don't intercept any DEBUG=* logging
-        debug.log = (...args) => {
-          const string = util.format(...args) + '\n';
-          return (originalStderrWrite as any).apply(process.stderr, [string]);
-        };
-      }
       process.stdout.write = (chunk: string | Buffer) => {
         this._dispatchEvent('stdio', chunkToPayload('stdout', chunk));
         return true;
@@ -404,7 +396,6 @@ export class TestServerDispatcher implements TestServerInterface {
         return true;
       };
     } else {
-      debug.log = originalDebugLog;
       process.stdout.write = originalStdoutWrite;
       process.stderr.write = originalStderrWrite;
     }
@@ -444,7 +435,7 @@ export class TestServerDispatcher implements TestServerInterface {
   }
 }
 
-export async function runUIMode(configFile: string | undefined, configCLIOverrides: ConfigCLIOverrides, options: TraceViewerServerOptions & TraceViewerRedirectOptions): Promise<reporterTypes.FullResult['status']> {
+export async function runUIMode(configFile: string | undefined, configCLIOverrides: ConfigCLIOverrides, options: TraceViewerServerOptions & TraceViewerRedirectOptions): Promise<reporterTypes.FullResult['status'] | 'restarted'> {
   const configLocation = resolveConfigLocation(configFile);
   return await innerRunTestServer(configLocation, configCLIOverrides, options, async (server: HttpServer, cancelPromise: ManualPromise<void>) => {
     await installRootRedirect(server, [], { ...options, webApp: 'uiMode.html' });
@@ -457,7 +448,6 @@ export async function runUIMode(configFile: string | undefined, configCLIOverrid
         persistentContextOptions: {
           handleSIGINT: false,
           channel,
-          timeout: 0,
         },
       });
       page.on('close', () => cancelPromise.resolve());
@@ -479,7 +469,7 @@ async function installedChromiumChannelForUI(configLocation: ConfigLocation, con
   return undefined;
 }
 
-export async function runTestServer(configFile: string | undefined, configCLIOverrides: ConfigCLIOverrides, options: { host?: string, port?: number }): Promise<reporterTypes.FullResult['status']> {
+export async function runTestServer(configFile: string | undefined, configCLIOverrides: ConfigCLIOverrides, options: { host?: string, port?: number }): Promise<reporterTypes.FullResult['status'] | 'restarted'> {
   const configLocation = resolveConfigLocation(configFile);
   return await innerRunTestServer(configLocation, configCLIOverrides, options, async server => {
     // eslint-disable-next-line no-console
@@ -487,7 +477,9 @@ export async function runTestServer(configFile: string | undefined, configCLIOve
   });
 }
 
-async function innerRunTestServer(configLocation: ConfigLocation, configCLIOverrides: ConfigCLIOverrides, options: { host?: string, port?: number }, openUI: (server: HttpServer, cancelPromise: ManualPromise<void>) => Promise<void>): Promise<reporterTypes.FullResult['status']> {
+async function innerRunTestServer(configLocation: ConfigLocation, configCLIOverrides: ConfigCLIOverrides, options: { host?: string, port?: number }, openUI: (server: HttpServer, cancelPromise: ManualPromise<void>) => Promise<void>): Promise<reporterTypes.FullResult['status'] | 'restarted'> {
+  if (restartWithExperimentalTsEsm(undefined, true))
+    return 'restarted';
   const testServer = new TestServer(configLocation, configCLIOverrides);
   const cancelPromise = new ManualPromise<void>();
   const sigintWatcher = new SigIntWatcher();

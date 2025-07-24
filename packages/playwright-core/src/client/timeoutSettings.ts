@@ -15,9 +15,11 @@
  * limitations under the License.
  */
 
-import { DEFAULT_PLAYWRIGHT_LAUNCH_TIMEOUT, DEFAULT_PLAYWRIGHT_TIMEOUT } from '../utils/isomorphic/time';
-
 import type { Platform } from './platform';
+
+// Keep in sync with server.
+export const DEFAULT_TIMEOUT = 30000;
+export const DEFAULT_LAUNCH_TIMEOUT = 3 * 60 * 1000; // 3 minutes
 
 export class TimeoutSettings {
   private _parent: TimeoutSettings | undefined;
@@ -57,7 +59,7 @@ export class TimeoutSettings {
       return this._defaultTimeout;
     if (this._parent)
       return this._parent.navigationTimeout(options);
-    return DEFAULT_PLAYWRIGHT_TIMEOUT;
+    return DEFAULT_TIMEOUT;
   }
 
   timeout(options: { timeout?: number }): number {
@@ -69,16 +71,6 @@ export class TimeoutSettings {
       return this._defaultTimeout;
     if (this._parent)
       return this._parent.timeout(options);
-    return DEFAULT_PLAYWRIGHT_TIMEOUT;
-  }
-
-  launchTimeout(options: { timeout?: number }): number {
-    if (typeof options.timeout === 'number')
-      return options.timeout;
-    if (this._platform.isDebugMode())
-      return 0;
-    if (this._parent)
-      return this._parent.launchTimeout(options);
-    return DEFAULT_PLAYWRIGHT_LAUNCH_TIMEOUT;
+    return DEFAULT_TIMEOUT;
   }
 }

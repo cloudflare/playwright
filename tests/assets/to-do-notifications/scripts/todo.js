@@ -172,7 +172,7 @@ window.onload = () => {
     objectStoreRequest.onsuccess = (event) => {
 
       // Report the success of our request
-      // (to detect whether it has been successfully
+      // (to detect whether it has been succesfully
       // added to the database, you'd look at transaction.oncomplete)
       note.appendChild(createListItem('Request successful.'));
 

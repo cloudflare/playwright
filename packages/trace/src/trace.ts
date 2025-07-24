@@ -20,8 +20,8 @@ import type { Point, SerializedError, StackFrame } from '@protocol/channels';
 
 export type Size = { width: number, height: number };
 
-// Make sure you add _modernize_N_to_N1(event: any) to traceModernizer.ts.
-export type VERSION = 8;
+// Make sure you add _modernize_N_to_N1(event: any) to traceModel.ts.
+export type VERSION = 7;
 
 export type BrowserContextEventOptions = {
   baseURL?: string,
@@ -61,7 +61,7 @@ export type BeforeActionTraceEvent = {
   type: 'before',
   callId: string;
   startTime: number;
-  title?: string;
+  apiName: string;
   class: string;
   method: string;
   params: Record<string, any>;

@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {protocol} = ChromeUtils.importESModule("chrome://juggler/content/protocol/Protocol.js");
-const {checkScheme} = ChromeUtils.importESModule("chrome://juggler/content/protocol/PrimitiveTypes.js");
-const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
+const {protocol, checkScheme} = ChromeUtils.import("chrome://juggler/content/protocol/Protocol.js");
+const {Helper} = ChromeUtils.import('chrome://juggler/content/Helper.js');
 
 const helper = new Helper();
 
-export class Dispatcher {
+class Dispatcher {
   /**
    * @param {Connection} connection
    */
@@ -133,3 +132,7 @@ class ProtocolSession {
     return await this._handler[method](params);
   }
 }
+
+this.EXPORTED_SYMBOLS = ['Dispatcher'];
+this.Dispatcher = Dispatcher;
+

@@ -16,22 +16,21 @@
 
 import { test, expect } from '@playwright/test';
 import { createClock as rawCreateClock, install as rawInstall } from '../../../packages/injected/src/clock';
-import type { InstallConfig, ClockController } from '../../../packages/injected/src/clock';
-import type { Builtins } from '../../../packages/injected/src/utilityScript';
+import type { InstallConfig, ClockController, ClockMethods } from '../../../packages/injected/src/clock';
 
-const createClock = (now?: number): ClockController & Builtins => {
+const createClock = (now?: number): ClockController & ClockMethods => {
   const { clock, api } = rawCreateClock(globalThis);
   clock.setSystemTime(now || 0);
   for (const key of Object.keys(api))
     clock[key] = api[key];
-  return clock as ClockController & Builtins;
+  return clock as ClockController & ClockMethods;
 };
 
 type ClockFixtures = {
-  clock: ClockController & Builtins;
+  clock: ClockController & ClockMethods;
   now: number | undefined;
-  install: (now?: number) => ClockController & Builtins;
-  installEx: (config?: InstallConfig) => { clock: ClockController, api: Builtins, originals: Builtins };
+  install: (now?: number) => ClockController & ClockMethods;
+  installEx: (config?: InstallConfig) => { clock: ClockController, api: ClockMethods, originals: ClockMethods };
 };
 
 const it = test.extend<ClockFixtures>({
@@ -43,14 +42,14 @@ const it = test.extend<ClockFixtures>({
   now: undefined,
 
   install: async ({}, use) => {
-    let clockObject: ClockController & Builtins;
+    let clockObject: ClockController & ClockMethods;
     const install = (now?: number) => {
       const { clock, api } = rawInstall(globalThis);
       if (now)
         clock.setSystemTime(now);
       for (const key of Object.keys(api))
         clock[key] = api[key];
-      clockObject = clock as ClockController & Builtins;
+      clockObject = clock as ClockController & ClockMethods;
       return clockObject;
     };
     await use(install);

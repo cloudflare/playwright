@@ -67,7 +67,7 @@ const test = baseTest.extend<BrowserTestTestFixtures, BrowserTestWorkerFixtures>
   }, { scope: 'worker' }],
 
   allowsThirdParty: [async ({ browserName }, run) => {
-    if (browserName === 'firefox' || browserName as any === '_bidiFirefox')
+    if (browserName === 'firefox')
       await run(true);
     else
       await run(false);

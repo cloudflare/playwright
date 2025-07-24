@@ -4,9 +4,9 @@
 
 const uuidGen = Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator);
 
-export class Helper {
+class Helper {
   decorateAsEventEmitter(objectToDecorate) {
-    const { EventEmitter } = ChromeUtils.importESModule('resource://gre/modules/EventEmitter.sys.mjs');
+    const { EventEmitter } = ChromeUtils.import('resource://gre/modules/EventEmitter.jsm');
     const emitter = new EventEmitter();
     objectToDecorate.on = emitter.on.bind(emitter);
     objectToDecorate.addEventListener = emitter.on.bind(emitter);
@@ -172,7 +172,7 @@ export class Helper {
 
 const helper = new Helper();
 
-export class EventWatcher {
+class EventWatcher {
   constructor(receiver, eventNames, pendingEventWatchers = new Set()) {
     this._pendingEventWatchers = pendingEventWatchers;
     this._pendingEventWatchers.add(this);
@@ -232,4 +232,8 @@ export class EventWatcher {
     helper.removeListeners(this._eventListeners);
   }
 }
+
+var EXPORTED_SYMBOLS = [ "Helper", "EventWatcher" ];
+this.Helper = Helper;
+this.EventWatcher = EventWatcher;
 

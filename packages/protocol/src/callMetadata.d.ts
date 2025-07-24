@@ -25,7 +25,7 @@ export type CallMetadata = {
   type: string;
   method: string;
   params: any;
-  title?: string;
+  apiName?: string;
   // Client is making an internal call that should not show up in
   // the inspector or trace.
   internal?: boolean;

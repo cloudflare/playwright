@@ -18,7 +18,7 @@ import { kMaxCookieExpiresDateInSeconds } from './network';
 
 import type * as channels from '@protocol/channels';
 
-export class Cookie {
+class Cookie {
   private _raw: channels.NetworkCookie;
   constructor(data: channels.NetworkCookie) {
     this._raw = data;

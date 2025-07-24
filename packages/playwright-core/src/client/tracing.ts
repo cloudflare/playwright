@@ -32,6 +32,7 @@ export class Tracing extends ChannelOwner<channels.TracingChannel> implements ap
 
   constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.TracingInitializer) {
     super(parent, type, guid, initializer);
+    this.markAsInternalType();
   }
 
   async start(options: { name?: string, title?: string, snapshots?: boolean, screenshots?: boolean, sources?: boolean, _live?: boolean } = {}) {
@@ -52,11 +53,15 @@ export class Tracing extends ChannelOwner<channels.TracingChannel> implements ap
   }
 
   async group(name: string, options: { location?: { file: string, line?: number, column?: number } } = {}) {
-    await this._channel.tracingGroup({ name, location: options.location });
+    await this._wrapApiCall(async () => {
+      await this._channel.tracingGroup({ name, location: options.location });
+    }, false);
   }
 
   async groupEnd() {
-    await this._channel.tracingGroupEnd();
+    await this._wrapApiCall(async () => {
+      await this._channel.tracingGroupEnd();
+    }, false);
   }
 
   private async _startCollectingStacks(traceName: string) {

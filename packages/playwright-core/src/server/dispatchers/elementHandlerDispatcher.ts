@@ -15,42 +15,42 @@
  */
 
 import { BrowserContextDispatcher } from './browserContextDispatcher';
+import { existingDispatcher } from './dispatcher';
 import { FrameDispatcher } from './frameDispatcher';
 import { JSHandleDispatcher, parseArgument, serializeResult } from './jsHandleDispatcher';
+import { PageDispatcher, WorkerDispatcher } from './pageDispatcher';
 
 import type { ElementHandle } from '../dom';
 import type { Frame } from '../frames';
 import type { CallMetadata } from '../instrumentation';
 import type * as js from '../javascript';
+import type { JSHandleDispatcherParentScope } from './jsHandleDispatcher';
 import type * as channels from '@protocol/channels';
 
 
-export class ElementHandleDispatcher extends JSHandleDispatcher<FrameDispatcher> implements channels.ElementHandleChannel {
+export class ElementHandleDispatcher extends JSHandleDispatcher implements channels.ElementHandleChannel {
   _type_ElementHandle = true;
 
   readonly _elementHandle: ElementHandle;
 
-  static from(scope: FrameDispatcher, handle: ElementHandle): ElementHandleDispatcher {
-    return scope.connection.existingDispatcher<ElementHandleDispatcher>(handle) || new ElementHandleDispatcher(scope, handle);
+  static from(scope: JSHandleDispatcherParentScope, handle: ElementHandle): ElementHandleDispatcher {
+    return existingDispatcher<ElementHandleDispatcher>(handle) || new ElementHandleDispatcher(scope, handle);
   }
 
-  static fromNullable(scope: FrameDispatcher, handle: ElementHandle | null): ElementHandleDispatcher | undefined {
+  static fromNullable(scope: JSHandleDispatcherParentScope, handle: ElementHandle | null): ElementHandleDispatcher | undefined {
     if (!handle)
       return undefined;
-    return scope.connection.existingDispatcher<ElementHandleDispatcher>(handle) || new ElementHandleDispatcher(scope, handle);
+    return existingDispatcher<ElementHandleDispatcher>(handle) || new ElementHandleDispatcher(scope, handle);
   }
 
-  static fromJSOrElementHandle(scope: FrameDispatcher, handle: js.JSHandle): JSHandleDispatcher {
-    const result = scope.connection.existingDispatcher<JSHandleDispatcher>(handle);
+  static fromJSHandle(scope: JSHandleDispatcherParentScope, handle: js.JSHandle): JSHandleDispatcher {
+    const result = existingDispatcher<JSHandleDispatcher>(handle);
     if (result)
       return result;
-    const elementHandle = handle.asElement();
-    if (!elementHandle)
-      return new JSHandleDispatcher(scope, handle);
-    return new ElementHandleDispatcher(scope, elementHandle);
+    return handle.asElement() ? new ElementHandleDispatcher(scope, handle.asElement()!) : new JSHandleDispatcher(scope, handle);
   }
 
-  private constructor(scope: FrameDispatcher, elementHandle: ElementHandle) {
+  private constructor(scope: JSHandleDispatcherParentScope, elementHandle: ElementHandle) {
     super(scope, elementHandle);
     this._elementHandle = elementHandle;
   }
@@ -217,10 +217,18 @@ export class ElementHandleDispatcher extends JSHandleDispatcher<FrameDispatcher>
   }
 
   private _browserContextDispatcher(): BrowserContextDispatcher {
-    const parentScope = this.parentScope().parentScope();
-    if (parentScope instanceof BrowserContextDispatcher)
-      return parentScope;
-    return parentScope.parentScope();
+    const scope = this.parentScope();
+    if (scope instanceof BrowserContextDispatcher)
+      return scope;
+    if (scope instanceof PageDispatcher)
+      return scope.parentScope();
+    if ((scope instanceof WorkerDispatcher) || (scope instanceof FrameDispatcher))  {
+      const parentScope = scope.parentScope();
+      if (parentScope instanceof BrowserContextDispatcher)
+        return parentScope;
+      return parentScope.parentScope();
+    }
+    throw new Error('ElementHandle belongs to unexpected scope');
   }
 
 }

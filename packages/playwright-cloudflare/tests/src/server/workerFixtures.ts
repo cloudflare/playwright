@@ -2,11 +2,11 @@ import { _baseTest, currentTestContext, runWithExpectApiListener } from '@cloudf
 import playwright, { connect } from '@cloudflare/playwright';
 import { env } from 'cloudflare:workers';
 import fs from '@cloudflare/playwright/fs';
-import { expect as baseExpect } from '@cloudflare/playwright/test';
 
 import type { TestInfo, ScreenshotMode, VideoMode } from '../../../types/test';
 import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright, APIRequestContext } from '@cloudflare/playwright/test';
 
+export { expect } from '@cloudflare/playwright/test';
 export { mergeTests } from '@cloudflare/playwright/internal';
 
 export type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
@@ -360,29 +360,6 @@ export function roundBox(box: BoundingBox): BoundingBox {
     height: Math.round(box.height),
   };
 }
-
-export const expect = baseExpect.extend({
-  toContainYaml(received: string, expected: string) {
-    const trimmed = expected.split('\n').filter(a => !!a.trim());
-    const maxPrefixLength = Math.min(...trimmed.map(line => line.match(/^\s*/)![0].length));
-    const trimmedExpected = trimmed.map(line => line.substring(maxPrefixLength)).join('\n');
-    try {
-      if (this.isNot)
-        expect(received).not.toContain(trimmedExpected);
-      else
-        expect(received).toContain(trimmedExpected);
-      return {
-        pass: !this.isNot,
-        message: () => '',
-      };
-    } catch (e: any) {
-      return {
-        pass: this.isNot,
-        message: () => e.message,
-      };
-    }
-  }
-});
 
 export const devices = [];
 export const playwrightTest = test;

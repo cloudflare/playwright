@@ -48,14 +48,17 @@ export default defineConfig({
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
       '../transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
 
+      './snapshotterInjected': path.resolve(__dirname, './src/injected/snapshotterInjected'),
+      './isomorphic/utilityScriptSerializers': path.resolve(__dirname, './src/injected/utilityScriptSerializers'),
+
       // It's not needed and this way we don't need to build and import utilsBundleImpl and babelBundleImpl
       './transform': path.resolve(__dirname, './src/mocks/transform'),
       '../transform/transform': path.resolve(__dirname, './src/mocks/transform'),
 
       '../transform/compilationCache': path.resolve(__dirname, './src/mocks/compilationCache'),
+      '../transform/esmUtils': path.resolve(__dirname, './src/mocks/esmUtils'),
+
       '../common/testLoader': path.resolve(__dirname, './src/mocks/testLoader'),
-      '../common/esmLoaderHost': path.resolve(__dirname, './src/mocks/esmLoaderHost'),
-      './esmLoaderHost': path.resolve(__dirname, './src/mocks/esmLoaderHost'),
 
       // IMPORTANT `require('../playwright')` in `recorderApp.ts` causes a circular dependency,
       // so we need to mock it (it's not needed, it's related with recorder).

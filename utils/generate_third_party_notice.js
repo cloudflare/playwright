@@ -17,6 +17,7 @@
 const checker = require('license-checker');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 async function checkDir(dir) {
   return await new Promise((f, r) => {
@@ -52,6 +53,7 @@ This project incorporates components from the projects listed below. The origina
       if (!bundle.isDirectory())
         continue;
       const dir = path.join(bundlesDir, bundle.name);
+      execSync('npm ci', { cwd: dir });
       const packages = await checkDir(dir);
       for (const [key, value] of Object.entries(packages)) {
         if (value.licenseText)

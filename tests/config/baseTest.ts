@@ -22,7 +22,7 @@ import type { ServerFixtures, ServerWorkerOptions } from './serverFixtures';
 import { serverFixtures } from './serverFixtures';
 import { platformTest } from './platformFixtures';
 import { testModeTest } from './testModeFixtures';
-import type { Builtins } from '../../packages/injected/src/utilityScript';
+import type { Builtins } from '../../packages/playwright-core/src/utils/isomorphic/builtins';
 
 export const base = test;
 

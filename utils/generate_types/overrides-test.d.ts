@@ -17,21 +17,15 @@
 import type { APIRequestContext, Browser, BrowserContext, BrowserContextOptions, Page, LaunchOptions, ViewportSize, Geolocation, HTTPCredentials, Locator, APIResponse, PageScreenshotOptions } from 'playwright-core';
 export * from 'playwright-core';
 
-export type BlobReporterOptions = { outputDir?: string, fileName?: string };
-export type ListReporterOptions = { printSteps?: boolean };
-export type JUnitReporterOptions = { outputFile?: string, stripANSIControlSequences?: boolean, includeProjectInTestName?: boolean };
-export type JsonReporterOptions = { outputFile?: string };
-export type HtmlReporterOptions = { outputFolder?: string, open?: 'always' | 'never' | 'on-failure', host?: string, port?: number, attachmentsBaseURL?: string, title?: string };
-
 export type ReporterDescription = Readonly<
-  ['blob'] | ['blob', BlobReporterOptions] |
+  ['blob'] | ['blob', { outputDir?: string, fileName?: string }] |
   ['dot'] |
   ['line'] |
-  ['list'] | ['list', ListReporterOptions] |
+  ['list'] | ['list', { printSteps?: boolean }] |
   ['github'] |
-  ['junit'] | ['junit', JUnitReporterOptions] |
-  ['json'] | ['json', JsonReporterOptions] |
-  ['html'] | ['html', HtmlReporterOptions] |
+  ['junit'] | ['junit', { outputFile?: string, stripANSIControlSequences?: boolean, includeProjectInTestName?: boolean }] |
+  ['json'] | ['json', { outputFile?: string }] |
+  ['html'] | ['html', { outputFolder?: string, open?: 'always' | 'never' | 'on-failure', host?: string, port?: number, attachmentsBaseURL?: string }] |
   ['null'] |
   [string] | [string, any]
 >;
@@ -67,11 +61,6 @@ export interface FullConfig<TestArgs = {}, WorkerArgs = {}> {
   projects: FullProject<TestArgs, WorkerArgs>[];
   reporter: ReporterDescription[];
   webServer: TestConfigWebServer | null;
-}
-
-export interface TestInfo {
-  snapshotPath(...name: ReadonlyArray<string>): string;
-  snapshotPath(name: string, options: { kind: 'snapshot' | 'screenshot' | 'aria' }): string;
 }
 
 export type TestStatus = 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';

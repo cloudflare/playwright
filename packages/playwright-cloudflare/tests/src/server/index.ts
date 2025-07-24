@@ -1,6 +1,3 @@
-// before everything else
-import './underTest';
-
 import { testSuites } from '@cloudflare/playwright/internal';
 
 import { TestsServer } from './testsServer';

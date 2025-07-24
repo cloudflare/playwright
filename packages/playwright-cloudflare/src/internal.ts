@@ -1,6 +1,6 @@
 import fs from 'fs';
 
-import { asLocator, asLocatorDescription, currentZone, isString, ManualPromise, renderTitleForCall, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
+import { asLocator, currentZone, isString, ManualPromise, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
 import { loadConfig } from 'playwright/lib/common/configLoader';
 import { currentTestInfo, setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 import { bindFileSuiteToProject } from 'playwright/lib/common/suiteUtils';
@@ -15,9 +15,8 @@ import playwright from '.';
 
 import type { Attachment, SuiteInfo, TestCaseInfo, TestContext, TestResult } from '../internal';
 import type { ApiCallData, ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
-import { stepTitle } from 'playwright/lib/util';
 
-export { isUnderTest } from 'playwright-core/lib/utils';
+export { isUnderTest, setUnderTest } from 'playwright-core/lib/utils';
 export { debug } from 'playwright-core/lib/utilsBundle';
 export { mergeTests } from 'playwright/lib/common/testType';
 
@@ -209,10 +208,34 @@ function paramsToRender(apiName: string) {
   }
 }
 
+function renderApiCall(apiName: string, params: any) {
+  if (apiName === 'tracing.group')
+    return params.name;
+  const paramsArray = [];
+  if (params) {
+    for (const name of paramsToRender(apiName)) {
+      if (!(name in params))
+        continue;
+      let value;
+      if (name === 'selector' && isString(params[name]) && params[name].startsWith('internal:')) {
+        const getter = asLocator('javascript', params[name]);
+        apiName = apiName.replace(/^locator\./, 'locator.' + getter + '.');
+        apiName = apiName.replace(/^page\./, 'page.' + getter + '.');
+        apiName = apiName.replace(/^frame\./, 'frame.' + getter + '.');
+      } else {
+        value = params[name];
+        paramsArray.push(value);
+      }
+    }
+  }
+  const paramsText = paramsArray.length ? '(' + paramsArray.join(', ') + ')' : '';
+  return apiName + paramsText;
+}
+
 const tracingGroupSteps: TestStepInternal[] = [];
 // adapted from _setupArtifacts fixture in packages/playwright/src/index.ts
 const expectApiListener: ClientInstrumentationListener = {
-  onApiCallBegin: (data, channel) => {
+  onApiCallBegin: (data: ApiCallData) => {
     const testInfo = currentTestInfo();
     // Some special calls do not get into steps.
     if (!testInfo || data.apiName.includes('setTestIdAttribute') || data.apiName === 'tracing.groupEnd')
@@ -221,28 +244,24 @@ const expectApiListener: ClientInstrumentationListener = {
     if (zone && zone.category === 'expect') {
       // Display the internal locator._expect call under the name of the enclosing expect call,
       // and connect it to the existing expect step.
-      if (zone.apiName)
-        data.apiName = zone.apiName;
-      if (zone.title)
-        data.title = stepTitle(zone.category, zone.title);
+      data.apiName = zone.title;
       data.stepId = zone.stepId;
       return;
     }
-
     // In the general case, create a step for each api call and connect them through the stepId.
     const step = testInfo._addStep({
       location: data.frames[0],
       category: 'pw:api',
-      title: renderTitle(channel.type, channel.method, channel.params, data.title),
+      title: renderApiCall(data.apiName, data.params),
       apiName: data.apiName,
-      params: channel.params,
+      params: data.params,
     }, tracingGroupSteps[tracingGroupSteps.length - 1]);
     data.userData = step;
     data.stepId = step.stepId;
     if (data.apiName === 'tracing.group')
       tracingGroupSteps.push(step);
   },
-  onApiCallEnd: data => {
+  onApiCallEnd: (data: ApiCallData) => {
     // "tracing.group" step will end later, when "tracing.groupEnd" finishes.
     if (data.apiName === 'tracing.group')
       return;
@@ -255,14 +274,6 @@ const expectApiListener: ClientInstrumentationListener = {
     step?.complete({ error: data.error });
   },
 };
-
-function renderTitle(type: string, method: string, params: Record<string, string> | undefined, title?: string) {
-  const prefix = renderTitleForCall({ title, type, method, params });
-  let selector;
-  if (params?.['selector'] && typeof params.selector === 'string')
-    selector = asLocatorDescription('javascript', params.selector);
-  return prefix + (selector ? ` ${selector}` : '');
-}
 
 export async function runWithExpectApiListener<T>(fn: () => Promise<T>): Promise<T> {
   playwright._instrumentation.addListener(expectApiListener);

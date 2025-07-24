@@ -1,7 +1,7 @@
 "use strict";
 
-const { Helper } = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
-const { initialize } = ChromeUtils.importESModule('chrome://juggler/content/content/main.js');
+const { Helper } = ChromeUtils.import('chrome://juggler/content/Helper.js');
+const { initialize } = ChromeUtils.import('chrome://juggler/content/content/main.js');
 
 const Ci = Components.interfaces;
 const helper = new Helper();
@@ -10,7 +10,7 @@ let sameProcessInstanceNumber = 0;
 
 const topBrowingContextToAgents = new Map();
 
-export class JugglerFrameChild extends JSWindowActorChild {
+class JugglerFrameChild extends JSWindowActorChild {
   constructor() {
     super();
 
@@ -83,3 +83,4 @@ export class JugglerFrameChild extends JSWindowActorChild {
   receiveMessage() { }
 }
 
+var EXPORTED_SYMBOLS = ['JugglerFrameChild'];

@@ -18,6 +18,7 @@ import { normalizeWhiteSpace } from '@isomorphic/stringUtils';
 
 import { getAriaLabelledByElements } from './roleUtils';
 
+import type { Map } from '@isomorphic/builtins';
 import type { AttributeSelectorPart } from '@isomorphic/selectorParser';
 
 export function matchesComponentAttribute(obj: any, attr: AttributeSelectorPart) {

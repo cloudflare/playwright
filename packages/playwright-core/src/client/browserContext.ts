@@ -41,7 +41,8 @@ import { urlMatchesEqual } from '../utils/isomorphic/urlMatch';
 import { isRegExp, isString } from '../utils/isomorphic/rtti';
 import { rewriteErrorMessage } from '../utils/isomorphic/stackTrace';
 
-import type { BrowserContextOptions, Headers, StorageState, WaitForEventOptions } from './types';
+import type { BrowserType } from './browserType';
+import type { BrowserContextOptions, Headers, LaunchOptions, StorageState, WaitForEventOptions } from './types';
 import type * as structs from '../../types/structs';
 import type * as api from '../../types/types';
 import type { URLMatch } from '../utils/isomorphic/urlMatch';
@@ -52,13 +53,13 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   _pages = new Set<Page>();
   _routes: network.RouteHandler[] = [];
   _webSocketRoutes: network.WebSocketRouteHandler[] = [];
-  // Browser is null for browser contexts created outside of normal browser, e.g. android or electron.
-  _browser: Browser | null = null;
+  readonly _browser: Browser | null = null;
+  _browserType: BrowserType | undefined;
   readonly _bindings = new Map<string, (source: structs.BindingSource, ...args: any[]) => any>();
   _timeoutSettings: TimeoutSettings;
   _ownerPage: Page | undefined;
   private _closedPromise: Promise<void>;
-  readonly _options: channels.BrowserNewContextParams;
+  _options: channels.BrowserNewContextParams = { };
 
   readonly request: APIRequestContext;
   readonly tracing: Tracing;
@@ -66,8 +67,9 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
 
   readonly _backgroundPages = new Set<Page>();
   readonly _serviceWorkers = new Set<Worker>();
+  readonly _isChromium: boolean;
   private _harRecorders = new Map<string, { path: string, content: 'embed' | 'attach' | 'omit' | undefined }>();
-  _closingStatus: 'none' | 'closing' | 'closed' = 'none';
+  _closeWasCalled = false;
   private _closeReason: string | undefined;
   private _harRouters: HarRouter[] = [];
 
@@ -81,11 +83,13 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
 
   constructor(parent: ChannelOwner, type: string, guid: string, initializer: channels.BrowserContextInitializer) {
     super(parent, type, guid, initializer);
-    this._options = initializer.options;
     this._timeoutSettings = new TimeoutSettings(this._platform);
+    if (parent instanceof Browser)
+      this._browser = parent;
+    this._browser?._contexts.add(this);
+    this._isChromium = this._browser?._name === 'chromium';
     this.tracing = Tracing.from(initializer.tracing);
     this.request = APIRequestContext.from(initializer.requestContext);
-    this.request._timeoutSettings = this._timeoutSettings;
     this.clock = new Clock(this);
 
     this._channel.on('bindingCall', ({ binding }) => this._onBinding(BindingCall.from(binding)));
@@ -151,15 +155,11 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     ]));
   }
 
-  async _initializeHarFromOptions(recordHar: BrowserContextOptions['recordHar']) {
-    if (!recordHar)
-      return;
-    const defaultContent = recordHar.path.endsWith('.zip') ? 'attach' : 'embed';
-    await this._recordIntoHAR(recordHar.path, null, {
-      url: recordHar.urlFilter,
-      updateContent: recordHar.content ?? (recordHar.omitContent ? 'omit' : defaultContent),
-      updateMode: recordHar.mode ?? 'full',
-    });
+  _setOptions(contextOptions: channels.BrowserNewContextParams, browserOptions: LaunchOptions) {
+    this._options = contextOptions;
+    if (this._options.recordHar)
+      this._harRecorders.set('', { path: this._options.recordHar.path, content: this._options.recordHar.content });
+    this.tracing._tracesDir = browserOptions.tracesDir;
   }
 
   private _onPage(page: Page): void {
@@ -208,7 +208,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     const routeHandlers = this._routes.slice();
     for (const routeHandler of routeHandlers) {
       // If the page or the context was closed we stall all requests right away.
-      if (page?._closeWasCalled || this._closingStatus !== 'none')
+      if (page?._closeWasCalled || this._closeWasCalled)
         return;
       if (!routeHandler.matches(route.request().url()))
         continue;
@@ -219,7 +219,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
         this._routes.splice(index, 1);
       const handled = await routeHandler.handle(route);
       if (!this._routes.length)
-        this._updateInterceptionPatterns().catch(() => {});
+        this._wrapApiCall(() => this._updateInterceptionPatterns(), true).catch(() => {});
       if (handled)
         return;
     }
@@ -245,10 +245,16 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
 
   setDefaultNavigationTimeout(timeout: number | undefined) {
     this._timeoutSettings.setDefaultNavigationTimeout(timeout);
+    this._wrapApiCall(async () => {
+      await this._channel.setDefaultNavigationTimeoutNoReply({ timeout });
+    }, true).catch(() => {});
   }
 
   setDefaultTimeout(timeout: number | undefined) {
     this._timeoutSettings.setDefaultTimeout(timeout);
+    this._wrapApiCall(async () => {
+      await this._channel.setDefaultTimeoutNoReply({ timeout });
+    }, true).catch(() => {});
   }
 
   browser(): Browser | null {
@@ -342,17 +348,15 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     await this._updateWebSocketInterceptionPatterns();
   }
 
-  async _recordIntoHAR(har: string, page: Page | null, options: { url?: string | RegExp, updateContent?: 'attach' | 'embed' | 'omit', updateMode?: 'minimal' | 'full'} = {}): Promise<void> {
+  async _recordIntoHAR(har: string, page: Page | null, options: { url?: string | RegExp, notFound?: 'abort' | 'fallback', update?: boolean, updateContent?: 'attach' | 'embed', updateMode?: 'minimal' | 'full'} = {}): Promise<void> {
     const { harId } = await this._channel.harStart({
       page: page?._channel,
-      options: {
-        zip: har.endsWith('.zip'),
+      options: prepareRecordHarOptions({
+        path: har,
         content: options.updateContent ?? 'attach',
-        urlGlob: isString(options.url) ? options.url : undefined,
-        urlRegexSource: isRegExp(options.url) ? options.url.source : undefined,
-        urlRegexFlags: isRegExp(options.url) ? options.url.flags : undefined,
         mode: options.updateMode ?? 'minimal',
-      },
+        urlFilter: options.url
+      })!
     });
     this._harRecorders.set(harId, { path: har, content: options.updateContent ?? 'attach' });
   }
@@ -455,10 +459,9 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   _onClose() {
-    this._closingStatus = 'closed';
-    this._browser?._contexts.delete(this);
-    this._browser?._browserType._contexts.delete(this);
-    this._browser?._browserType._playwright.selectors._contextsForSelectors.delete(this);
+    if (this._browser)
+      this._browser._contexts.delete(this);
+    this._browserType?._contexts?.delete(this);
     this._disposeHarRouters();
     this.tracing._resetStackCounter();
     this.emit(Events.BrowserContext.Close, this);
@@ -469,13 +472,15 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
   }
 
   async close(options: { reason?: string } = {}): Promise<void> {
-    if (this._closingStatus !== 'none')
+    if (this._closeWasCalled)
       return;
     this._closeReason = options.reason;
-    this._closingStatus = 'closing';
-    await this.request.dispose(options);
+    this._closeWasCalled = true;
     await this._wrapApiCall(async () => {
-      await this._instrumentation.runBeforeCloseBrowserContext(this);
+      await this.request.dispose(options);
+    }, true);
+    await this._wrapApiCall(async () => {
+      await this._browserType?._willCloseContext(this);
       for (const [harId, harParams] of this._harRecorders) {
         const har = await this._channel.harExport({ harId });
         const artifact = Artifact.from(har.artifact);
@@ -493,7 +498,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
         }
         await artifact.delete();
       }
-    }, { internal: true });
+    }, true);
     await this._channel.close(options);
     await this._closedPromise;
   }
@@ -514,6 +519,19 @@ async function prepareStorageState(platform: Platform, options: BrowserContextOp
   }
 }
 
+function prepareRecordHarOptions(options: BrowserContextOptions['recordHar']): channels.RecordHarOptions | undefined {
+  if (!options)
+    return;
+  return {
+    path: options.path,
+    content: options.content || (options.omitContent ? 'omit' : undefined),
+    urlGlob: isString(options.urlFilter) ? options.urlFilter : undefined,
+    urlRegexSource: isRegExp(options.urlFilter) ? options.urlFilter.source : undefined,
+    urlRegexFlags: isRegExp(options.urlFilter) ? options.urlFilter.flags : undefined,
+    mode: options.mode
+  };
+}
+
 export async function prepareBrowserContextParams(platform: Platform, options: BrowserContextOptions): Promise<channels.BrowserNewContextParams> {
   if (options.videoSize && !options.videosPath)
     throw new Error(`"videoSize" option requires "videosPath" to be specified`);
@@ -526,6 +544,7 @@ export async function prepareBrowserContextParams(platform: Platform, options: B
     extraHTTPHeaders: options.extraHTTPHeaders ? headersObjectToArray(options.extraHTTPHeaders) : undefined,
     storageState: await prepareStorageState(platform, options),
     serviceWorkers: options.serviceWorkers,
+    recordHar: prepareRecordHarOptions(options.recordHar),
     colorScheme: options.colorScheme === null ? 'no-override' : options.colorScheme,
     reducedMotion: options.reducedMotion === null ? 'no-override' : options.reducedMotion,
     forcedColors: options.forcedColors === null ? 'no-override' : options.forcedColors,

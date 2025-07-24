@@ -327,13 +327,7 @@ export namespace Browser {
 export namespace Browser {
   export type CreateUserContext = {
     method: 'browser.createUserContext';
-    params: Browser.CreateUserContextParameters;
-  };
-}
-export namespace Browser {
-  export type CreateUserContextParameters = {
-    acceptInsecureCerts?: boolean;
-    proxy?: Session.ProxyConfiguration;
+    params: EmptyParams;
   };
 }
 export namespace Browser {
@@ -947,14 +941,8 @@ export namespace Emulation {
   };
 }
 export namespace Emulation {
-  export type SetGeolocationOverrideParameters = (
-    | {
-        coordinates: Emulation.GeolocationCoordinates | null;
-      }
-    | {
-        error: Emulation.GeolocationPositionError;
-      }
-  ) & {
+  export type SetGeolocationOverrideParameters = {
+    coordinates: Emulation.GeolocationCoordinates | null;
     contexts?: [
       BrowsingContext.BrowsingContext,
       ...BrowsingContext.BrowsingContext[],
@@ -1000,11 +988,6 @@ export namespace Emulation {
      * @defaultValue `null`
      */
     speed?: number | null;
-  };
-}
-export namespace Emulation {
-  export type GeolocationPositionError = {
-    type: 'positionUnavailable';
   };
 }
 export type NetworkCommand =
@@ -1716,16 +1699,16 @@ export namespace Script {
   };
 }
 export namespace Script {
-  export type RegExpRemoteValue = Script.RegExpLocalValue & {
+  export type RegExpRemoteValue = {
     handle?: Script.Handle;
     internalId?: Script.InternalId;
-  };
+  } & Script.RegExpLocalValue;
 }
 export namespace Script {
-  export type DateRemoteValue = Script.DateLocalValue & {
+  export type DateRemoteValue = {
     handle?: Script.Handle;
     internalId?: Script.InternalId;
-  };
+  } & Script.DateLocalValue;
 }
 export namespace Script {
   export type MapRemoteValue = {

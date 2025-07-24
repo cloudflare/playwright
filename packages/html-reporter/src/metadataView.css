@@ -17,7 +17,7 @@
 .metadata-toggle {
   cursor: pointer;
   user-select: none;
-  margin-left: 8px;
+  margin-left: 5px;
   color: var(--color-fg-default);
 }
 

@@ -4,11 +4,11 @@
 
 "use strict";
 
-const {Helper, EventWatcher} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
-const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
-const {NetworkObserver, PageNetwork} = ChromeUtils.importESModule('chrome://juggler/content/NetworkObserver.js');
-const {PageTarget} = ChromeUtils.importESModule('chrome://juggler/content/TargetRegistry.js');
-const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
+const {Helper, EventWatcher} = ChromeUtils.import('chrome://juggler/content/Helper.js');
+const {NetUtil} = ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
+const {NetworkObserver, PageNetwork} = ChromeUtils.import('chrome://juggler/content/NetworkObserver.js');
+const {PageTarget} = ChromeUtils.import('chrome://juggler/content/TargetRegistry.js');
+const {setTimeout} = ChromeUtils.import('resource://gre/modules/Timer.jsm');
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -65,7 +65,7 @@ class WorkerHandler {
   }
 }
 
-export class PageHandler {
+class PageHandler {
   constructor(target, session, contentChannel) {
     this._session = session;
     this._contentChannel = contentChannel;
@@ -691,3 +691,6 @@ export class PageHandler {
     return await worker.sendMessage(JSON.parse(message));
   }
 }
+
+var EXPORTED_SYMBOLS = ['PageHandler'];
+this.PageHandler = PageHandler;

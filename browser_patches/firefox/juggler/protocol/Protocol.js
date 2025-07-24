@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {t} = ChromeUtils.importESModule('chrome://juggler/content/protocol/PrimitiveTypes.js');
+const {t, checkScheme} = ChromeUtils.import('chrome://juggler/content/protocol/PrimitiveTypes.js');
 
 // Protocol-specific types.
 const browserTypes = {};
@@ -1018,6 +1018,8 @@ const Accessibility = {
   }
 }
 
-export const protocol = {
+this.protocol = {
   domains: {Browser, Heap, Page, Runtime, Network, Accessibility},
 };
+this.checkScheme = checkScheme;
+this.EXPORTED_SYMBOLS = ['protocol', 'checkScheme'];

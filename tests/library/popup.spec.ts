@@ -221,25 +221,31 @@ it('should expose function from browser context', async function({ browser, serv
 
 it('should not dispatch binding on a closed page', async function({ browser, server, browserName }) {
   const context = await browser.newContext();
-  let wasClosed: boolean | undefined;
-  await context.exposeBinding('add', (source, a, b) => {
-    wasClosed = source.page.isClosed();
+  const messages = [];
+  await context.exposeFunction('add', (a, b) => {
+    messages.push('binding');
     return a + b;
   });
   const page = await context.newPage();
   await page.goto(server.EMPTY_PAGE);
   await Promise.all([
-    page.waitForEvent('popup'),
+    page.waitForEvent('popup').then(popup => {
+      if (popup.isClosed())
+        messages.push('close');
+      else
+        return popup.waitForEvent('close').then(() => messages.push('close'));
+    }),
     page.evaluate(async () => {
       const win = window.open('about:blank');
       win['add'](9, 4);
       win.close();
     }),
   ]);
-  // Give it a chance to dispatch the binding on the closed page.
-  await page.waitForTimeout(1000);
   await context.close();
-  expect(wasClosed).not.toBeTruthy();
+  if (browserName === 'firefox')
+    expect(messages.join('|')).toBe('close');
+  else
+    expect(messages.join('|')).toBe('binding|close');
 });
 
 it('should not throttle rAF in the opener page', async ({ page, server }) => {

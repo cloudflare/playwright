@@ -14,16 +14,11 @@
  * limitations under the License.
  */
 
-// Hopefully, this file is never used in injected sources,
-// because it does not use `builtins.setTimeout` and similar,
-// and can break when clock emulation is engaged.
-
-/* eslint-disable no-restricted-globals */
-
+import { setTimeout, clearTimeout } from './builtins';
 import { monotonicTime } from './time';
 
 export async function raceAgainstDeadline<T>(cb: () => Promise<T>, deadline: number): Promise<{ result: T, timedOut: false } | { timedOut: true }> {
-  let timer: NodeJS.Timeout | undefined;
+  let timer: number | undefined;
   return Promise.race([
     cb().then(result => {
       return { result, timedOut: false };

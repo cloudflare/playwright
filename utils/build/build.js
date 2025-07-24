@@ -21,7 +21,17 @@ const path = require('path');
 const chokidar = require('chokidar');
 const fs = require('fs');
 const { workspace } = require('../workspace');
-const { build, context } = require('esbuild');
+
+/**
+ * @typedef {{
+ *   command: string,
+ *   args: string[],
+ *   shell: boolean,
+ *   env?: NodeJS.ProcessEnv,
+ *   cwd?: string,
+ *   concurrent?: boolean,
+ * }} Step
+ */
 
 /**
  * @typedef {{
@@ -36,29 +46,13 @@ const { build, context } = require('esbuild');
  * @typedef {{
  *   inputs: string[],
  *   mustExist?: string[],
- *   cwd?: string,
- * }} BaseOnChange
- */
-
-/**
- * @typedef {BaseOnChange & {
- *   command: string,
+ *   script?: string,
+ *   command?: string,
  *   args?: string[],
- * }} CommandOnChange
+ *   cwd?: string,
+ * }} OnChange
  */
 
-/**
- * @typedef {BaseOnChange & {
- *   script: string,
- * }} ScriptOnChange
- */
-
-/**
- * @typedef {CommandOnChange|ScriptOnChange} OnChange
- */
-
-/** @type {(() => void)[]} */
-const disposables = [];
 /** @type {Step[]} */
 const steps = [];
 /** @type {OnChange[]} */
@@ -67,7 +61,8 @@ const onChanges = [];
 const copyFiles = [];
 
 const watchMode = process.argv.slice(2).includes('--watch');
-const withSourceMaps = watchMode;
+const lintMode = process.argv.slice(2).includes('--lint');
+const withSourceMaps = process.argv.slice(2).includes('--sourcemap') || watchMode;
 const installMode = process.argv.slice(2).includes('--install');
 const ROOT = path.join(__dirname, '..', '..');
 
@@ -87,73 +82,22 @@ function quotePath(path) {
   return "\"" + path + "\"";
 }
 
-class Step {
-  /**
-   * @param {{
-   *   concurrent?: boolean,
-   * }} options
-   */
-  constructor(options) {
-    this.concurrent = options.concurrent;
-  }
-
-  async run() {
-    throw new Error('Not implemented');
-  }
-}
-
-class ProgramStep extends Step {
-  /**
-   * @param {{
-   *   command: string,
-   *   args: string[],
-   *   shell: boolean,
-   *   env?: NodeJS.ProcessEnv,
-   *   cwd?: string,
-   *   concurrent?: boolean,
-   * }} options
-   */
-  constructor(options) {
-    super(options);
-    this._options = options;
-  }
-
-  /** @override */
-  async run() {
-    const step = this._options;
-    console.log(`==== Running ${step.command} ${step.args.join(' ')} in ${step.cwd || process.cwd()}`);
-    const child = child_process.spawn(step.command, step.args, {
-      stdio: 'inherit',
-      shell: step.shell,
-      env: {
-        ...process.env,
-        ...step.env
-      },
-      cwd: step.cwd,
-    });
-    disposables.push(() => {
-      if (child.exitCode === null)
-        child.kill();
-    });
-    return new Promise((resolve, reject) => {
-      child.on('close', (code, signal) => {
-        if (code || signal)
-          reject(new Error(`'${step.command} ${step.args.join(' ')}' exited with code ${code}, signal ${signal}`));
-        else
-          resolve({ });
-      });
-    });
-  }
-}
-
 /**
- * @param {OnChange} onChange
+ * @param {Step} step
  */
-async function runOnChangeStep(onChange) {
-  const step = ('script' in onChange)
-    ? new ProgramStep({ command: 'node', args: [filePath(onChange.script)], shell: false })
-    : new ProgramStep({ command: onChange.command, args: onChange.args || [], shell: true, cwd: onChange.cwd });
-  await step.run();
+function runStep(step) {
+  console.log(`==== Running ${step.command} ${step.args.join(' ')} in ${step.cwd || process.cwd()}`);
+  const out = child_process.spawnSync(step.command, step.args, {
+    stdio: 'inherit',
+    shell: step.shell,
+    env: {
+      ...process.env,
+      ...step.env
+    },
+    cwd: step.cwd,
+  });
+  if (out.status)
+    process.exit(out.status);
 }
 
 async function runWatch() {
@@ -168,7 +112,10 @@ async function runWatch() {
         if (!fs.existsSync(filePath(fileMustExist)))
           return;
       }
-      runOnChangeStep(onChange).catch(e => console.error(e));
+      if (onChange.script)
+        child_process.spawnSync('node', [onChange.script], { stdio: 'inherit' });
+      else
+        child_process.spawnSync(onChange.command, onChange.args || [], { stdio: 'inherit', cwd: onChange.cwd, shell: true });
     }
     // chokidar will report all files as added in a sync loop, throttle those.
     const reschedule = () => {
@@ -189,13 +136,25 @@ async function runWatch() {
 
   for (const step of steps) {
     if (!step.concurrent)
-      await step.run();
+      runStep(step);
   }
 
+  /** @type{import('child_process').ChildProcess[]} */
+  const spawns = [];
   for (const step of steps) {
-    if (step.concurrent)
-      step.run().catch(e => console.error(e));
+    if (!step.concurrent)
+      continue;
+    spawns.push(child_process.spawn(step.command, step.args, {
+      stdio: 'inherit',
+      shell: step.shell,
+      env: {
+        ...process.env,
+        ...step.env,
+      },
+      cwd: step.cwd,
+    }));
   }
+  process.on('exit', () => spawns.forEach(s => s.kill()));
   for (const onChange of onChanges)
     runOnChange(onChange);
 }
@@ -212,9 +171,13 @@ async function runBuild() {
     watcher.close();
   }
   for (const step of steps)
-    await step.run();
-  for (const onChange of onChanges)
-    runOnChangeStep(onChange);
+    runStep(step);
+  for (const onChange of onChanges) {
+    if (onChange.script)
+      runStep({ command: 'node', args: [filePath(onChange.script)], shell: false });
+    else
+      runStep({ command: onChange.command, args: onChange.args, shell: true, cwd: onChange.cwd });
+  }
 }
 
 /**
@@ -228,252 +191,109 @@ function copyFile(file, from, to) {
   fs.copyFileSync(file, destination);
 }
 
-/**
- * @typedef {{
- *   modulePath: string,
- *   entryPoints: string[],
- *   external?: string[],
- *   outdir?: string,
- *   outfile?: string,
- *   minify?: boolean,
- * }} BundleOptions
- */
-
-/** @type {BundleOptions[]} */
 const bundles = [];
-
-bundles.push({
-  modulePath: 'packages/playwright/bundles/babel',
-  outdir: 'packages/playwright/lib/transform',
-  entryPoints: ['src/babelBundleImpl.ts'],
-  external: ['playwright'],
-});
-
-bundles.push({
-  modulePath: 'packages/playwright/bundles/expect',
-  outdir: 'packages/playwright/lib/common',
-  entryPoints: ['src/expectBundleImpl.ts'],
-});
-
-bundles.push({
-  modulePath: 'packages/playwright/bundles/utils',
-  outdir: 'packages/playwright/lib',
-  entryPoints: ['src/utilsBundleImpl.ts'],
-  external: ['fsevents'],
-});
-
-bundles.push({
-  modulePath: 'packages/playwright-core/bundles/utils',
-  outfile: 'packages/playwright-core/lib/utilsBundleImpl/index.js',
-  entryPoints: ['src/utilsBundleImpl.ts'],
-});
-
-bundles.push({
-  modulePath: 'packages/playwright-core/bundles/zip',
-  outdir: 'packages/playwright-core/lib',
-  entryPoints: ['src/zipBundleImpl.ts'],
-});
-
-
-// @playwright/client
-bundles.push({
-  modulePath: 'packages/playwright-client',
-  outdir: 'packages/playwright-client/lib',
-  entryPoints: ['src/index.ts'],
-  minify: false,
-});
-
-class GroupStep extends Step {
-  /** @param {Step[]} steps */
-  constructor(steps) {
-    super({ concurrent: false });
-    this._steps = steps;
-    if (steps.some(s => !s.concurrent))
-      throw new Error('Composite step cannot contain non-concurrent steps');
-  }
-  async run() {
-    console.log('==== Starting parallel group');
-    const start = Date.now();
-    await Promise.all(this._steps.map(step => step.run()));
-    console.log('==== Parallel group finished in', Date.now() - start, 'ms');
+for (const pkg of workspace.packages()) {
+  const bundlesDir = path.join(pkg.path, 'bundles');
+  if (!fs.existsSync(bundlesDir))
+    continue;
+  for (const bundle of fs.readdirSync(bundlesDir)) {
+    if (fs.existsSync(path.join(bundlesDir, bundle, 'package.json')))
+      bundles.push(path.join(bundlesDir, bundle));
   }
 }
 
-/** @type {Step[]} */
-const updateSteps = [];
-
 // Update test runner.
-updateSteps.push(new ProgramStep({
+steps.push({
   command: 'npm',
   args: ['ci', '--save=false', '--fund=false', '--audit=false'],
   shell: true,
   cwd: path.join(__dirname, '..', '..', 'tests', 'playwright-test', 'stable-test-runner'),
-  concurrent: true,
-}));
+});
 
 // Update bundles.
 for (const bundle of bundles) {
-  // Do not update @playwright/client, it has not its own deps.
-  if (bundle.modulePath === 'packages/playwright-client')
-    continue;
-
-  const packageJson = path.join(filePath(bundle.modulePath), 'package.json');
-  if (!fs.existsSync(packageJson))
-    throw new Error(`${packageJson} does not exist`);
-  updateSteps.push(new ProgramStep({
+  steps.push({
     command: 'npm',
     args: ['ci', '--save=false', '--fund=false', '--audit=false', '--omit=optional'],
     shell: true,
-    cwd: filePath(bundle.modulePath),
-    concurrent: true,
-  }));
+    cwd: bundle,
+  });
 }
 
-steps.push(new GroupStep(updateSteps));
-
 // Generate third party licenses for bundles.
-steps.push(new ProgramStep({
+steps.push({
   command: 'node',
   args: [path.resolve(__dirname, '../generate_third_party_notice.js')],
   shell: true,
-}));
+});
 
 // Build injected icons.
-steps.push(new ProgramStep({
+steps.push({
   command: 'node',
   args: ['utils/generate_clip_paths.js'],
   shell: true,
-}));
+});
 
 // Build injected scripts.
-steps.push(new ProgramStep({
+steps.push({
   command: 'node',
   args: ['utils/generate_injected.js'],
   shell: true,
-}));
-
-class EsbuildStep extends Step {
-  /** @type {import('esbuild').BuildOptions} */
-  constructor(options) {
-    // Starting esbuild steps in parallel showed longer overall time.
-    super({ concurrent: false });
-    this._options = options;
-  }
-
-  /** @override */
-  async run() {
-    if (watchMode) {
-      await this._ensureWatching();
-    } else {
-      console.log('==== Running esbuild:', this._relativeEntryPoints().join(', '));
-      const start = Date.now();
-      await build(this._options);
-      console.log('==== Done in', Date.now() - start, 'ms');
-    }
-  }
-
-  async _ensureWatching() {
-    const start = Date.now();
-    if (this._context)
-      return;
-    this._context = await context(this._options);
-    disposables.push(() => this._context?.dispose());
-
-    const watcher = chokidar.watch(this._options.entryPoints);
-    await new Promise(x => watcher.once('ready', x));
-    watcher.on('all', () => this._rebuild());
-
-    await this._rebuild();
-    console.log('==== Esbuild watching:', this._relativeEntryPoints().join(', '), `(started in ${Date.now() - start}ms)`);
-  }
-
-  async _rebuild() {
-    if (this._rebuilding) {
-      this._sourcesChanged = true;
-      return;
-    }
-    do {
-      this._sourcesChanged = false;
-      this._rebuilding = true;
-      try {
-        await this._context?.rebuild();
-      } catch (e) {
-        // Ignore. Esbuild inherits stderr and already logs nicely formatted errors
-        // before throwing.
-      }
-
-      this._rebuilding = false;
-    } while (this._sourcesChanged);
-  }
-
-  _relativeEntryPoints() {
-    return this._options.entryPoints.map(e => path.relative(ROOT, e));
-  }
-}
-
-class CustomCallbackStep extends Step {
-  constructor(callback) {
-    super({ concurrent: false });
-    this._callback = callback;
-  }
-
-  async run() {
-    await this._callback();
-  }
-}
+});
 
 // Run esbuild.
 for (const pkg of workspace.packages()) {
   if (!fs.existsSync(path.join(pkg.path, 'src')))
     continue;
-  // playwright-client is built as a bundle.
+  // These packages have their own build step.
   if (['@playwright/client'].includes(pkg.name))
     continue;
-
-  steps.push(new EsbuildStep({
-    entryPoints: [path.join(pkg.path, 'src/**/*.ts')],
-    outdir: `${path.join(pkg.path, 'lib')}`,
-    sourcemap: withSourceMaps ? 'linked' : false,
-    platform: 'node',
-    format: 'cjs',
-  }));
+  steps.push({
+    command: 'npx',
+    args: [
+      'esbuild',
+      quotePath(path.join(pkg.path, 'src/**/*.ts')),
+      `--outdir=${quotePath(path.join(pkg.path, 'lib'))}`,
+      ...(withSourceMaps ? [`--sourcemap=linked`] : []),
+      ...(watchMode ? ['--watch'] : []),
+      '--platform=node',
+      '--format=cjs',
+      ],
+    shell: true,
+    concurrent: true,
+  });
 }
-
-function copyXdgOpen() {
-  const outdir = filePath('packages/playwright-core/lib/utilsBundleImpl');
-  if (!fs.existsSync(outdir))
-    fs.mkdirSync(outdir, { recursive: true });
-
-  // 'open' package requires 'xdg-open' binary to be present, which does not get bundled by esbuild.
-  fs.copyFileSync(filePath('packages/playwright-core/bundles/utils/node_modules/open/xdg-open'), path.join(outdir, 'xdg-open'));
-  console.log('==== Copied xdg-open to', path.join(outdir, 'xdg-open'));
-}
-
-// Copy xdg-open after bundles 'npm ci' has finished.
-steps.push(new CustomCallbackStep(copyXdgOpen));
 
 // Build/watch bundles.
 for (const bundle of bundles) {
-  /** @type {import('esbuild').BuildOptions} */
-  const options = {
-    bundle: true,
-    format: 'cjs',
-    platform: 'node',
-    target: 'ES2019',
-    sourcemap: watchMode,
-    minify: !watchMode,
-
-    entryPoints: bundle.entryPoints.map(e => path.join(filePath(bundle.modulePath), e)),
-    ...(bundle.outdir ? { outdir: filePath(bundle.outdir) } : {}),
-    ...(bundle.outfile ? { outfile: filePath(bundle.outfile) } : {}),
-    ...(bundle.external ? { external: bundle.external } : {}),
-    ...(bundle.minify !== undefined ? { minify: bundle.minify } : {}),
-  };
-  steps.push(new EsbuildStep(options));
+  steps.push({
+    command: 'npm',
+    args: [
+      'run',
+      watchMode ? 'watch' : 'build',
+      ...(withSourceMaps ? ['--', '--sourcemap'] : [])
+    ],
+    shell: true,
+    cwd: bundle,
+    concurrent: true,
+  });
 }
 
+// Build/watch playwright-client.
+steps.push({
+  command: 'npm',
+  args: [
+    'run',
+    watchMode ? 'watch' : 'build',
+    ...(withSourceMaps ? ['--', '--sourcemap'] : [])
+  ],
+  shell: true,
+  cwd: path.join(__dirname, '..', '..', 'packages', 'playwright-client'),
+  concurrent: true,
+});
+
 // Build/watch trace viewer service worker.
-steps.push(new ProgramStep({
+steps.push({
   command: 'npx',
   args: [
     'vite',
@@ -486,68 +306,66 @@ steps.push(new ProgramStep({
   shell: true,
   cwd: path.join(__dirname, '..', '..', 'packages', 'trace-viewer'),
   concurrent: watchMode, // feeds into trace-viewer's `public` directory, so it needs to be finished before trace-viewer build starts
-}));
+});
 
 if (watchMode) {
   // the build above outputs into `packages/trace-viewer/public`, where the `vite build` for `packages/trace-viewer` is supposed to pick it up.
   // there's a bug in `vite build --watch` though where the public dir is only copied over initially, but its not watched.
   // to work around this, we run a second watch build of the service worker into the final output.
   // bug: https://github.com/vitejs/vite/issues/18655
-  steps.push(new ProgramStep({
+  steps.push({
     command: 'npx',
     args: [
       'vite', '--config', 'vite.sw.config.ts',
       'build', '--watch', '--minify=false',
       '--outDir', path.join(__dirname, '..', '..', 'packages', 'playwright-core', 'lib', 'vite', 'traceViewer'),
-      '--emptyOutDir=false',
-      '--clearScreen=false',
+      '--emptyOutDir=false'
     ],
     shell: true,
     cwd: path.join(__dirname, '..', '..', 'packages', 'trace-viewer'),
     concurrent: true
-  }));
+  });
 }
 
 // Build/watch web packages.
 for (const webPackage of ['html-reporter', 'recorder', 'trace-viewer']) {
-  steps.push(new ProgramStep({
+  steps.push({
     command: 'npx',
     args: [
       'vite',
       'build',
       ...(watchMode ? ['--watch', '--minify=false'] : []),
       ...(withSourceMaps ? ['--sourcemap=inline'] : []),
-      '--clearScreen=false',
     ],
     shell: true,
     cwd: path.join(__dirname, '..', '..', 'packages', webPackage),
     concurrent: true,
-  }));
+  });
 }
 
 // web packages dev server
 if (watchMode) {
-  steps.push(new ProgramStep({
+  steps.push({
     command: 'npx',
-    args: ['vite', '--port', '44223', '--base', '/trace/', '--clearScreen=false'],
+    args: ['vite', '--port', '44223', '--base', '/trace/'],
     shell: true,
     cwd: path.join(__dirname, '..', '..', 'packages', 'trace-viewer'),
     concurrent: true,
-  }));
-  steps.push(new ProgramStep({
+  });
+  steps.push({
     command: 'npx',
-    args: ['vite', '--port', '44224', '--clearScreen=false'],
+    args: ['vite', '--port', '44224'],
     shell: true,
     cwd: path.join(__dirname, '..', '..', 'packages', 'html-reporter'),
     concurrent: true,
-  }));
-  steps.push(new ProgramStep({
+  });
+  steps.push({
     command: 'npx',
-    args: ['vite', '--port', '44225', '--clearScreen=false'],
+    args: ['vite', '--port', '44225'],
     shell: true,
     cwd: path.join(__dirname, '..', '..', 'packages', 'recorder'),
     concurrent: true,
-  }));
+  });
 }
 
 // Generate injected.
@@ -557,7 +375,6 @@ onChanges.push({
     'packages/playwright-core/src/third_party/**',
     'packages/playwright-ct-core/src/injected/**',
     'packages/playwright-core/src/utils/isomorphic/**',
-    'utils/generate_injected_builtins.js',
     'utils/generate_injected.js',
   ],
   script: 'utils/generate_injected.js',
@@ -623,41 +440,22 @@ copyFiles.push({
   to: 'packages/playwright-core/lib',
 });
 
-if (watchMode) {
+if (lintMode) {
   // Run TypeScript for type checking.
-  steps.push(new ProgramStep({
+  steps.push({
     command: 'npx',
-    args: ['tsc', ...(watchMode ? ['-w'] : []), '--preserveWatchOutput', '-p', quotePath(filePath('.'))],
+    args: ['tsc', ...(watchMode ? ['-w'] : []), '-p', quotePath(filePath('.'))],
     shell: true,
     concurrent: true,
-  }));
+  });
   for (const webPackage of ['html-reporter', 'recorder', 'trace-viewer']) {
-    steps.push(new ProgramStep({
+    steps.push({
       command: 'npx',
-      args: ['tsc', ...(watchMode ? ['-w'] : []), '--preserveWatchOutput', '-p', quotePath(filePath(`packages/${webPackage}`))],
+      args: ['tsc', ...(watchMode ? ['-w'] : []), '-p', quotePath(filePath(`packages/${webPackage}`))],
       shell: true,
       concurrent: true,
-    }));
+    });
   }
 }
-
-let cleanupCalled = false;
-function cleanup() {
-  if (cleanupCalled)
-    return;
-  cleanupCalled = true;
-  for (const disposable of disposables) {
-    try {
-      disposable();
-    } catch (e) {
-      console.error('Error during cleanup:', e);
-    }
-  }
-}
-process.on('exit', cleanup);
-process.on('SIGINT', () => {
-  cleanup();
-  process.exit(0);
-});
 
 watchMode ? runWatch() : runBuild();

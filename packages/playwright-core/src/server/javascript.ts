@@ -15,9 +15,10 @@
  */
 
 import { SdkObject } from './instrumentation';
-import * as rawUtilityScriptSource from '../generated/utilityScriptSource';
+import * as utilityScriptSource from '../generated/utilityScriptSource';
 import { isUnderTest } from '../utils';
-import { serializeAsCallArgument } from '../utils/isomorphic/utilityScriptSerializers';
+import { builtins } from '../utils/isomorphic/builtins';
+import { source } from '../utils/isomorphic/utilityScriptSerializers';
 import { LongStandingScope } from '../utils/isomorphic/manualPromise';
 
 import type * as dom from './dom';
@@ -44,6 +45,10 @@ export type Func0<R> = string | (() => R | Promise<R>);
 export type Func1<Arg, R> = string | ((arg: Unboxed<Arg>) => R | Promise<R>);
 export type FuncOn<On, Arg2, R> = string | ((on: On, arg2: Unboxed<Arg2>) => R | Promise<R>);
 export type SmartHandle<T> = T extends Node ? dom.ElementHandle<T> : JSHandle<T>;
+
+const utilityScriptSerializers = source(builtins());
+export const parseEvaluationResultValue = utilityScriptSerializers.parseEvaluationResultValue;
+export const serializeAsCallArgument = utilityScriptSerializers.serializeAsCallArgument;
 
 export interface ExecutionContextDelegate {
   rawEvaluateJSON(expression: string): Promise<any>;
@@ -82,7 +87,7 @@ export class ExecutionContext extends SdkObject {
   }
 
   async evaluateWithArguments(expression: string, returnByValue: boolean, values: any[], handles: JSHandle[]): Promise<any> {
-    const utilityScript = await this.utilityScript();
+    const utilityScript = await this._utilityScript();
     return this._raceAgainstContextDestroyed(this.delegate.evaluateWithArguments(expression, returnByValue, utilityScript, values, handles));
   }
 
@@ -98,13 +103,13 @@ export class ExecutionContext extends SdkObject {
     return null;
   }
 
-  utilityScript(): Promise<JSHandle<UtilityScript>> {
+  private _utilityScript(): Promise<JSHandle<UtilityScript>> {
     if (!this._utilityScriptPromise) {
       const source = `
       (() => {
         const module = {};
-        ${rawUtilityScriptSource.source}
-        return new (module.exports.UtilityScript())(globalThis, ${isUnderTest()});
+        ${utilityScriptSource.source}
+        return new (module.exports.UtilityScript())(${isUnderTest()});
       })();`;
       this._utilityScriptPromise = this._raceAgainstContextDestroyed(this.delegate.rawEvaluateHandle(this, source))
           .then(handle => {

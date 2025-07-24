@@ -115,8 +115,8 @@ class JSCoverage {
   }
 
   async stop(): Promise<channels.PageStopJSCoverageResult> {
-    if (!this._enabled)
-      return { entries: [] };
+    assert(this._enabled, 'JSCoverage is not enabled');
+    this._enabled = false;
     const [profileResponse] = await Promise.all([
       this._client.send('Profiler.takePreciseCoverage'),
       this._client.send('Profiler.stopPreciseCoverage'),
@@ -124,7 +124,6 @@ class JSCoverage {
       this._client.send('Debugger.disable'),
     ] as const);
     eventsHelper.removeEventListeners(this._eventListeners);
-    this._enabled = false;
 
     const coverage: channels.PageStopJSCoverageResult = { entries: [] };
     for (const entry of profileResponse.result) {
@@ -198,15 +197,14 @@ class CSSCoverage {
   }
 
   async stop(): Promise<channels.PageStopCSSCoverageResult> {
-    if (!this._enabled)
-      return { entries: [] };
+    assert(this._enabled, 'CSSCoverage is not enabled');
+    this._enabled = false;
     const ruleTrackingResponse = await this._client.send('CSS.stopRuleUsageTracking');
     await Promise.all([
       this._client.send('CSS.disable'),
       this._client.send('DOM.disable'),
     ]);
     eventsHelper.removeEventListeners(this._eventListeners);
-    this._enabled = false;
 
     // aggregate by styleSheetId
     const styleSheetIdToCoverage = new Map();

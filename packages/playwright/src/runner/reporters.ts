@@ -35,8 +35,9 @@ import type { ReporterDescription } from '../../types/test';
 import type { FullConfig, TestError } from '../../types/testReporter';
 import type { BuiltInReporter, FullConfigInternal } from '../common/config';
 import type { Suite } from '../common/test';
-import type { CommonReporterOptions, Screen } from '../reporters/base';
+import type { Screen } from '../reporters/base';
 import type { ReporterV2 } from '../reporters/reporterV2';
+
 
 export async function createReporters(config: FullConfigInternal, mode: 'list' | 'test' | 'merge', isTestServer: boolean, descriptions?: ReporterDescription[]): Promise<ReporterV2[]> {
   const defaultReporters: { [key in BuiltInReporter]: new(arg: any) => ReporterV2 } = {
@@ -77,7 +78,7 @@ export async function createReporters(config: FullConfigInternal, mode: 'list' |
     if (mode === 'list')
       reporters.unshift(new ListModeReporter());
     else if (mode !== 'merge')
-      reporters.unshift(!process.env.CI ? new LineReporter() : new DotReporter());
+      reporters.unshift(!process.env.CI ? new LineReporter({ omitFailures: true }) : new DotReporter());
   }
   return reporters;
 }
@@ -106,7 +107,7 @@ export function createErrorCollectingReporter(screen: Screen, writeToConsole?: b
   };
 }
 
-function reporterOptions(config: FullConfigInternal, mode: 'list' | 'test' | 'merge', isTestServer: boolean): CommonReporterOptions {
+function reporterOptions(config: FullConfigInternal, mode: 'list' | 'test' | 'merge', isTestServer: boolean) {
   return {
     configDir: config.configDir,
     _mode: mode,

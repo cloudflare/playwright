@@ -15,16 +15,15 @@
  */
 
 import { Page } from '../page';
-import { Dispatcher } from './dispatcher';
+import { Dispatcher, existingDispatcher } from './dispatcher';
 import { PageDispatcher } from './pageDispatcher';
-import * as rawWebSocketMockSource from '../../generated/webSocketMockSource';
+import * as webSocketMockSource from '../../generated/webSocketMockSource';
 import { createGuid } from '../utils/crypto';
 import { urlMatches } from '../../utils/isomorphic/urlMatch';
 import { eventsHelper } from '../utils/eventsHelper';
 
 import type { BrowserContextDispatcher } from './browserContextDispatcher';
 import type { BrowserContext } from '../browserContext';
-import type { DispatcherConnection } from './dispatcher';
 import type { Frame } from '../frames';
 import type * as ws from '@injected/webSocketMock';
 import type * as channels from '@protocol/channels';
@@ -57,13 +56,13 @@ export class WebSocketRouteDispatcher extends Dispatcher<{ guid: string }, chann
     (scope as any)._dispatchEvent('webSocketRoute', { webSocketRoute: this });
   }
 
-  static async installIfNeeded(connection: DispatcherConnection, target: Page | BrowserContext) {
+  static async installIfNeeded(target: Page | BrowserContext) {
     const kBindingName = '__pwWebSocketBinding';
-    const context = target instanceof Page ? target.browserContext : target;
+    const context = target instanceof Page ? target.context() : target;
     if (!context.hasBinding(kBindingName)) {
       await context.exposeBinding(kBindingName, false, (source, payload: ws.BindingPayload) => {
         if (payload.type === 'onCreate') {
-          const contextDispatcher = connection.existingDispatcher<BrowserContextDispatcher>(context);
+          const contextDispatcher = existingDispatcher<BrowserContextDispatcher>(context);
           const pageDispatcher = contextDispatcher ? PageDispatcher.fromNullable(contextDispatcher, source.page) : undefined;
           let scope: PageDispatcher | BrowserContextDispatcher | undefined;
           if (pageDispatcher && matchesPattern(pageDispatcher, context._options.baseURL, payload.url))
@@ -96,7 +95,7 @@ export class WebSocketRouteDispatcher extends Dispatcher<{ guid: string }, chann
       await target.addInitScript(`
         (() => {
           const module = {};
-          ${rawWebSocketMockSource.source}
+          ${webSocketMockSource.source}
           (module.exports.inject())(globalThis);
         })();
       `, kInitScriptName);

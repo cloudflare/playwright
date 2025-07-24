@@ -14,11 +14,7 @@
  * limitations under the License.
  */
 
-// Hopefully, this file is never used in injected sources,
-// because it does not use `builtins.performance`,
-// and can break when clock emulation is engaged.
-
-/* eslint-disable no-restricted-globals */
+import { performance } from './builtins';
 
 let _timeOrigin = performance.timeOrigin;
 let _timeShift = 0;
@@ -35,6 +31,3 @@ export function timeOrigin(): number {
 export function monotonicTime(): number {
   return Math.floor((performance.now() + _timeShift) * 1000) / 1000;
 }
-
-export const DEFAULT_PLAYWRIGHT_TIMEOUT = 30_000;
-export const DEFAULT_PLAYWRIGHT_LAUNCH_TIMEOUT = 3 * 60 * 1000; // 3 minutes

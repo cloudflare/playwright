@@ -17,6 +17,8 @@
 import { setTimeOrigin, startProfiling, stopProfiling } from 'playwright-core/lib/utils';
 
 import { serializeError } from '../util';
+import { registerESMLoader } from './esmLoaderHost';
+import { execArgvWithoutExperimentalLoaderOptions } from '../transform/esmUtils';
 
 import type { EnvProducedPayload, ProcessInitParams, TestInfoErrorImpl } from './ipc';
 
@@ -51,6 +53,13 @@ sendMessageToParent({ method: 'ready' });
 process.on('disconnect', () => gracefullyCloseAndExit(true));
 process.on('SIGINT', () => {});
 process.on('SIGTERM', () => {});
+
+// Clear execArgv immediately, so that the user-code does not inherit our loader.
+process.execArgv = execArgvWithoutExperimentalLoaderOptions();
+
+// Node.js >= 20
+if (process.env.PW_TS_ESM_LOADER_ON)
+  registerESMLoader();
 
 let processRunner: ProcessRunner | undefined;
 let processName: string | undefined;
