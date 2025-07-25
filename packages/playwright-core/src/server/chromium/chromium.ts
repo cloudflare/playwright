@@ -107,7 +107,8 @@ export class Chromium extends BrowserType {
       tracesDir: options.tracesDir || artifactsDir,
       originalLaunchOptions: {},
     };
-    validateBrowserContextOptions(persistent, browserOptions);
+    if (persistent)
+      validateBrowserContextOptions(persistent, browserOptions);
     const browser = await progress.race(CRBrowser.connect(this.attribution.playwright, chromeTransport, browserOptions));
     browser._isCollocatedWithServer = false;
     browser.on(Browser.Events.Disconnected, doCleanup);

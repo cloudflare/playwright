@@ -91,7 +91,8 @@ export class DragManager {
       };
     }
 
-    await this._crPage._page.safeNonStallingEvaluateInAllFrames(`(${setupDragListeners.toString()})()`, 'utility');
+    const scriptSource = `((__name => (${setupDragListeners.toString()}))(t => t))`;
+    await this._crPage._page.safeNonStallingEvaluateInAllFrames(`(${scriptSource})()`, 'utility');
     progress.cleanupWhenAborted(() => this._crPage._page.safeNonStallingEvaluateInAllFrames('window.__cleanupDrag && window.__cleanupDrag()', 'utility'));
 
     client.on('Input.dragIntercepted', onDragIntercepted!);

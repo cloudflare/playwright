@@ -22,6 +22,7 @@ const excludedFiles = [
   'library/snapshotter.spec.ts',
   'library/trace-viewer.spec.ts',
   'library/video.spec.ts',
+  'library/web-socket.spec.ts',
 ];
 
 const sourceTestsDir = path.join(basedir, '..', '..', '..', 'tests');

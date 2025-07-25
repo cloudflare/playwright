@@ -42,8 +42,16 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
     await build({
       root,
       resolve: {
-        alias: name === 'pngjs' ? { 'zlib': 'browserify-zlib' } :
-          { 'pngjs': path.join(basedir, `../src/bundles/pngjs.js` ) },
+        alias: {
+          'node:events': 'events',
+          'node:child_process': 'child_process',
+          'node:path': 'path',
+          'node:fs': 'fs',
+          'node:process': 'process',
+
+          ...(name === 'pngjs' ? { 'zlib': 'browserify-zlib' } :
+          { 'pngjs': path.join(basedir, `../src/bundles/pngjs.js` ) }),
+        },
       },
       build: {
         emptyOutDir: false,
@@ -56,9 +64,14 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
           formats: ['es'],
         },
         rollupOptions: {
-          external: name === 'fs' ? [...external, 'zlib']
-            : name === 'pngjs' ? [...external, 'fs']
-            : [...external, 'fs', 'zlib', 'pngjs'],
+          external: [
+            'formidable',
+            'ansi-styles',
+
+            ...(name === 'fs' ? [...external, 'zlib']
+              : name === 'pngjs' ? [...external, 'fs']
+              : [...external, 'fs', 'zlib', 'pngjs'])
+          ],
           output: {
             dir: path.join(basedir, '../src/bundles'),
             entryFileNames: `${name}.js`,

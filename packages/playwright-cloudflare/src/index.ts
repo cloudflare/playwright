@@ -82,7 +82,7 @@ async function createBrowser(transport: WebSocketTransport, options?: { persiste
     const url = new URL(WS_FAKE_HOST);
     if (options?.persistent)
       url.searchParams.set('persistent', 'true');
-    const browser = await originalConnectOverCDP.call(playwright.chromium, url.toString()) as Browser;
+    const browser = await originalConnectOverCDP.call(playwright.chromium, url.toString(), {}) as Browser;
     browser.sessionId = () => transport.sessionId;
     return browser;
   });
