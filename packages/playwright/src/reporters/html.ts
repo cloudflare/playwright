@@ -57,7 +57,6 @@ class HtmlReporter implements ReporterV2 {
   private _open: string | undefined;
   private _port: number | undefined;
   private _host: string | undefined;
-  private _title: string | undefined;
   private _buildResult: { ok: boolean, singleTestId: string | undefined } | undefined;
   private _topLevelErrors: api.TestError[] = [];
 
@@ -78,13 +77,12 @@ class HtmlReporter implements ReporterV2 {
   }
 
   onBegin(suite: api.Suite) {
-    const { outputFolder, open, attachmentsBaseURL, host, port, title } = this._resolveOptions();
+    const { outputFolder, open, attachmentsBaseURL, host, port } = this._resolveOptions();
     this._outputFolder = outputFolder;
     this._open = open;
     this._host = host;
     this._port = port;
     this._attachmentsBaseURL = attachmentsBaseURL;
-    this._title = title;
     const reportedWarnings = new Set<string>();
     for (const project of this.config.projects) {
       if (this._isSubdirectory(outputFolder, project.outputDir) || this._isSubdirectory(project.outputDir, outputFolder)) {
@@ -104,7 +102,7 @@ class HtmlReporter implements ReporterV2 {
     this.suite = suite;
   }
 
-  _resolveOptions(): { outputFolder: string, open: HtmlReportOpenOption, attachmentsBaseURL: string, host: string | undefined, port: number | undefined, title: string | undefined } {
+  _resolveOptions(): { outputFolder: string, open: HtmlReportOpenOption, attachmentsBaseURL: string, host: string | undefined, port: number | undefined } {
     const outputFolder = reportFolderFromEnv() ?? resolveReporterOutputPath('playwright-report', this._options.configDir, this._options.outputFolder);
     return {
       outputFolder,
@@ -112,7 +110,6 @@ class HtmlReporter implements ReporterV2 {
       attachmentsBaseURL: process.env.PLAYWRIGHT_HTML_ATTACHMENTS_BASE_URL || this._options.attachmentsBaseURL || 'data/',
       host: process.env.PLAYWRIGHT_HTML_HOST || this._options.host,
       port: process.env.PLAYWRIGHT_HTML_PORT ? +process.env.PLAYWRIGHT_HTML_PORT : this._options.port,
-      title: process.env.PLAYWRIGHT_HTML_TITLE || this._options.title,
     };
   }
 
@@ -128,7 +125,14 @@ class HtmlReporter implements ReporterV2 {
   async onEnd(result: api.FullResult) {
     const projectSuites = this.suite.suites;
     await removeFolders([this._outputFolder]);
-    const builder = new HtmlBuilder(this.config, this._outputFolder, this._attachmentsBaseURL, this._title);
+    let noSnippets: boolean | undefined;
+    if (process.env.PLAYWRIGHT_HTML_NO_SNIPPETS === 'false' || process.env.PLAYWRIGHT_HTML_NO_SNIPPETS === '0')
+      noSnippets = false;
+    else if (process.env.PLAYWRIGHT_HTML_NO_SNIPPETS)
+      noSnippets = true;
+    noSnippets = noSnippets || this._options.noSnippets;
+
+    const builder = new HtmlBuilder(this.config, this._outputFolder, this._attachmentsBaseURL, process.env.PLAYWRIGHT_HTML_TITLE || this._options.title, noSnippets);
     this._buildResult = await builder.build(this.config.metadata, projectSuites, result, this._topLevelErrors);
   }
 
@@ -226,10 +230,12 @@ class HtmlBuilder {
   private _hasTraces = false;
   private _attachmentsBaseURL: string;
   private _title: string | undefined;
+  private _noSnippets: boolean;
 
-  constructor(config: api.FullConfig, outputDir: string, attachmentsBaseURL: string, title: string | undefined) {
+  constructor(config: api.FullConfig, outputDir: string, attachmentsBaseURL: string, title: string | undefined, noSnippets: boolean = false) {
     this._config = config;
     this._reportFolder = outputDir;
+    this._noSnippets = noSnippets;
     fs.mkdirSync(this._reportFolder, { recursive: true });
     this._dataZipFile = new yazl.ZipFile();
     this._attachmentsBaseURL = attachmentsBaseURL;
@@ -259,7 +265,8 @@ class HtmlBuilder {
         }
       }
     }
-    createSnippets(this._stepsInFile);
+    if (!this._noSnippets)
+      createSnippets(this._stepsInFile);
 
     let ok = true;
     for (const [fileId, { testFile, testFileSummary }] of data) {
@@ -502,7 +509,15 @@ class HtmlBuilder {
 
   private _serializeAnnotations(annotations: api.TestCase['annotations']): TestAnnotation[] {
     // Annotations can be pushed directly, with a wrong type.
-    return annotations.map(a => ({ type: a.type, description: a.description === undefined ? undefined : String(a.description) }));
+    return annotations.map(a => ({
+      type: a.type,
+      description: a.description === undefined ? undefined : String(a.description),
+      location: a.location ? {
+        file: a.location.file,
+        line: a.location.line,
+        column: a.location.column,
+      } : undefined,
+    }));
   }
 
   private _createTestResult(test: api.TestCase, result: api.TestResult): TestResult {

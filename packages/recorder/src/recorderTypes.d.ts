@@ -43,7 +43,7 @@ export type EventData = {
     | 'pause'
     | 'setMode'
     | 'highlightRequested'
-    | 'fileChanged';
+    | 'languageChanged';
   params: any;
 };
 
@@ -83,12 +83,14 @@ export type SourceHighlight = {
 };
 
 export type Source = {
+  isPrimary: boolean;
   isRecorded: boolean;
   id: string;
   label: string;
   text: string;
   language: Language;
   highlight: SourceHighlight[];
+  timestamp: number;
   revealLine?: number;
   // used to group the language generators
   group?: string;
@@ -101,10 +103,10 @@ declare global {
   interface Window {
     playwrightSetMode: (mode: Mode) => void;
     playwrightSetPaused: (paused: boolean) => void;
-    playwrightSetSources: (sources: Source[], primaryPageURL: string | undefined) => void;
+    playwrightSetSources: (sources: Source[]) => void;
+    playwrightSetPageURL: (url: string | undefined) => void;
     playwrightSetOverlayVisible: (visible: boolean) => void;
     playwrightUpdateLogs: (callLogs: CallLog[]) => void;
-    playwrightSetRunningFile: (file: string | undefined) => void;
     playwrightElementPicked: (elementInfo: ElementInfo, userGesture?: boolean) => void;
     playwrightSourcesEchoForTest: Source[];
     dispatch(data: any): Promise<void>;

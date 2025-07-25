@@ -22,7 +22,8 @@ import './headerView.css';
 import * as icons from './icons';
 import { Link, navigate, SearchParamsContext } from './links';
 import { statusIcon } from './statusIcon';
-import { filterWithToken } from './filter';
+import { filterWithQuery } from './filter';
+import { linkifyText } from '@web/renderUtils';
 
 export const HeaderView: React.FC<{
   title: string | undefined,
@@ -35,7 +36,7 @@ export const HeaderView: React.FC<{
       <div style={{ flex: 'auto' }}></div>
       {rightSuperHeader}
     </div>
-    {title && <div className='header-title'>{title}</div>}
+    {title && <div className='header-title'>{linkifyText(title)}</div>}
   </div>;
 };
 
@@ -60,13 +61,16 @@ export const GlobalFilterView: React.FC<{
         event => {
           event.preventDefault();
           const url = new URL(window.location.href);
-          url.hash = filterText ? '?' + new URLSearchParams({ q: filterText }) : '';
+          // If <form/> onSubmit happens immediately after <input/> onChange, the filterText state is not updated yet.
+          // Using FormData here is a workaround to get the latest value.
+          const q = new FormData(event.target as HTMLFormElement).get('q') as string;
+          url.hash = q ? '?' + new URLSearchParams({ q }) : '';
           navigate(url);
         }
       }>
         {icons.search()}
         {/* Use navigationId to reset defaultValue */}
-        <input spellCheck={false} className='form-control subnav-search-input input-contrast width-full' value={filterText} onChange={e => {
+        <input name='q' spellCheck={false} className='form-control subnav-search-input input-contrast width-full' value={filterText} onChange={e => {
           setFilterText(e.target.value);
         }}></input>
       </form>
@@ -79,21 +83,20 @@ const StatsNavView: React.FC<{
 }> = ({ stats }) => {
   const searchParams = React.useContext(SearchParamsContext);
   const q = searchParams.get('q')?.toString() || '';
-  const tokens = q.split(' ');
   return <nav>
     <Link className='subnav-item' href='#?'>
       All <span className='d-inline counter'>{stats.total - stats.skipped}</span>
     </Link>
-    <Link className='subnav-item' click={filterWithToken(tokens, 's:passed', false)} ctrlClick={filterWithToken(tokens, 's:passed', true)}>
+    <Link className='subnav-item' click={filterWithQuery(q, 's:passed', false)} ctrlClick={filterWithQuery(q, 's:passed', true)}>
       Passed <span className='d-inline counter'>{stats.expected}</span>
     </Link>
-    <Link className='subnav-item' click={filterWithToken(tokens, 's:failed', false)} ctrlClick={filterWithToken(tokens, 's:failed', true)}>
+    <Link className='subnav-item' click={filterWithQuery(q, 's:failed', false)} ctrlClick={filterWithQuery(q, 's:failed', true)}>
       {!!stats.unexpected && statusIcon('unexpected')} Failed <span className='d-inline counter'>{stats.unexpected}</span>
     </Link>
-    <Link className='subnav-item' click={filterWithToken(tokens, 's:flaky', false)} ctrlClick={filterWithToken(tokens, 's:flaky', true)}>
+    <Link className='subnav-item' click={filterWithQuery(q, 's:flaky', false)} ctrlClick={filterWithQuery(q, 's:flaky', true)}>
       {!!stats.flaky && statusIcon('flaky')} Flaky <span className='d-inline counter'>{stats.flaky}</span>
     </Link>
-    <Link className='subnav-item' click={filterWithToken(tokens, 's:skipped', false)} ctrlClick={filterWithToken(tokens, 's:skipped', true)}>
+    <Link className='subnav-item' click={filterWithQuery(q, 's:skipped', false)} ctrlClick={filterWithQuery(q, 's:skipped', true)}>
       Skipped <span className='d-inline counter'>{stats.skipped}</span>
     </Link>
   </nav>;

@@ -1505,6 +1505,39 @@ test('merge-reports should throw if report version is from the future', async ({
 
 });
 
+test('merge-reports should merge old attachments (pre-1.53)', async ({ runInlineTest, mergeReports }) => {
+  const reportDir = test.info().outputPath('blob-report');
+
+  const files = {
+    'playwright.config.ts': `
+      module.exports = {
+        reporter: [['blob']]
+      };
+    `,
+    'tests/a.test.js': `
+      import { test, expect } from '@playwright/test';
+      test('test 1', async ({}) => {});
+    `,
+    'merge.config.ts': `module.exports = {
+      testDir: 'mergeRoot',
+     };`,
+  };
+
+  await runInlineTest(files);
+  const reportFiles = await fs.promises.readdir(reportDir);
+  expect(reportFiles).toEqual(['report.zip']);
+
+  await fs.promises.copyFile(path.join(__dirname, '../assets/blob-1.52.zip'), path.join(reportDir, 'blob-1.42.zip'));
+
+  const { exitCode } = await mergeReports(reportDir, { 'PLAYWRIGHT_HTML_OPEN': 'never' }, { additionalArgs: ['--reporter', 'html', '--config', 'merge.config.ts'] });
+  expect(exitCode).toBe(0);
+
+  const assets = await fs.promises.readdir(path.join(test.info().outputPath('playwright-report'), 'data'));
+  expect(new Set(assets)).toEqual(new Set([
+    '4b6deb4234e5c2dc92efc6e604624e9481e8ae57.png', // screenshot
+  ]));
+});
+
 test('should merge blob reports with same name', async ({ runInlineTest, mergeReports, showReport, page }) => {
   const files = {
     'playwright.config.ts': `
@@ -1725,6 +1758,9 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
           console.log('test:', test.location.file);
           console.log('test title:', test.titlePath()[2]);
         }
+        onTestEnd(test) {
+          console.log('annotations:', test.annotations.map(a => 'type: ' + a.type + ', description: ' + a.description + ', file: ' + a.location.file).join(','));
+        }
       };
     `,
     'merge.config.ts': `module.exports = {
@@ -1736,7 +1772,7 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
     };`,
     'dir1/tests1/a.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 1', async ({}) => { });
+      test('math 1', { annotation: { type: 'warning', description: 'Some warning' } }, async ({}) => { });
     `,
   };
   await runInlineTest(files1, { workers: 1 }, undefined, { additionalArgs: ['--config', test.info().outputPath('dir1/playwright.config.ts')] });
@@ -1747,7 +1783,7 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
     };`,
     'dir2/tests2/b.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 2', async ({}) => { });
+      test('math 2', { annotation: { type: 'issue' } }, async ({}) => { });
     `,
   };
   await runInlineTest(files2, { workers: 1 }, undefined, { additionalArgs: ['--config', test.info().outputPath('dir2/playwright.config.ts')] });
@@ -1769,12 +1805,16 @@ test('merge reports with different rootDirs and path separators', async ({ runIn
 
   {
     const { exitCode, output } = await mergeReports(allReportsDir, undefined, { additionalArgs: ['--config', 'merge.config.ts'] });
+    const testPath1 = test.info().outputPath('mergeRoot', 'tests1', 'a.test.js');
+    const testPath2 = test.info().outputPath('mergeRoot', 'tests2', 'b.test.js');
     expect(exitCode).toBe(0);
     expect(output).toContain(`rootDir: ${test.info().outputPath('mergeRoot')}`);
-    expect(output).toContain(`test: ${test.info().outputPath('mergeRoot', 'tests1', 'a.test.js')}`);
+    expect(output).toContain(`test: ${testPath1}`);
     expect(output).toContain(`test title: ${'tests1' + path.sep + 'a.test.js'}`);
-    expect(output).toContain(`test: ${test.info().outputPath('mergeRoot', 'tests2', 'b.test.js')}`);
+    expect(output).toContain(`annotations: type: warning, description: Some warning, file: ${testPath1}`);
+    expect(output).toContain(`test: ${testPath2}`);
     expect(output).toContain(`test title: ${'tests2' + path.sep + 'b.test.js'}`);
+    expect(output).toContain(`annotations: type: issue, description: undefined, file: ${testPath2}`);
   }
 });
 
@@ -1790,6 +1830,9 @@ test('merge reports without --config preserves path separators', async ({ runInl
           console.log('test:', test.location.file);
           console.log('test title:', test.titlePath()[2]);
         }
+        onTestEnd(test) {
+          console.log('annotations:', test.annotations.map(a => 'type: ' + a.type + ', description: ' + a.description + ', file: ' + a.location.file).join(','));
+        }
       };
     `,
     'dir1/playwright.config.ts': `module.exports = {
@@ -1797,11 +1840,11 @@ test('merge reports without --config preserves path separators', async ({ runInl
     };`,
     'dir1/tests1/a.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 1', async ({}) => { });
+      test('math 1', { annotation: { type: 'warning', description: 'Some warning' } }, async ({}) => { });
     `,
     'dir1/tests2/b.test.js': `
       import { test, expect } from '@playwright/test';
-      test('math 2', async ({}) => { });
+      test('math 2', { annotation: { type: 'issue' } }, async ({}) => { });
     `,
   };
   await runInlineTest(files1, { workers: 1 }, undefined, { additionalArgs: ['--config', test.info().outputPath('dir1/playwright.config.ts')] });
@@ -1821,11 +1864,15 @@ test('merge reports without --config preserves path separators', async ({ runInl
   const { exitCode, output } = await mergeReports(allReportsDir, undefined, { additionalArgs: ['--reporter', './echo-reporter.js'] });
   expect(exitCode).toBe(0);
   const otherSeparator = path.sep === '/' ? '\\' : '/';
+  const testPath1 = test.info().outputPath('dir1', 'tests1', 'a.test.js').replaceAll(path.sep, otherSeparator);
+  const testPath2 = test.info().outputPath('dir1', 'tests2', 'b.test.js').replaceAll(path.sep, otherSeparator);
   expect(output).toContain(`rootDir: ${test.info().outputPath('dir1').replaceAll(path.sep, otherSeparator)}`);
-  expect(output).toContain(`test: ${test.info().outputPath('dir1', 'tests1', 'a.test.js').replaceAll(path.sep, otherSeparator)}`);
+  expect(output).toContain(`test: ${testPath1}`);
   expect(output).toContain(`test title: ${'tests1' + otherSeparator + 'a.test.js'}`);
-  expect(output).toContain(`test: ${test.info().outputPath('dir1', 'tests2', 'b.test.js').replaceAll(path.sep, otherSeparator)}`);
+  expect(output).toContain(`annotations: type: warning, description: Some warning, file: ${testPath1}`);
+  expect(output).toContain(`test: ${testPath2}`);
   expect(output).toContain(`test title: ${'tests2' + otherSeparator + 'b.test.js'}`);
+  expect(output).toContain(`annotations: type: issue, description: undefined, file: ${testPath2}`);
 });
 
 test('merge reports should preserve attachments', async ({ runInlineTest, mergeReports, showReport, page }) => {

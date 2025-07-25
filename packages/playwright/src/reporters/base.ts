@@ -58,23 +58,39 @@ export type Screen = {
   colors: Colors;
   isTTY: boolean;
   ttyWidth: number;
+  ttyHeight: number;
 };
+
+const DEFAULT_TTY_WIDTH = 100;
+const DEFAULT_TTY_HEIGHT = 40;
 
 // Output goes to terminal.
 export const terminalScreen: Screen = (() => {
   let isTTY = !!process.stdout.isTTY;
   let ttyWidth = process.stdout.columns || 0;
+  let ttyHeight = process.stdout.rows || 0;
   if (process.env.PLAYWRIGHT_FORCE_TTY === 'false' || process.env.PLAYWRIGHT_FORCE_TTY === '0') {
     isTTY = false;
     ttyWidth = 0;
+    ttyHeight = 0;
   } else if (process.env.PLAYWRIGHT_FORCE_TTY === 'true' || process.env.PLAYWRIGHT_FORCE_TTY === '1') {
     isTTY = true;
-    ttyWidth = process.stdout.columns || 100;
+    ttyWidth = process.stdout.columns || DEFAULT_TTY_WIDTH;
+    ttyHeight = process.stdout.rows || DEFAULT_TTY_HEIGHT;
   } else if (process.env.PLAYWRIGHT_FORCE_TTY) {
     isTTY = true;
-    ttyWidth = +process.env.PLAYWRIGHT_FORCE_TTY;
+    const sizeMatch = process.env.PLAYWRIGHT_FORCE_TTY.match(/^(\d+)x(\d+)$/);
+    if (sizeMatch) {
+      ttyWidth = +sizeMatch[1];
+      ttyHeight = +sizeMatch[2];
+    } else {
+      ttyWidth = +process.env.PLAYWRIGHT_FORCE_TTY;
+      ttyHeight = DEFAULT_TTY_HEIGHT;
+    }
     if (isNaN(ttyWidth))
-      ttyWidth = 100;
+      ttyWidth = DEFAULT_TTY_WIDTH;
+    if (isNaN(ttyHeight))
+      ttyHeight = DEFAULT_TTY_HEIGHT;
   }
 
   let useColors = isTTY;
@@ -89,6 +105,7 @@ export const terminalScreen: Screen = (() => {
     resolveFiles: 'cwd',
     isTTY,
     ttyWidth,
+    ttyHeight,
     colors
   };
 })();
@@ -98,6 +115,7 @@ export const nonTerminalScreen: Screen = {
   colors: terminalScreen.colors,
   isTTY: false,
   ttyWidth: 0,
+  ttyHeight: 0,
   resolveFiles: 'rootDir',
 };
 
@@ -106,6 +124,7 @@ export const internalScreen: Screen = {
   colors: realColors,
   isTTY: false,
   ttyWidth: 0,
+  ttyHeight: 0,
   resolveFiles: 'rootDir',
 };
 
@@ -335,29 +354,49 @@ export function formatFailure(screen: Screen, config: FullConfig, test: TestCase
       resultLines.push(screen.colors.gray(separator(screen, `    Retry #${result.retry}`)));
     }
     resultLines.push(...errors.map(error => '\n' + error.message));
-    for (let i = 0; i < result.attachments.length; ++i) {
-      const attachment = result.attachments[i];
+    const attachmentGroups = groupAttachments(result.attachments);
+    for (let i = 0; i < attachmentGroups.length; ++i) {
+      const attachment = attachmentGroups[i];
       if (attachment.name === 'error-context' && attachment.path) {
         resultLines.push('');
         resultLines.push(screen.colors.dim(`    Error Context: ${relativeFilePath(screen, config, attachment.path)}`));
         continue;
       }
+
       if (attachment.name.startsWith('_'))
         continue;
+
       const hasPrintableContent = attachment.contentType.startsWith('text/');
       if (!attachment.path && !hasPrintableContent)
         continue;
+
       resultLines.push('');
-      resultLines.push(screen.colors.cyan(separator(screen, `    attachment #${i + 1}: ${attachment.name} (${attachment.contentType})`)));
-      if (attachment.path) {
-        const relativePath = path.relative(process.cwd(), attachment.path);
-        resultLines.push(screen.colors.cyan(`    ${relativePath}`));
+      resultLines.push(screen.colors.dim(separator(screen, `    attachment #${i + 1}: ${screen.colors.bold(attachment.name)} (${attachment.contentType})`)));
+
+      if (attachment.actual?.path) {
+        if (attachment.expected?.path) {
+          const expectedPath = relativeFilePath(screen, config, attachment.expected.path);
+          resultLines.push(screen.colors.dim(`    Expected: ${expectedPath}`));
+        }
+        const actualPath = relativeFilePath(screen, config, attachment.actual.path);
+        resultLines.push(screen.colors.dim(`    Received: ${actualPath}`));
+        if (attachment.previous?.path) {
+          const previousPath = relativeFilePath(screen, config, attachment.previous.path);
+          resultLines.push(screen.colors.dim(`    Previous: ${previousPath}`));
+        }
+        if (attachment.diff?.path) {
+          const diffPath = relativeFilePath(screen, config, attachment.diff.path);
+          resultLines.push(screen.colors.dim(`    Diff:     ${diffPath}`));
+        }
+      } else if (attachment.path) {
+        const relativePath = relativeFilePath(screen, config, attachment.path);
+        resultLines.push(screen.colors.dim(`    ${relativePath}`));
         // Make this extensible
         if (attachment.name === 'trace') {
           const packageManagerCommand = getPackageManagerExecCommand();
-          resultLines.push(screen.colors.cyan(`    Usage:`));
+          resultLines.push(screen.colors.dim(`    Usage:`));
           resultLines.push('');
-          resultLines.push(screen.colors.cyan(`        ${packageManagerCommand} playwright show-trace ${quotePathIfNeeded(relativePath)}`));
+          resultLines.push(screen.colors.dim(`        ${packageManagerCommand} playwright show-trace ${quotePathIfNeeded(relativePath)}`));
           resultLines.push('');
         }
       } else {
@@ -366,10 +405,10 @@ export function formatFailure(screen: Screen, config: FullConfig, test: TestCase
           if (text.length > 300)
             text = text.slice(0, 300) + '...';
           for (const line of text.split('\n'))
-            resultLines.push(screen.colors.cyan(`    ${line}`));
+            resultLines.push(screen.colors.dim(`    ${line}`));
         }
       }
-      resultLines.push(screen.colors.cyan(separator(screen, '   ')));
+      resultLines.push(screen.colors.dim(separator(screen, '   ')));
     }
     lines.push(...resultLines);
   }
@@ -513,7 +552,7 @@ export function separator(screen: Screen, text: string = ''): string {
   if (text)
     text += ' ';
   const columns = Math.min(100, screen.ttyWidth || 100);
-  return text + screen.colors.dim('─'.repeat(Math.max(0, columns - text.length)));
+  return text + screen.colors.dim('─'.repeat(Math.max(0, columns - stripAnsiEscapes(text).length)));
 }
 
 function indent(lines: string, tab: string) {
@@ -620,4 +659,47 @@ export function resolveOutputFile(reporterName: string, options: {
   outputFile = path.resolve(outputDir, reportName);
 
   return { outputFile, outputDir };
+}
+
+type TestAttachment = TestResult['attachments'][number];
+
+type TestAttachmentGroup = TestAttachment & {
+  expected?: TestAttachment;
+  actual?: TestAttachment;
+  diff?: TestAttachment;
+  previous?: TestAttachment;
+};
+
+function groupAttachments(attachments: TestResult['attachments']): TestAttachmentGroup[] {
+  const result: TestAttachmentGroup[] = [];
+  const attachmentsByPrefix = new Map<string, TestAttachment>();
+  for (const attachment of attachments) {
+    if (!attachment.path) {
+      result.push(attachment);
+      continue;
+    }
+
+    const match = attachment.name.match(/^(.*)-(expected|actual|diff|previous)(\.[^.]+)?$/);
+    if (!match) {
+      result.push(attachment);
+      continue;
+    }
+
+    const [, name, category] = match;
+    let group: TestAttachmentGroup | undefined = attachmentsByPrefix.get(name);
+    if (!group) {
+      group = { ...attachment, name };
+      attachmentsByPrefix.set(name, group);
+      result.push(group);
+    }
+    if (category === 'expected')
+      group.expected = attachment;
+    else if (category === 'actual')
+      group.actual = attachment;
+    else if (category === 'diff')
+      group.diff = attachment;
+    else if (category === 'previous')
+      group.previous = attachment;
+  }
+  return result;
 }

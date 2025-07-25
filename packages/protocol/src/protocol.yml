@@ -223,6 +223,8 @@ SetNetworkCookie:
       - Strict
       - Lax
       - None
+    partitionKey: string?
+    _crHasCrossSiteAncestor: boolean?
 
 
 NetworkCookie:
@@ -241,6 +243,8 @@ NetworkCookie:
       - Strict
       - Lax
       - None
+    partitionKey: string?
+    _crHasCrossSiteAncestor: boolean?
 
 
 NameValue:
@@ -362,7 +366,7 @@ APIRequestContext:
   commands:
 
     fetch:
-      title: Fetch "{url}"
+      title: '{method} "{url}"'
       parameters:
         url: string
         encodedParams: string?
@@ -787,8 +791,8 @@ Playwright:
     chromium: BrowserType
     firefox: BrowserType
     webkit: BrowserType
-    bidiChromium: BrowserType
-    bidiFirefox: BrowserType
+    _bidiChromium: BrowserType
+    _bidiFirefox: BrowserType
     android: Android
     electron: Electron
     utils: LocalUtils?
@@ -1117,9 +1121,8 @@ Browser:
       returns:
         context: BrowserContext
 
-    stopPendingOperations:
+    disconnectFromReusedContext:
       internal: true
-      title: Stop pending operations
       parameters:
         reason: string
 
@@ -1359,6 +1362,11 @@ BrowserContext:
           literals:
           - inspecting
           - recording
+        recorderMode:
+          type: enum?
+          literals:
+          - default
+          - api
         pauseOnNextStatement: boolean?
         testIdAttributeName: string?
         launchOptions: json?
@@ -1368,6 +1376,9 @@ BrowserContext:
         outputFile: string?
         handleSIGINT: boolean?
         omitCallTracking: boolean?
+
+    disableRecorder:
+      internal: true
 
     newCDPSession:
       internal: true
@@ -1531,6 +1542,17 @@ BrowserContext:
       parameters:
         response: Response
         page: Page?
+
+    recorderEvent:
+      parameters:
+        event:
+          type: enum
+          literals:
+          - actionAdded
+          - actionUpdated
+          - signalAdded
+        data: json
+        page: Page
 
 Page:
   type: interface
@@ -2285,6 +2307,13 @@ Frame:
       returns:
         element: ElementHandle
 
+    generateLocatorString:
+      internal: true
+      parameters:
+        selector: string
+      returns:
+        value: string?
+
     highlight:
       internal: true
       parameters:
@@ -2408,6 +2437,7 @@ Frame:
     isHidden:
       title: Is hidden
       parameters:
+        # Note: compared to other isFoo methods, isHidden is a one-shot operation without a timeout.
         selector: string
         strict: boolean?
       returns:
@@ -2418,6 +2448,7 @@ Frame:
     isVisible:
       title: Is visible
       parameters:
+        # Note: compared to other isFoo methods, isVisible is a one-shot operation without a timeout.
         selector: string
         strict: boolean?
       returns:
@@ -2615,7 +2646,7 @@ Frame:
     waitForTimeout:
       title: Wait for timeout
       parameters:
-        timeout: number
+        waitTimeout: number
       flags:
         snapshot: true
 
@@ -2655,7 +2686,7 @@ Frame:
     expect:
       title: Expect "{expression}"
       parameters:
-        selector: string
+        selector: string?
         expression: string
         expressionArg: json?
         expectedText:
@@ -2932,11 +2963,6 @@ ElementHandle:
       flags:
         slowMo: true
         snapshot: true
-
-    generateLocatorString:
-      internal: true
-      returns:
-        value: string?
 
     getAttribute:
       internal: true
