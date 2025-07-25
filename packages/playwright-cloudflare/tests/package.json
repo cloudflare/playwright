@@ -7,7 +7,7 @@
   "description": "",
   "devDependencies": {
     "@cloudflare/playwright": "file:..",
-    "@playwright/test": "^1.51.1",
+    "@playwright/test": "^1.54.1",
     "wrangler": "^4.19.1"
   }
 }

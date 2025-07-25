@@ -203,7 +203,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
         this._routes.splice(index, 1);
       const handled = await routeHandler.handle(route);
       if (!this._routes.length)
-        this._wrapApiCall(() => this._updateInterceptionPatterns(), { internal: true }).catch(() => {});
+        this._updateInterceptionPatterns().catch(() => {});
       if (handled)
         return;
     }
@@ -398,7 +398,7 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     } finally {
       if (remove)
         this._locatorHandlers.delete(uid);
-      this._wrapApiCall(() => this._channel.resolveLocatorHandlerNoReply({ uid, remove }), { internal: true }).catch(() => {});
+      this._channel.resolveLocatorHandlerNoReply({ uid, remove }).catch(() => {});
     }
   }
 
@@ -561,11 +561,11 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
 
   private async _unrouteInternal(removed: RouteHandler[], remaining: RouteHandler[], behavior?: 'wait'|'ignoreErrors'|'default'): Promise<void> {
     this._routes = remaining;
+    if (behavior && behavior !== 'default') {
+      const promises = removed.map(routeHandler => routeHandler.stop(behavior));
+      await Promise.all(promises);
+    }
     await this._updateInterceptionPatterns();
-    if (!behavior || behavior === 'default')
-      return;
-    const promises = removed.map(routeHandler => routeHandler.stop(behavior));
-    await Promise.all(promises);
   }
 
   private async _updateInterceptionPatterns() {

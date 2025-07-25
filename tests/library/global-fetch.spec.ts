@@ -70,7 +70,7 @@ it('should support global timeout option', async ({ playwright, server }) => {
   const request = await playwright.request.newContext({ timeout: 100 });
   server.setRoute('/empty.html', (req, res) => {});
   const error = await request.get(server.EMPTY_PAGE).catch(e => e);
-  expect(error.message).toContain('Request timed out after 100ms');
+  expect(error.message).toContain('apiRequestContext.get: Timeout 100ms exceeded');
   await request.dispose();
 });
 
@@ -283,7 +283,7 @@ it('should abort requests when context is disposed', async ({ playwright, server
   ]);
   for (const result of results.slice(0, -1)) {
     expect(result instanceof Error).toBeTruthy();
-    expect(result.message).toContain(kTargetClosedErrorMessage);
+    expect(result.message).toContain('Request context disposed.');
   }
   await connectionClosed;
   await request.dispose();

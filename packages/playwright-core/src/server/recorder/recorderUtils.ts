@@ -15,8 +15,10 @@
  */
 
 import { renderTitleForCall } from '../../utils/isomorphic/protocolFormatter';
+import { monotonicTime, quoteCSSAttributeValue  } from '../../utils';
+import { raceAgainstDeadline } from '../../utils/isomorphic/timeoutRunner';
+import { Frame } from '../frames';
 
-import type { Frame } from '../frames';
 import type { CallMetadata } from '../instrumentation';
 import type { Page } from '../page';
 import type * as actions from '@recorder/actions';
@@ -71,13 +73,25 @@ export async function frameForAction(pageAliases: Map<Page, string>, actionInCon
   return result.frame;
 }
 
+function isSameAction(a: actions.ActionInContext, b: actions.ActionInContext): boolean {
+  return a.action.name === b.action.name && a.frame.pageAlias === b.frame.pageAlias && a.frame.framePath.join('|') === b.frame.framePath.join('|');
+}
+
+function isSameSelector(action: actions.ActionInContext, lastAction: actions.ActionInContext): boolean {
+  return 'selector' in action.action && 'selector' in lastAction.action && action.action.selector === lastAction.action.selector;
+}
+
+export function shouldMergeAction(action: actions.ActionInContext, lastAction: actions.ActionInContext | undefined): boolean {
+  if (!lastAction)
+    return false;
+  return isSameAction(action, lastAction) && (action.action.name === 'navigate' || (action.action.name === 'fill' && isSameSelector(action, lastAction)));
+}
+
 export function collapseActions(actions: actions.ActionInContext[]): actions.ActionInContext[] {
   const result: actions.ActionInContext[] = [];
   for (const action of actions) {
     const lastAction = result[result.length - 1];
-    const isSameAction = lastAction && lastAction.action.name === action.action.name && lastAction.frame.pageAlias === action.frame.pageAlias && lastAction.frame.framePath.join('|') === action.frame.framePath.join('|');
-    const isSameSelector = lastAction && 'selector' in lastAction.action && 'selector' in action.action && action.action.selector === lastAction.action.selector;
-    const shouldMerge = isSameAction && (action.action.name === 'navigate' || (action.action.name === 'fill' && isSameSelector));
+    const shouldMerge = shouldMergeAction(action, lastAction);
     if (!shouldMerge) {
       result.push(action);
       continue;
@@ -87,4 +101,40 @@ export function collapseActions(actions: actions.ActionInContext[]): actions.Act
     result[result.length - 1].startTime = startTime;
   }
   return result;
+}
+
+export async function generateFrameSelector(frame: Frame): Promise<string[]> {
+  const selectorPromises: Promise<string>[] = [];
+  while (frame) {
+    const parent = frame.parentFrame();
+    if (!parent)
+      break;
+    selectorPromises.push(generateFrameSelectorInParent(parent, frame));
+    frame = parent;
+  }
+  const result = await Promise.all(selectorPromises);
+  return result.reverse();
+}
+
+async function generateFrameSelectorInParent(parent: Frame, frame: Frame): Promise<string> {
+  const result = await raceAgainstDeadline(async () => {
+    try {
+      const frameElement = await frame.frameElement();
+      if (!frameElement || !parent)
+        return;
+      const utility = await parent._utilityContext();
+      const injected = await utility.injectedScript();
+      const selector = await injected.evaluate((injected, element) => {
+        return injected.generateSelectorSimple(element as Element);
+      }, frameElement);
+      return selector;
+    } catch (e) {
+    }
+  }, monotonicTime() + 2000);
+  if (!result.timedOut && result.result)
+    return result.result;
+
+  if (frame.name())
+    return `iframe[name=${quoteCSSAttributeValue(frame.name())}]`;
+  return `iframe[src=${quoteCSSAttributeValue(frame.url())}]`;
 }

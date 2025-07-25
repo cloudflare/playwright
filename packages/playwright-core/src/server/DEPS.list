@@ -6,6 +6,7 @@
 ../utilsBundle.ts
 ../zipBundle.ts
 ./
+./codegen/
 ./isomorphic/
 ./har/
 ./recorder/

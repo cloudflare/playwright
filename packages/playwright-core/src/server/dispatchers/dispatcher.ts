@@ -18,13 +18,14 @@ import { EventEmitter } from 'events';
 
 import { eventsHelper } from '../utils/eventsHelper';
 import { ValidationError, createMetadataValidator, findValidator  } from '../../protocol/validator';
-import { LongStandingScope, assert, monotonicTime, rewriteErrorMessage } from '../../utils';
+import { assert, monotonicTime, rewriteErrorMessage } from '../../utils';
 import { isUnderTest } from '../utils/debug';
 import { TargetClosedError, isTargetClosedError, serializeError } from '../errors';
-import { SdkObject } from '../instrumentation';
+import { createRootSdkObject, SdkObject } from '../instrumentation';
 import { isProtocolError } from '../protocolError';
 import { compressCallLog } from '../callLog';
 import { methodMetainfo } from '../../utils/isomorphic/protocolMetainfo';
+import { Progress, ProgressController } from '../progress';
 
 import type { CallMetadata } from '../instrumentation';
 import type { PlaywrightDispatcher } from './playwrightDispatcher';
@@ -45,20 +46,18 @@ function maxDispatchersForBucket(gcBucket: string) {
   }[gcBucket] ?? 10000;
 }
 
-export class Dispatcher<Type extends { guid: string }, ChannelType, ParentScopeType extends DispatcherScope> extends EventEmitter implements channels.Channel {
+export class Dispatcher<Type extends SdkObject, ChannelType, ParentScopeType extends DispatcherScope> extends EventEmitter implements channels.Channel {
   readonly connection: DispatcherConnection;
-  // Parent is always "isScope".
   private _parent: ParentScopeType | undefined;
-  // Only "isScope" channel owners have registered dispatchers inside.
   private _dispatchers = new Map<string, DispatcherScope>();
   protected _disposed = false;
   protected _eventListeners: RegisteredListener[] = [];
+  private _activeProgressControllers = new Set<ProgressController>();
 
   readonly _guid: string;
   readonly _type: string;
   readonly _gcBucket: string;
   _object: Type;
-  private _openScope = new LongStandingScope();
 
   constructor(parent: ParentScopeType | DispatcherConnection, object: Type, type: string, initializer: channels.InitializerTraits<ChannelType>, gcBucket?: string) {
     super();
@@ -101,20 +100,13 @@ export class Dispatcher<Type extends { guid: string }, ChannelType, ParentScopeT
     this.connection.sendAdopt(this, child);
   }
 
-  async _handleCommand(callMetadata: CallMetadata, method: string, validParams: any) {
-    const commandPromise = (this as any)[method](validParams, callMetadata);
-
-    // workaround to prevent the following warning from occuring in workers runtime:
-    // A promise rejection was handled asynchronously. This warning occurs when attaching a catch handler to a promise after it rejected. (rejection #1)
-    if (callMetadata.potentiallyClosesScope)
-      return await commandPromise;
-
+  async _runCommand(callMetadata: CallMetadata, method: string, validParams: any) {
+    const controller = new ProgressController(callMetadata, this._object);
+    this._activeProgressControllers.add(controller);
     try {
-      return await this._openScope.race(commandPromise);
-    } catch (e) {
-      if (callMetadata.potentiallyClosesScope && isTargetClosedError(e))
-        return await commandPromise;
-      throw e;
+      return await controller.run(progress => (this as any)[method](validParams, progress), validParams?.timeout);
+    } finally {
+      this._activeProgressControllers.delete(controller);
     }
   }
 
@@ -136,8 +128,23 @@ export class Dispatcher<Type extends { guid: string }, ChannelType, ParentScopeT
   protected _onDispose() {
   }
 
+  async stopPendingOperations(error: Error) {
+    const controllers: ProgressController[] = [];
+    const collect = (dispatcher: DispatcherScope) => {
+      controllers.push(...dispatcher._activeProgressControllers);
+      for (const child of [...dispatcher._dispatchers.values()])
+        collect(child);
+    };
+    collect(this);
+    await Promise.all(controllers.map(controller => controller.abort(error)));
+  }
+
   private _disposeRecursively(error: Error) {
     assert(!this._disposed, `${this._guid} is disposed more than once`);
+    for (const controller of this._activeProgressControllers) {
+      if (!controller.metadata.potentiallyClosesScope)
+        controller.abort(error).catch(() => {});
+    }
     this._onDispose();
     this._disposed = true;
     eventsHelper.removeEventListeners(this._eventListeners);
@@ -153,7 +160,6 @@ export class Dispatcher<Type extends { guid: string }, ChannelType, ParentScopeT
     for (const dispatcher of [...this._dispatchers.values()])
       dispatcher._disposeRecursively(error);
     this._dispatchers.clear();
-    this._openScope.close(error);
   }
 
   _debugScopeState(): any {
@@ -168,16 +174,17 @@ export class Dispatcher<Type extends { guid: string }, ChannelType, ParentScopeT
   }
 }
 
-export type DispatcherScope = Dispatcher<any, any, any>;
+export type DispatcherScope = Dispatcher<SdkObject, any, any>;
 
-export class RootDispatcher extends Dispatcher<{ guid: '' }, any, any> {
+export class RootDispatcher extends Dispatcher<SdkObject, any, any> {
   private _initialized = false;
 
   constructor(connection: DispatcherConnection, private readonly createPlaywright?: (scope: RootDispatcher, options: channels.RootInitializeParams) => Promise<PlaywrightDispatcher>) {
-    super(connection, { guid: '' }, 'Root', {});
+    super(connection, createRootSdkObject(), 'Root', {});
   }
 
-  async initialize(params: channels.RootInitializeParams): Promise<channels.RootInitializeResult> {
+  async initialize(params: channels.RootInitializeParams, progress: Progress): Promise<channels.RootInitializeResult> {
+    // Note: progress is deliberately ignored here.
     assert(this.createPlaywright);
     assert(!this._initialized);
     this._initialized = true;
@@ -317,16 +324,16 @@ export class DispatcherConnection {
       validMetadata.internal = true;
     }
 
-    const sdkObject = dispatcher._object instanceof SdkObject ? dispatcher._object : undefined;
+    const sdkObject = dispatcher._object;
     const callMetadata: CallMetadata = {
       id: `call@${id}`,
       location: validMetadata.location,
       title: validMetadata.title,
       internal: validMetadata.internal,
       stepId: validMetadata.stepId,
-      objectId: sdkObject?.guid,
-      pageId: sdkObject?.attribution?.page?.guid,
-      frameId: sdkObject?.attribution?.frame?.guid,
+      objectId: sdkObject.guid,
+      pageId: sdkObject.attribution?.page?.guid,
+      frameId: sdkObject.attribution?.frame?.guid,
       startTime: monotonicTime(),
       endTime: 0,
       type: dispatcher._type,
@@ -335,7 +342,7 @@ export class DispatcherConnection {
       log: [],
     };
 
-    if (sdkObject && params?.info?.waitId) {
+    if (params?.info?.waitId) {
       // Process logs for waitForNavigation/waitForLoadState/etc.
       const info = params.info;
       switch (info.phase) {
@@ -362,32 +369,30 @@ export class DispatcherConnection {
       }
     }
 
-    await sdkObject?.instrumentation.onBeforeCall(sdkObject, callMetadata);
+    await sdkObject.instrumentation.onBeforeCall(sdkObject, callMetadata);
     const response: any = { id };
     try {
-      const result = await dispatcher._handleCommand(callMetadata, method, validParams);
+      const result = await dispatcher._runCommand(callMetadata, method, validParams);
       const validator = findValidator(dispatcher._type, method, 'Result');
       response.result = validator(result, '', this._validatorToWireContext());
       callMetadata.result = result;
     } catch (e) {
-      if (isTargetClosedError(e) && sdkObject) {
+      if (isTargetClosedError(e)) {
         const reason = closeReason(sdkObject);
         if (reason)
           rewriteErrorMessage(e, reason);
       } else if (isProtocolError(e)) {
-        if (e.type === 'closed') {
-          const reason = sdkObject ? closeReason(sdkObject) : undefined;
-          e = new TargetClosedError(reason, e.browserLogMessage());
-        } else if (e.type === 'crashed') {
+        if (e.type === 'closed')
+          e = new TargetClosedError(closeReason(sdkObject), e.browserLogMessage());
+        else if (e.type === 'crashed')
           rewriteErrorMessage(e, 'Target crashed ' + e.browserLogMessage());
-        }
       }
       response.error = serializeError(e);
       // The command handler could have set error in the metadata, do not reset it if there was no exception.
       callMetadata.error = response.error;
     } finally {
       callMetadata.endTime = monotonicTime();
-      await sdkObject?.instrumentation.onAfterCall(sdkObject, callMetadata);
+      await sdkObject.instrumentation.onAfterCall(sdkObject, callMetadata);
     }
 
     if (response.error)

@@ -16,6 +16,7 @@
 import { test, expect } from './npmTest';
 import { chromium } from '@playwright/test';
 import path from 'path';
+import { TestProxy } from '../config/proxy';
 
 test.use({ isolateBrowsers: true });
 
@@ -38,7 +39,6 @@ test('install command should work', async ({ exec, checkInstalledSoftwareOnDisk 
 
   await test.step('playwright install --list', async () => {
     const result = await exec('npx playwright install --list');
-    console.log('result', result);
     expect.soft(result).toMatch(/Playwright version: \d+\.\d+/);
     expect.soft(result).toMatch(/chromium-\d+/);
     expect.soft(result).toMatch(/chromium_headless_shell-\d+/);
@@ -59,6 +59,22 @@ test('install command should work', async ({ exec, checkInstalledSoftwareOnDisk 
         await exec('node sanity.js', pkg, 'chromium firefox webkit');
     });
   }
+});
+
+test('install command should work with proxy', { annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/36650' } }, async ({ exec, checkInstalledSoftwareOnDisk }) => {
+  await exec('npm i playwright');
+  const proxy = await TestProxy.create(8947 + test.info().workerIndex * 4);
+  proxy.forwardTo(443, { preserveHostname: true });
+  await test.step('playwright install chromium', async () => {
+    const result = await exec('npx playwright install chromium', {
+      env: {
+        HTTPS_PROXY: proxy.URL,
+      }
+    });
+    expect(result).toHaveLoggedSoftwareDownload(['chromium', 'chromium-headless-shell', 'ffmpeg', ...extraInstalledSoftware]);
+    await checkInstalledSoftwareOnDisk(['chromium', 'chromium-headless-shell', 'ffmpeg', ...extraInstalledSoftware]);
+  });
+  await proxy.stop();
 });
 
 test('should be able to remove browsers', async ({ exec, checkInstalledSoftwareOnDisk }) => {

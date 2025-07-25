@@ -84,8 +84,8 @@ export const test = contextTest.extend<CLITestArgs>({
     });
   },
 
-  openRecorder: async ({ context, recorderPageGetter }, run) => {
-    await run(async (options?: { testIdAttributeName?: string }) => {
+  openRecorder: async ({ context, recorderPageGetter }, use) => {
+    await use(async options => {
       await (context as any)._enableRecorder({
         language: 'javascript',
         mode: 'recording',
@@ -141,19 +141,21 @@ export class Recorder {
   }
 
   async waitForOutput(file: string, text: string): Promise<Map<string, Source>> {
-    if (!codegenLang2Id.has(file))
-      throw new Error(`Unknown language: ${file}`);
-    await expect.poll(() => this.recorderPage.evaluate(languageId => {
-      const sources = ((window as any).playwrightSourcesEchoForTest || []) as Source[];
-      return sources.find(s => s.id === languageId)?.text || '';
-    }, codegenLang2Id.get(file)), { timeout: 0 }).toContain(text);
-    const sources: Source[] = await this.recorderPage.evaluate(() => (window as any).playwrightSourcesEchoForTest || []);
-    for (const source of sources) {
-      if (!codegenLangId2lang.has(source.id))
-        throw new Error(`Unknown language: ${source.id}`);
-      this._sources.set(codegenLangId2lang.get(source.id), source);
-    }
-    return this._sources;
+    return await test.step('waitForOutput', async () => {
+      if (!codegenLang2Id.has(file))
+        throw new Error(`Unknown language: ${file}`);
+      await expect.poll(() => this.recorderPage.evaluate(languageId => {
+        const sources = ((window as any).playwrightSourcesEchoForTest || []) as Source[];
+        return sources.find(s => s.id === languageId)?.text || '';
+      }, codegenLang2Id.get(file)), { timeout: 0 }).toContain(text);
+      const sources: Source[] = await this.recorderPage.evaluate(() => (window as any).playwrightSourcesEchoForTest || []);
+      for (const source of sources) {
+        if (!codegenLangId2lang.has(source.id))
+          throw new Error(`Unknown language: ${source.id}`);
+        this._sources.set(codegenLangId2lang.get(source.id), source);
+      }
+      return this._sources;
+    }, { box: true });
   }
 
   sources(): Map<string, Source> {
@@ -170,14 +172,16 @@ export class Recorder {
   }
 
   async waitForHighlight(action: () => Promise<void>): Promise<string> {
-    await this.page.$$eval('x-pw-highlight', els => els.forEach(e => e.remove()));
-    await this.page.$$eval('x-pw-tooltip', els => els.forEach(e => e.remove()));
-    await action();
-    await this.page.locator('x-pw-highlight').waitFor();
-    await this.page.locator('x-pw-tooltip').waitFor();
-    await expect(this.page.locator('x-pw-tooltip')).not.toHaveText('');
-    await expect(this.page.locator('x-pw-tooltip')).not.toHaveText(`locator('body')`);
-    return this.page.locator('x-pw-tooltip').textContent();
+    return await test.step('waitForHighlight', async () => {
+      await this.page.$$eval('x-pw-highlight', els => els.forEach(e => e.remove()));
+      await this.page.$$eval('x-pw-tooltip', els => els.forEach(e => e.remove()));
+      await action();
+      await this.page.locator('x-pw-highlight').waitFor();
+      await this.page.locator('x-pw-tooltip').waitFor();
+      await expect(this.page.locator('x-pw-tooltip')).not.toHaveText('');
+      await expect(this.page.locator('x-pw-tooltip')).not.toHaveText(`locator('body')`);
+      return this.page.locator('x-pw-tooltip').textContent();
+    }, { box: true });
   }
 
   async waitForHighlightNoTooltip(action: () => Promise<void>): Promise<string> {

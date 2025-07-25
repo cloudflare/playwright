@@ -70,13 +70,14 @@ export class Snapshotter {
       await this._context.safeNonStallingEvaluateInAllFrames(`window["${this._snapshotStreamer}"].reset()`, 'main');
   }
 
-  async stop() {
+  stop() {
     this._started = false;
   }
 
   async resetForReuse() {
     // Next time we start recording, we will call addInitScript again.
     if (this._initScript) {
+      eventsHelper.removeEventListeners(this._eventListeners);
       await this._context.removeInitScripts([this._initScript]);
       this._initScript = undefined;
     }
@@ -90,11 +91,9 @@ export class Snapshotter {
     ];
 
     const { javaScriptEnabled } = this._context._options;
-    // function is most likely bundled with wrangler, which uses esbuild with keepNames enabled.
-    // See: https://github.com/cloudflare/workers-sdk/issues/7107
-    const frameSnapshotStreamerSource = `((__name => (${frameSnapshotStreamer}))(t => t))`;
-    const initScriptSource = `(${frameSnapshotStreamerSource})("${this._snapshotStreamer}", ${javaScriptEnabled || javaScriptEnabled === undefined})`;
-    this._initScript = await this._context.addInitScript(initScriptSource);
+    const initScript = `((__name => (${frameSnapshotStreamer}))(t => t))`;
+    const initScriptSource = `(${initScript})("${this._snapshotStreamer}", ${javaScriptEnabled || javaScriptEnabled === undefined})`;
+    this._initScript = await this._context.addInitScript(undefined, initScriptSource);
     await this._context.safeNonStallingEvaluateInAllFrames(initScriptSource, 'main');
   }
 
