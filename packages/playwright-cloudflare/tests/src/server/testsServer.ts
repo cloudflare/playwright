@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import '@workerTests/index';
 
 import { skipTests } from '../skipTests';
+import { BrowserBindingName } from '../utils';
 
 export type TestRequestPayload = {
   testId: string;
@@ -30,11 +31,13 @@ export class TestsServer extends DurableObject<Env> {
     const sessionId = url.searchParams.get('sessionId');
     if (!sessionId)
       return new Response('sessionId is required', { status: 400 });
+    const binding = url.searchParams.get('binding') as BrowserBindingName || 'BROWSER';
+
     const timeout = parseInt(url.searchParams.get('timeout') ?? '10', 10) * 1000;
     const { testId, fullTitle, retry } = await request.json() as TestRequestPayload;
     const assetsUrl = url.origin;
     const { env } = this;
-    const context = { env, sessionId, assetsUrl, retry };
+    const context = { env, sessionId, assetsUrl, retry, binding };
     const testRunner = new TestRunner(context, { timeout });
     if (skipTestsFullTitles.has(fullTitle)) {
       log(`🚫 Skipping ${fullTitle}`);
@@ -42,7 +45,12 @@ export class TestsServer extends DurableObject<Env> {
         testId,
         status: 'skipped',
         errors: [],
-        annotations: [],
+        annotations: [
+          {
+            type: 'skip',
+            description: `Test skipped because it is in the skipTests list`,
+          }
+        ],
         duration: 0,
         hasNonRetriableError: false,
         timeout,
