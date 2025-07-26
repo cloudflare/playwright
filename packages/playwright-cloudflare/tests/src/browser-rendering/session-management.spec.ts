@@ -12,10 +12,10 @@ async function launchAndGetSession(endpoint: BrowserWorker, options?: WorkersLau
   return [browser, sessionId];
 }
 
-test(`should list sessions @smoke`, async ({ env }) => {
-  const before = await sessions(env.BROWSER);
-  const [browser, sessionId] = await launchAndGetSession(env.BROWSER);
-  const after = await sessions(env.BROWSER);
+test(`should list sessions @smoke`, async ({ binding }) => {
+  const before = await sessions(binding);
+  const [browser, sessionId] = await launchAndGetSession(binding);
+  const after = await sessions(binding);
 
   expect(before.map(a => a.sessionId)).not.toContain(sessionId);
   expect(after.map(a => a.sessionId)).toContain(sessionId);
@@ -23,44 +23,44 @@ test(`should list sessions @smoke`, async ({ env }) => {
   browser.close();
 });
 
-test(`should keep session open when closing browser created with connect`, async ({ env }) => {
-  const { sessionId } = await acquire(env.BROWSER);
-  const before = await sessions(env.BROWSER);
+test(`should keep session open when closing browser created with connect`, async ({ binding }) => {
+  const { sessionId } = await acquire(binding);
+  const before = await sessions(binding);
 
-  const connectedBrowser = await connect(env.BROWSER, sessionId);
-  const after = await sessions(env.BROWSER);
+  const connectedBrowser = await connect(binding, sessionId);
+  const after = await sessions(binding);
 
   // no new session created
   expect(after.map(a => a.sessionId)).toEqual(before.map(b => b.sessionId));
   await connectedBrowser.close();
 
-  const afterClose = await sessions(env.BROWSER);
+  const afterClose = await sessions(binding);
   expect(afterClose.map(b => b.sessionId)).toEqual(after.map(a => a.sessionId));
 });
 
-test(`should close session when launched browser is closed`, async ({ env }) => {
-  const [browser, sessionId] = await launchAndGetSession(env.BROWSER);
+test(`should close session when launched browser is closed`, async ({ binding }) => {
+  const [browser, sessionId] = await launchAndGetSession(binding);
   await browser.close();
-  const afterClose = await sessions(env.BROWSER);
+  const afterClose = await sessions(binding);
   expect(afterClose.map(a => a.sessionId)).not.toContain(sessionId);
 });
 
-test(`should close session after keep_alive`, async ({ env }) => {
-  const [browser, sessionId] = await launchAndGetSession(env.BROWSER, { keep_alive: 15000 });
+test(`should close session after keep_alive`, async ({ binding }) => {
+  const [browser, sessionId] = await launchAndGetSession(binding, { keep_alive: 15000 });
   await new Promise(resolve => setTimeout(resolve, 11000));
-  const beforeKeepAlive = await sessions(env.BROWSER);
+  const beforeKeepAlive = await sessions(binding);
   expect(beforeKeepAlive.map(a => a.sessionId)).toContain(sessionId);
   expect(browser.isConnected()).toBe(true);
   await new Promise(resolve => setTimeout(resolve, 5000));
-  const afterKeepAlive = await sessions(env.BROWSER);
+  const afterKeepAlive = await sessions(binding);
   expect(afterKeepAlive.map(a => a.sessionId)).toContain(sessionId);
   expect(browser.isConnected()).toBe(true);
 });
 
-test(`should add new session to history when launching browser`, async ({ env }) => {
-  const before = await history(env.BROWSER);
-  const [launchedBrowser, sessionId] = await launchAndGetSession(env.BROWSER);
-  const after = await history(env.BROWSER);
+test(`should add new session to history when launching browser`, async ({ binding }) => {
+  const before = await history(binding);
+  const [launchedBrowser, sessionId] = await launchAndGetSession(binding);
+  const after = await history(binding);
 
   expect(before.map(a => a.sessionId)).not.toContain(sessionId);
   expect(after.map(a => a.sessionId)).toContain(sessionId);
@@ -68,10 +68,10 @@ test(`should add new session to history when launching browser`, async ({ env })
   await launchedBrowser.close();
 });
 
-test(`should show sessionId in active sessions under limits endpoint`, async ({ env }) => {
-  const [launchedBrowser, sessionId] = await launchAndGetSession(env.BROWSER);
+test(`should show sessionId in active sessions under limits endpoint`, async ({ binding }) => {
+  const [launchedBrowser, sessionId] = await launchAndGetSession(binding);
 
-  const response = await limits(env.BROWSER);
+  const response = await limits(binding);
   expect(response.activeSessions.map(s => s.id)).toContain(sessionId);
 
   await launchedBrowser.close();
@@ -86,8 +86,8 @@ test(`should have functions in default exported object`, () => {
   expect(playwright.limits).toBe(limits);
 });
 
-test(`should create endpoint url`, async ({ env }) => {
-  const url1 = endpointURLString(env.BROWSER);
+test(`should create endpoint url`, async ({ binding }) => {
+  const url1 = endpointURLString(binding);
   expect(url1).toContain('http://fake.host/v1/connectDevtools?browser_binding=BROWSER');
 
   const url2 = endpointURLString('BROWSER');
@@ -97,8 +97,8 @@ test(`should create endpoint url`, async ({ env }) => {
   expect(() => endpointURLString('UNEXISTENT_BROWSER')).toThrow();
 });
 
-test(`should create browser with persistent context on playwright.chromium.connectOverCDP`, async ({ env, playwright }) => {
-  const url = endpointURLString(env.BROWSER);
+test(`should create browser with persistent context on playwright.chromium.connectOverCDP`, async ({ binding, playwright }) => {
+  const url = endpointURLString(binding);
   const browser = await playwright.chromium.connectOverCDP(url);
   expect(browser.contexts()).toHaveLength(1);
   const [context] = browser.contexts();
@@ -108,22 +108,24 @@ test(`should create browser with persistent context on playwright.chromium.conne
   await browser.close();
 });
 
-test(`should launch browser with no persistent context by default`, async ({ env, playwright }) => {
-  const url = endpointURLString(env.BROWSER);
+test(`should launch browser with no persistent context by default`, async ({ binding }) => {
+  const url = endpointURLString(binding);
   const browser = await launch(url);
   expect(browser.contexts()).toHaveLength(0);
   await browser.close();
 });
 
-test(`should launch browser with persistent context is persistent=true`, async ({ env, playwright }) => {
-  const url = endpointURLString(env.BROWSER, { persistent: true });
+test(`should launch browser with persistent context is persistent=true`, async ({ binding }) => {
+  const url = endpointURLString(binding, { persistent: true });
   const browser = await launch(url);
   expect(browser.contexts()).toHaveLength(1);
   await browser.close();
 });
 
-test(`should launch the browser with a specific user agent`, async ({ env, page }) => {
+test(`should launch the browser with a specific user agent`, async ({ page }) => {
   await page.setContent(``);
-  await page.evaluate("document.write(navigator.userAgent)")
-  expect(await page.content()).toContain("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+  await page.evaluate('document.write(navigator.userAgent)');
+  expect(await page.content()).toContain(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+  );
 });

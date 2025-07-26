@@ -3,7 +3,7 @@ import './underTest';
 
 import { testSuites } from '@cloudflare/playwright/internal';
 
-import { TestsServer } from './testsServer';
+import { getBinding } from '../utils';
 
 export { TestsServer } from './testsServer';
 
@@ -12,16 +12,18 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith('/v1'))
-      return await env.BROWSER.fetch(`http://fake.host${url.pathname}`);
+      return await getBinding(url).fetch(`http://fake.host${url.pathname}`);
     if (url.pathname === '/')
       return Response.json(await testSuites());
+
+    const bindingName = url.searchParams.get('binding') ?? 'BROWSER';
 
     if (/\.(spec|test)\.ts$/.test(url.pathname)) {
       const sessionId = url.searchParams.get('sessionId');
       if (!sessionId)
         return new Response('sessionId is required', { status: 400 });
-      const id = env.TESTS_SERVER.idFromName(sessionId);
-      const testsServer = env.TESTS_SERVER.get(id) as DurableObjectStub<TestsServer>;
+      const id = env.TESTS_SERVER.idFromName(`${bindingName}_${sessionId}`);
+      const testsServer = env.TESTS_SERVER.get(id);
       return await testsServer.fetch(request);
     }
 
