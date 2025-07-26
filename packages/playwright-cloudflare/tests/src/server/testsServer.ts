@@ -45,7 +45,12 @@ export class TestsServer extends DurableObject<Env> {
         testId,
         status: 'skipped',
         errors: [],
-        annotations: [],
+        annotations: [
+          {
+            type: 'skip',
+            description: `Test skipped because it is in the skipTests list`,
+          }
+        ],
         duration: 0,
         hasNonRetriableError: false,
         timeout,
