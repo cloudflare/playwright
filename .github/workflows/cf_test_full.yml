@@ -2,6 +2,16 @@ name: "Playwright for Cloudflare - Full Test Suite"
 
 on:
   workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project to test'
+        required: true
+        default: 'BISO'
+        type: choice
+        options:
+          - BISO
+          - BRAPI Staging
+          - BRAPI Production
 
 jobs:
   full-tests:
@@ -26,7 +36,7 @@ jobs:
       - name: Run tests
         run: |
           cd packages/playwright-cloudflare
-          npm run test:full -- --reporter=html
+          npm run test:full -- --reporter=html --project="${{ github.event.inputs.project || 'BISO' }}"
 
       - name: Upload HTML report
         uses: actions/upload-artifact@v4
