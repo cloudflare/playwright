@@ -4,8 +4,9 @@ import { env } from 'cloudflare:workers';
 import fs from '@cloudflare/playwright/fs';
 import { expect as baseExpect } from '@cloudflare/playwright/test';
 
+import type { BrowserBindingName } from '../utils';
 import type { TestInfo, ScreenshotMode, VideoMode } from '../../../types/test';
-import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright, APIRequestContext } from '@cloudflare/playwright/test';
+import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright, APIRequestContext, BrowserWorker } from '@cloudflare/playwright/test';
 
 export { mergeTests } from '@cloudflare/playwright/internal';
 
@@ -14,6 +15,8 @@ export type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>
 export type WorkersWorkerFixtures = {
   env: Env;
   sessionId: string;
+  bindingName: BrowserBindingName;
+  binding: BrowserWorker;
 };
 
 export type PlatformWorkerFixtures = {
@@ -187,6 +190,14 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await run(currentTestContext().sessionId);
   }, { scope: 'worker' }],
 
+  bindingName: [async ({}, run) => {
+    await run(currentTestContext().binding);
+  }, { scope: 'worker' }],
+
+  binding: [async ({ env, bindingName }, run) => {
+    await run(env[bindingName]);
+  }, { scope: 'worker' }],
+
   browserVersion: [async ({ browser }, run) => {
     await run(browser.version());
   }, { scope: 'worker' }],
@@ -212,8 +223,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   playwright: [async ({}, run) => run(playwright), { scope: 'worker' }],
 
-  browser: [async ({ sessionId }, run) => {
-    const browser = await connect(env.BROWSER, sessionId);
+  browser: [async ({ binding, sessionId }, run) => {
+    const browser = await connect(binding, sessionId);
     await run(browser);
     await browser.close();
   }, { scope: 'worker' }],

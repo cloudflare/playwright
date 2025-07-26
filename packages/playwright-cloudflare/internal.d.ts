@@ -1,4 +1,5 @@
 import { isUnderTest } from 'playwright-core/lib/utils';
+import { BrowserBindingName } from './tests/src/utils';
 
 export * from './tests';
 export { expect, _baseTest, Fixtures, mergeTests } from './types/test';
@@ -57,6 +58,7 @@ export type TestContext = {
   sessionId: string;
   assetsUrl: string;
   retry: number;
+  binding: BrowserBindingName;
 };
 
 export function currentTestContext(): TestContext;
