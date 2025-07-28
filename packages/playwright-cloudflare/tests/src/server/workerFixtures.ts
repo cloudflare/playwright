@@ -4,16 +4,25 @@ import { env } from 'cloudflare:workers';
 import fs from '@cloudflare/playwright/fs';
 import { expect as baseExpect } from '@cloudflare/playwright/test';
 
+import type { BrowserBindingName } from '../utils';
 import type { TestInfo, ScreenshotMode, VideoMode } from '../../../types/test';
-import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright, APIRequestContext } from '@cloudflare/playwright/test';
+import type { BrowserContextOptions, Browser, BrowserType, BrowserContext, Page, Frame, PageScreenshotOptions, Locator, ViewportSize, Playwright, APIRequestContext, BrowserWorker } from '@cloudflare/playwright/test';
 
 export { mergeTests } from '@cloudflare/playwright/internal';
 
 export type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
 
+type CdnTrace = { loc: string; colo: string; };
+
 export type WorkersWorkerFixtures = {
   env: Env;
   sessionId: string;
+  bindingName: BrowserBindingName;
+  binding: BrowserWorker;
+  cdnTraces: {
+    worker: CdnTrace;
+    browser: CdnTrace;
+  };
 };
 
 export type PlatformWorkerFixtures = {
@@ -153,6 +162,8 @@ type BrowserTestTestFixtures = {
   launchPersistent: () => never;
   startRemoteServer: () => never;
   createUserDataDir: () => Promise<string>;
+
+  _annotations: void;
 };
 
 export type TestModeName = 'default' | 'driver' | 'service' | 'service2';
@@ -164,6 +175,13 @@ export type TestModeWorkerOptions = {
 export type TestModeTestFixtures = {
   toImpl: (rpcObject?: any) => any;
 };
+
+function parseTrace(trace: string) {
+  return Object.fromEntries(trace.split('\n').filter(line => line).map(line => {
+    const [key, value] = line.split('=');
+    return [key, value];
+  })) as { loc: string, colo: string };
+}
 
 export const test = platformTest.extend<PageTestFixtures & ServerFixtures & TestModeTestFixtures & BrowserTestTestFixtures, WorkersWorkerFixtures & PlaywrightWorkerArgs & BrowserTestWorkerFixtures & PageWorkerFixtures & TestModeWorkerOptions>({
   headless: [true, { scope: 'worker' }],
@@ -185,6 +203,28 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   sessionId: [async ({}, run) => {
     await run(currentTestContext().sessionId);
+  }, { scope: 'worker' }],
+
+  bindingName: [async ({}, run) => {
+    await run(currentTestContext().binding);
+  }, { scope: 'worker' }],
+
+  binding: [async ({ env, bindingName }, run) => {
+    await run(env[bindingName]);
+  }, { scope: 'worker' }],
+
+  cdnTraces: [async ({ sessionId, browser }, run, workerInfo) => {
+    const worker = parseTrace(await fetch('https://1.1.1.1/cdn-cgi/trace').then(resp => resp.text()));
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const browserCdnTrace = parseTrace(await page.goto('https://1.1.1.1/cdn-cgi/trace').then(resp => resp!.text()));
+    await page.close();
+    await context.close();
+
+    // eslint-disable-next-line no-console
+    console.log(`ℹ️ Session ID: ${sessionId}, Worker: ${worker.colo}, Browser: ${browserCdnTrace.colo}`);
+
+    await run({ worker, browser: browserCdnTrace });
   }, { scope: 'worker' }],
 
   browserVersion: [async ({ browser }, run) => {
@@ -212,8 +252,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   playwright: [async ({}, run) => run(playwright), { scope: 'worker' }],
 
-  browser: [async ({ sessionId }, run) => {
-    const browser = await connect(env.BROWSER, sessionId);
+  browser: [async ({ binding, sessionId }, run) => {
+    const browser = await connect(binding, sessionId);
     await run(browser);
     await browser.close();
   }, { scope: 'worker' }],
@@ -341,6 +381,23 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   toImplInWorkerScope: [async ({ playwright }, use) => {
     await use((playwright as any)._toImpl);
   }, { scope: 'worker' }],
+
+  _annotations: [async ({ sessionId, cdnTraces, browserVersion }, use, testInfo) => {
+    testInfo.annotations.push({
+      type: 'browser version',
+      description: browserVersion,
+    }, {
+      type: 'session id',
+      description: sessionId,
+    }, {
+      type: 'worker colo',
+      description: cdnTraces.worker.colo,
+    }, {
+      type: 'browser colo',
+      description: cdnTraces.browser.colo,
+    });
+    await use();
+  }, { auto: true }],
 });
 
 export async function rafraf(target: Page | Frame, count = 1) {

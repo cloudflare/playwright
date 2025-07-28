@@ -3,6 +3,7 @@ import './patch';
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
 import { env } from 'cloudflare:workers';
+import { setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils/isomorphic/time';
 
 import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
 import { wrapClientApis } from './cloudflare/wrapClientApis';
@@ -12,6 +13,14 @@ import * as packageJson from '../package.json';
 import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
 import type { AcquireResponse, ActiveSession, Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, ConnectOverCDPOptions, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
+
+function resetMonotonicTime() {
+  // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
+  // so we need to set it to the current time inside a event handler, where Date.now() is not 0.
+  // https://stackoverflow.com/a/58491358
+  if (timeOrigin() === 0 && Date.now() !== 0)
+    setTimeOrigin(Date.now());
+}
 
 const playwright = createInProcessPlaywright();
 unsupportedOperations(playwright);
@@ -37,6 +46,7 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
 };
 
 async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: string, persistent?: boolean }): Promise<WebSocket> {
+  resetMonotonicTime();
   const url = new URL(`${HTTP_FAKE_HOST}/v1/connectDevtools`);
   url.searchParams.set('browser_session', options.sessionId);
   if (options.persistent)

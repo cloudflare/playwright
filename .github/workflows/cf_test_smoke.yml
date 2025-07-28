@@ -1,6 +1,7 @@
 name: "Playwright for Cloudflare - Smoke Tests"
 
-on: [push]
+on: 
+  push:
 
 jobs:
   test_smoke:
@@ -21,6 +22,7 @@ jobs:
           cd packages/playwright-cloudflare
           npm run build
           npm run test:deploy
+          npm run test:deploy -- --env=cross-origin
 
       - name: Run Smoke Tests
         run: |
