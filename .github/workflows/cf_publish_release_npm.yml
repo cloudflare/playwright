@@ -42,7 +42,6 @@ jobs:
         run: |
           cd packages/playwright-cloudflare
           cp ../../README.md .  
-          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
           npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
