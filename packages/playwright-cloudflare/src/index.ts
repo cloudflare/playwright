@@ -36,6 +36,11 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
   const wsEndpoint = typeof endpointURLOrOptions === 'string' ? endpointURLOrOptions : endpointURLOrOptions.wsEndpoint ?? endpointURLOrOptions.endpointURL;
   if (!wsEndpoint)
     throw new Error('No wsEndpoint provided');
+
+  if (isExternalWebSocketEndpoint(wsEndpoint)) {
+    return connectToExternalWebSocket(wsEndpoint);
+  }
+
   const wsUrl = new URL(wsEndpoint);
   // by default, playwright.chromium.connectOverCDP enforces persistent to true (the default behavior upstream)
   if (!wsUrl.searchParams.has('persistent'))
@@ -44,6 +49,35 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
     ? connect(wsUrl.toString())
     : launch(wsUrl.toString());
 };
+
+function extractSessionIdFromUrl(wsEndpoint: string): string | undefined {
+  const url = new URL(wsEndpoint);
+  const sessionId = url.searchParams.get('browser_session') ?? undefined;
+  return sessionId;
+}
+
+async function connectToExternalWebSocket(wsEndpoint: string): Promise<Browser> {
+  resetMonotonicTime();
+  const webSocket = new WebSocket(wsEndpoint);
+  await new Promise((resolve, reject) => {
+    webSocket.addEventListener('open', () => {
+      resolve(webSocket);
+    });
+    webSocket.addEventListener('error', (error) => {
+      reject(error);
+    });
+  });
+
+  const sessionId = extractSessionIdFromUrl(wsEndpoint);
+    
+  const transport = new WebSocketTransport(webSocket, sessionId ?? '', { disableChunking: true });
+  
+  return await createBrowser(transport, { persistent: true });
+}
+
+function isExternalWebSocketEndpoint(endpoint: string): boolean {
+  return endpoint.startsWith('ws://') || endpoint.startsWith('wss://');
+}
 
 async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: string, persistent?: boolean }): Promise<WebSocket> {
   resetMonotonicTime();
