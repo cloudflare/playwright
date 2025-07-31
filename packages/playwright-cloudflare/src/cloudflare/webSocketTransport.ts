@@ -11,6 +11,7 @@ export class WebSocketTransport implements ConnectionTransport {
   private _ws: WebSocket;
   private _pingInterval: NodeJS.Timer;
   private _chunks: Uint8Array[] = [];
+  private _disableChunking: boolean;
   onmessage?: (message: ProtocolResponse) => void;
   onclose?: () => void;
   readonly sessionId: string;
@@ -23,13 +24,20 @@ export class WebSocketTransport implements ConnectionTransport {
     return transport;
   }
 
-  constructor(ws: WebSocket, sessionId: string) {
+  constructor(ws: WebSocket, sessionId: string, { disableChunking = false } = {}) {
     this._pingInterval = setInterval(() => {
       return this._ws.send('ping');
     }, 1000); // TODO more investigation
     this._ws = ws;
     this.sessionId = sessionId;
+    this._disableChunking = disableChunking;
     this._ws.addEventListener('message', event => {
+      if (this._disableChunking) {
+        if (event.data && this.onmessage)
+          this.onmessage!(JSON.parse(event.data as string) as ProtocolResponse);
+        return;
+      }
+
       this._chunks.push(new Uint8Array(event.data as ArrayBuffer));
       const message = chunksToMessage(this._chunks, sessionId);
       if (message && this.onmessage)
@@ -48,6 +56,10 @@ export class WebSocketTransport implements ConnectionTransport {
   }
 
   send(message: ProtocolRequest): void {
+    if (this._disableChunking) {
+      this._ws.send(JSON.stringify(message));
+      return;
+    }
     for (const chunk of messageToChunks(JSON.stringify(message)))
       this._ws.send(chunk);
   }
