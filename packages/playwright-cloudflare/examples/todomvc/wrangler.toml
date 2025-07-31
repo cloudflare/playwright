@@ -5,5 +5,6 @@ compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2025-03-05"
 upload_source_maps = true
 
-[browser]
-binding = "MYBROWSER"
+unsafe.bindings = [
+   {name = "MYBROWSER", type = "browser", internal_env = "https://core-staging.rendering.cfdata.org/"},
+]
