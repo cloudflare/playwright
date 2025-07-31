@@ -2,3 +2,4 @@ src/bundles/
 src/injected/
 .vitest-reports
 types/
+tests/wrangler-test.toml
