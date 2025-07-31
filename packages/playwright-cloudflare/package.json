@@ -28,6 +28,12 @@
       "import": "./lib/esm/bundles/fs.js",
       "require": "./lib/cjs/bundles/fs.js",
       "default": "./lib/esm/bundles/fs.js"
+    },
+    "./client": {
+      "types": "./client.d.ts",
+      "import": "./lib/esm/client.js",
+      "require": "./lib/cjs/client.js",
+      "default": "./lib/esm/client.js"
     }
   },
   "scripts": {

@@ -76,7 +76,8 @@ export default defineConfig({
       entry: [
         path.resolve(__dirname, './src/index.ts'),
         path.resolve(__dirname, './src/test.ts'),
-        path.resolve(__dirname, './src/internal.ts')
+        path.resolve(__dirname, './src/internal.ts'),
+        path.resolve(__dirname, './src/client.ts')
       ],
     },
     // prevents __defProp, __defNormalProp, __publicField in compiled code
