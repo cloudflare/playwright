@@ -9,10 +9,11 @@ import { transportZone, WebSocketTransport } from './cloudflare/webSocketTranspo
 import { wrapClientApis } from './cloudflare/wrapClientApis';
 import { unsupportedOperations } from './cloudflare/unsupportedOperations';
 import * as packageJson from '../package.json';
+import { acquire, extractOptions, getBrowserBinding, limits, sessions, history, HTTP_FAKE_HOST, WS_FAKE_HOST } from './session-management';
 
 import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
-import type { AcquireResponse, ActiveSession, Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, ConnectOverCDPOptions, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
+import type { Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ConnectOverCDPOptions, WorkersLaunchOptions } from '..';
 
 function resetMonotonicTime() {
   // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
@@ -25,9 +26,6 @@ function resetMonotonicTime() {
 const playwright = createInProcessPlaywright();
 unsupportedOperations(playwright);
 wrapClientApis();
-
-const HTTP_FAKE_HOST = 'http://fake.host';
-const WS_FAKE_HOST = 'ws://fake.host';
 
 const originalConnectOverCDP = playwright.chromium.connectOverCDP;
 // playwright-mcp uses playwright.chromium.connectOverCDP if a CDP endpoint is passed,
@@ -62,17 +60,6 @@ async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: 
   return webSocket;
 }
 
-function extractOptions(endpoint: BrowserEndpoint): { sessionId?: string, keep_alive?: number, persistent?: boolean } {
-  if (typeof endpoint === 'string' || endpoint instanceof URL) {
-    const url = endpoint instanceof URL ? endpoint : new URL(endpoint);
-    const sessionId = url.searchParams.get('browser_session') ?? undefined;
-    const keepAlive = url.searchParams.has('keep_alive') ? parseInt(url.searchParams.get('keep_alive')!, 10) : undefined;
-    const persistent = url.searchParams.has('persistent');
-    return { sessionId, keep_alive: keepAlive, persistent };
-  }
-  return {};
-}
-
 export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: { sessionId?: string, persistent?: boolean, keepAlive?: number }): string {
   const bindingKey = typeof binding === 'string' ? binding : Object.keys(env).find(key => (env as any)[key] === binding);
   if (!bindingKey || !(bindingKey in env))
@@ -98,17 +85,6 @@ async function createBrowser(transport: WebSocketTransport, options?: { persiste
     browser.sessionId = () => transport.sessionId;
     return browser;
   });
-}
-
-function getBrowserBinding(endpoint: BrowserEndpoint): BrowserWorker {
-  if (typeof endpoint === 'string' || endpoint instanceof URL) {
-    const url = endpoint instanceof URL ? endpoint : new URL(endpoint);
-    const binding = url.searchParams.get('browser_binding') as BrowserBindingKey;
-    if (!binding || !(binding in env))
-      throw new Error(`No binding found for ${binding}`);
-    return env[binding];
-  }
-  return endpoint;
 }
 
 export async function connect(endpoint: string | URL): Promise<Browser>;
@@ -141,64 +117,6 @@ export async function launch(endpoint: BrowserEndpoint, launchOptions?: WorkersL
   };
   browserImpl.options.browserProcess = { close: doClose, kill: doClose };
   return browser;
-}
-
-export async function acquire(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<AcquireResponse> {
-  options = { ...extractOptions(endpoint), ...options };
-  let acquireUrl = `${HTTP_FAKE_HOST}/v1/acquire`;
-  if (options?.keep_alive)
-    acquireUrl = `${acquireUrl}?keep_alive=${options.keep_alive}`;
-
-  const res = await getBrowserBinding(endpoint).fetch(acquireUrl);
-  const status = res.status;
-  const text = await res.text();
-  if (status !== 200) {
-    throw new Error(
-        `Unable to create new browser: code: ${status}: message: ${text}`
-    );
-  }
-  // Got a 200, so response text is actually an AcquireResponse
-  const response: AcquireResponse = JSON.parse(text);
-  return response;
-}
-
-export async function sessions(endpoint: BrowserEndpoint): Promise<ActiveSession[]> {
-  const res = await getBrowserBinding(endpoint).fetch(`${HTTP_FAKE_HOST}/v1/sessions`);
-  const status = res.status;
-  const text = await res.text();
-  if (status !== 200) {
-    throw new Error(
-        `Unable to fetch new sessions: code: ${status}: message: ${text}`
-    );
-  }
-  const data: SessionsResponse = JSON.parse(text);
-  return data.sessions;
-}
-
-export async function history(endpoint: BrowserEndpoint): Promise<ClosedSession[]> {
-  const res = await getBrowserBinding(endpoint).fetch(`${HTTP_FAKE_HOST}/v1/history`);
-  const status = res.status;
-  const text = await res.text();
-  if (status !== 200) {
-    throw new Error(
-        `Unable to fetch account history: code: ${status}: message: ${text}`
-    );
-  }
-  const data: HistoryResponse = JSON.parse(text);
-  return data.history;
-}
-
-export async function limits(endpoint: BrowserEndpoint): Promise<LimitsResponse> {
-  const res = await getBrowserBinding(endpoint).fetch(`${HTTP_FAKE_HOST}/v1/limits`);
-  const status = res.status;
-  const text = await res.text();
-  if (status !== 200) {
-    throw new Error(
-        `Unable to fetch account limits: code: ${status}: message: ${text}`
-    );
-  }
-  const data: LimitsResponse = JSON.parse(text);
-  return data;
 }
 
 export const chromium = playwright.chromium;
