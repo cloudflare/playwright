@@ -1,12 +1,35 @@
-import { connect, acquire } from '@cloudflare/playwright/client';
+import { connect, acquire, BrowserWorker } from '@cloudflare/playwright/client';
+import { debug } from '@cloudflare/playwright/internal';
 
 // eslint-disable-next-line no-console
 const log = console.log;
 
+export function localBrowserSim(baseUrl: string) {
+  // hack to allow for local only dev, which calls a local chrome
+  return {
+    async fetch(request: string, requestInit?: RequestInit | Request): Promise<Response> {
+      // The puppeteer fork calls the binding with a fake host
+      const u = request.replace('http://fake.host', '');
+      log(`LOCAL ${baseUrl}${u}`);
+      return fetch(`${baseUrl}${u}`, requestInit).catch(err => {
+        log(err);
+        throw new Error('Unable to create new browser: code: 429: message: Too Many Requests. Local sim');
+      });
+    },
+  };
+}
+
+function getBrowserConnection(isLocalEnv = true): BrowserWorker {
+  return localBrowserSim('http://localhost:3000') as BrowserWorker;
+}
+
 export default {
   async fetch(request: Request, env: Env) {
-    const { sessionId } = await acquire(env.MYBROWSER);
-    const browser = await connect(env.MYBROWSER, { sessionId });
+    debug.enable('pw:*');
+    const binding = getBrowserConnection();
+    const { sessionId } = await acquire(binding);
+    log(`Acquired session ID: ${sessionId}`);
+    const browser = await connect(binding, { sessionId });
 
     log(`Connected to browser with session ID: ${sessionId}`);
 
