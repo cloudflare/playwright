@@ -1,5 +1,6 @@
 import { _baseTest, currentTestContext, runWithExpectApiListener } from '@cloudflare/playwright/internal';
 import playwright, { connect } from '@cloudflare/playwright';
+import { connect as pwsConnect } from '@cloudflare/playwright/client';
 import { env } from 'cloudflare:workers';
 import fs from '@cloudflare/playwright/fs';
 import { expect as baseExpect } from '@cloudflare/playwright/test';
@@ -19,9 +20,10 @@ export type WorkersWorkerFixtures = {
   sessionId: string;
   bindingName: BrowserBindingName;
   binding: BrowserWorker;
+  usePlaywrightServer: boolean;
   cdnTraces: {
-    worker: CdnTrace;
-    browser: CdnTrace;
+    worker?: CdnTrace;
+    browser?: CdnTrace;
   };
 };
 
@@ -177,10 +179,11 @@ export type TestModeTestFixtures = {
 };
 
 function parseTrace(trace: string) {
-  return Object.fromEntries(trace.split('\n').filter(line => line).map(line => {
+  const parsedCdnTrace = Object.fromEntries(trace.split('\n').filter(line => line).map(line => {
     const [key, value] = line.split('=');
     return [key, value];
-  })) as { loc: string, colo: string };
+  }));
+  return 'loc' in parsedCdnTrace && 'colo' in parsedCdnTrace ? parsedCdnTrace as CdnTrace : undefined;
 }
 
 export const test = platformTest.extend<PageTestFixtures & ServerFixtures & TestModeTestFixtures & BrowserTestTestFixtures, WorkersWorkerFixtures & PlaywrightWorkerArgs & BrowserTestWorkerFixtures & PageWorkerFixtures & TestModeWorkerOptions>({
@@ -213,16 +216,20 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     await run(env[bindingName]);
   }, { scope: 'worker' }],
 
+  usePlaywrightServer: [async ({ bindingName }, run) => {
+    await run(bindingName === 'BROWSER_BRAPI_STAGING');
+  }, { scope: 'worker' }],
+
   cdnTraces: [async ({ sessionId, browser }, run, workerInfo) => {
-    const worker = parseTrace(await fetch('https://1.1.1.1/cdn-cgi/trace').then(resp => resp.text()));
+    const worker = parseTrace(await fetch('https://1.1.1.1/cdn-cgi/trace').then(resp => resp.text()).catch(() => ''));
     const context = await browser.newContext();
     const page = await context.newPage();
-    const browserCdnTrace = parseTrace(await page.goto('https://1.1.1.1/cdn-cgi/trace').then(resp => resp!.text()));
+    const browserCdnTrace = parseTrace(await page.goto('https://1.1.1.1/cdn-cgi/trace').then(resp => resp!.text()).catch(() => ''));
     await page.close();
     await context.close();
 
     // eslint-disable-next-line no-console
-    console.log(`ℹ️ Session ID: ${sessionId}, Worker: ${worker.colo}, Browser: ${browserCdnTrace.colo}`);
+    console.log(`ℹ️ Session ID: ${sessionId}, Worker: ${worker?.colo}, Browser: ${browserCdnTrace?.colo}`);
 
     await run({ worker, browser: browserCdnTrace });
   }, { scope: 'worker' }],
@@ -252,8 +259,8 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
 
   playwright: [async ({}, run) => run(playwright), { scope: 'worker' }],
 
-  browser: [async ({ binding, sessionId }, run) => {
-    const browser = await connect(binding, sessionId);
+  browser: [async ({ usePlaywrightServer, binding, sessionId }, run) => {
+    const browser = await (usePlaywrightServer ? pwsConnect : connect)(binding, { sessionId });
     await run(browser);
     await browser.close();
   }, { scope: 'worker' }],
@@ -389,13 +396,19 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     }, {
       type: 'session id',
       description: sessionId,
-    }, {
-      type: 'worker colo',
-      description: cdnTraces.worker.colo,
-    }, {
-      type: 'browser colo',
-      description: cdnTraces.browser.colo,
     });
+    if (cdnTraces.worker) {
+      testInfo.annotations.push({
+        type: 'worker colo',
+        description: cdnTraces.worker.colo,
+      });
+    }
+    if (cdnTraces.browser) {
+      testInfo.annotations.push({
+        type: 'browser colo',
+        description: cdnTraces.browser.colo,
+      });
+    }
     await use();
   }, { auto: true }],
 });

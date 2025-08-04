@@ -73,6 +73,18 @@ export default defineConfig({
       },
     },
 
+    {
+      name: 'worker',
+
+      /* Project-specific settings. */
+      use: {
+        ...devices['Desktop Chrome'],
+        connectOptions: {
+          wsEndpoint: 'ws://localhost:8001/v1/playwright?session_id=12345',
+        },
+      },
+    },
+
     /* Test against mobile viewports. */
     // {
     //   name: 'Mobile Chrome',
