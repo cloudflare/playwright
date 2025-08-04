@@ -16,7 +16,6 @@
 
 import { Connection } from 'playwright-core/lib/client/connection';
 import { nodePlatform } from 'playwright-core/lib/utils';
-import { debug } from 'playwright-core/lib/utilsBundle';
 
 import type { Browser, BrowserWorker } from '..';
 
@@ -39,7 +38,13 @@ export async function connect(endpoint: BrowserWorker, options: { sessionId: str
 
   ws.accept();
 
-  const connection = new Connection(nodePlatform);
+  const connection = new Connection({
+    ...nodePlatform,
+    log(name: 'api' | 'channel', message: string | Error | object) {
+      // eslint-disable-next-line no-console
+      console.debug(name, message);
+    },
+  });
   connection.onmessage = message => ws.send(JSON.stringify(message));
   ws.addEventListener('message', message => {
     const data = message.data instanceof ArrayBuffer ? Buffer.from(message.data).toString() : message.data;
