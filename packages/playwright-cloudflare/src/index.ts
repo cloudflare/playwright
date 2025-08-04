@@ -15,6 +15,8 @@ import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
 import type { Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ConnectOverCDPOptions, WorkersLaunchOptions } from '..';
 
+export { sessions, history, acquire, limits } from './session-management';
+
 function resetMonotonicTime() {
   // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
   // so we need to set it to the current time inside a event handler, where Date.now() is not 0.

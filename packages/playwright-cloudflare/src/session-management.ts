@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 
-import type { AcquireResponse, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
+import type { AcquireResponse, ActiveSession, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
 
 
 export const HTTP_FAKE_HOST = 'http://fake.host';
