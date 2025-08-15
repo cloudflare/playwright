@@ -74,8 +74,9 @@ export default {
 ### Trace
 
 ```js
+import fs from "fs";
+
 import { launch } from "@cloudflare/playwright";
-import fs from "@cloudflare/playwright/fs";
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -86,9 +87,10 @@ export default {
 
     // ... do something, screenshot for example
 
-    await page.context().tracing.stop({ path: "trace.zip" });
+    // For now, fs only supports writing into /tmp
+    await page.context().tracing.stop({ path: "/tmp/trace.zip" });
     await browser.close();
-    const file = await fs.promises.readFile("trace.zip");
+    const file = await fs.promises.readFile("/tmp/trace.zip");
 
     return new Response(file, {
       status: 200,

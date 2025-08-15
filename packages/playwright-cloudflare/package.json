@@ -22,12 +22,6 @@
       "import": "./lib/esm/internal.js",
       "require": "./lib/cjs/internal.js",
       "default": "./lib/esm/internal.js"
-    },
-    "./fs": {
-      "types": "./fs.d.ts",
-      "import": "./lib/esm/bundles/fs.js",
-      "require": "./lib/cjs/bundles/fs.js",
-      "default": "./lib/esm/bundles/fs.js"
     }
   },
   "scripts": {
@@ -35,9 +29,8 @@
     "ci:core:bundles:utils": "cd ../playwright-core/bundles/utils && npm ci",
     "ci:core:bundles:zip": "cd ../playwright-core/bundles/zip && npm ci",
     "ci:test:bundles:expect": "cd ../playwright/bundles/expect && npm ci",
-    "ci:bundles:fs": "cd ./bundles/fs && npm ci",
     "ci:bundles:pngjs": "cd ./bundles/pngjs && npm ci",
-    "ci:bundles": "npm run ci:core:bundles:utils && npm run ci:core:bundles:zip && npm run ci:test:bundles:expect && npm run ci:bundles:fs && npm run ci:bundles:pngjs",
+    "ci:bundles": "npm run ci:core:bundles:utils && npm run ci:core:bundles:zip && npm run ci:test:bundles:expect && npm run ci:bundles:pngjs",
     "ci:tests": "cd tests && npm ci",
     "build:bundles": "node utils/build_bundles.js",
     "build:types": "node utils/copy_types.js",
@@ -46,7 +39,7 @@
     "test:generate:proxy": "node ./utils/generate_proxy_tests.js",
     "test:generate:wrangler": "node ./utils/generate_test_wrangler.js",
     "test:deploy": "npm run test:generate:wrangler && npm run test:generate:worker && npm run ci:tests && cd tests && npx wrangler deploy -c wrangler-test.toml",
-    "test:dev": "npm run test:generate:worker && cd tests && npx wrangler dev --remote",
+    "test:dev": "npm run test:generate:worker && cd tests && npx wrangler dev",
     "test:full": "npm run test:generate:proxy && cd tests && npx playwright test",
     "test:smoke": "npm run test:generate:proxy && cd tests && npx playwright test --grep \"@smoke\""
   },

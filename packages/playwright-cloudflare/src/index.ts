@@ -1,5 +1,3 @@
-import './patch';
-
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
 import { env } from 'cloudflare:workers';

@@ -7,7 +7,6 @@ const bundles = {
   // Error: Class constructor Inflate cannot be invoked without 'new'
   // It needs to build before other bundles, because they may depend on it
   'pngjs': '../bundles/pngjs',
-  'fs': '../bundles/fs',
   'utilsBundleImpl': '../../playwright-core/bundles/utils',
   'zipBundleImpl': '../../playwright-core/bundles/zip',
   'expectBundleImpl': '../../playwright/bundles/expect',
@@ -21,6 +20,7 @@ const external = [
   'crypto',
   'dns',
   'events',
+  'fs',
   'http',
   'https',
   'module',
@@ -68,9 +68,8 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
             'formidable',
             'ansi-styles',
 
-            ...(name === 'fs' ? [...external, 'zlib']
-              : name === 'pngjs' ? [...external, 'fs']
-              : [...external, 'fs', 'zlib', 'pngjs'])
+            ...(name === 'pngjs' ? external
+              : [...external, 'zlib', 'pngjs'])
           ],
           output: {
             dir: path.join(basedir, '../src/bundles'),

@@ -1,6 +1,7 @@
+import fs from 'fs';
+
 import { launch } from '@cloudflare/playwright';
 import { expect } from '@cloudflare/playwright/test';
-import fs from '@cloudflare/playwright/fs';
 
 export default {
   async fetch(request: Request, env: Env) {
@@ -39,7 +40,7 @@ export default {
       await browser.close();
       const file = await fs.promises.readFile('trace.zip');
 
-      return new Response(file, {
+      return new Response(new Uint8Array(file), {
         status: 200,
         headers: {
           'Content-Type': 'application/zip',
@@ -49,7 +50,7 @@ export default {
       const img = await page.screenshot();
       await browser.close();
 
-      return new Response(img, {
+      return new Response(new Uint8Array(img), {
         headers: {
           'Content-Type': 'image/png',
         },
