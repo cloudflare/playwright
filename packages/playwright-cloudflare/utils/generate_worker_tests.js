@@ -27,26 +27,6 @@ const sourceTestsDir = path.join(basedir, '..', '..', '..', 'tests');
 const cloudflareSourceTestsDir = path.join(basedir, '..', 'tests', 'src');
 const workerTestsDir = path.join(basedir, '..', 'tests', 'workerTests');
 
-function setTestFilePlugin() {
-  return {
-    name: 'transform-file',
-    transform(src, id) {
-      let testPath = [sourceTestsDir, cloudflareSourceTestsDir].map(dir => path.relative(dir, id).replace(/\\/g, '/'))
-        .find(p => !p.startsWith('..'));
-      if (/\.(spec|test)\.ts$/.test(id)) {
-        return {
-          code: [
-            `import { setCurrentTestFile } from '@cloudflare/playwright/internal';setCurrentTestFile(${JSON.stringify(testPath)});`,
-            src,
-            'setCurrentTestFile(undefined);',
-          ].join('\n'),
-          map: null, // provide source map if available
-        }
-      }
-    },
-  }
-}
-
 deleteDir(workerTestsDir);
 
 // generate workerTests/assets.ts file
@@ -57,14 +37,13 @@ const assets = [
   .map(file => path.relative(sourceTestsDir, file).replace(/\\/g, '/'));
 
 writeFile(path.join(workerTestsDir, 'assets.ts'), `// @ts-nocheck
+import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 
-import fs from '@cloudflare/playwright/fs';
-
 ${decodeBase64ToFiles.toString()}
 
-decodeBase64ToFiles('/', ${JSON.stringify(encodeFilesToBase64(sourceTestsDir, assets), undefined, 2)});
+decodeBase64ToFiles('/tmp', ${JSON.stringify(encodeFilesToBase64(sourceTestsDir, assets), undefined, 2)});
 `);
 
 // generate workerTests/index.ts file
