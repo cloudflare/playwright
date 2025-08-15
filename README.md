@@ -74,8 +74,9 @@ export default {
 ### Trace
 
 ```js
+import fs from "fs";
+
 import { launch } from "@cloudflare/playwright";
-import fs from "@cloudflare/playwright/fs";
 
 export default {
   async fetch(request, env): Promise<Response> {

@@ -1,7 +1,8 @@
+import fs from 'fs';
+
 import { _baseTest, currentTestContext, runWithExpectApiListener } from '@cloudflare/playwright/internal';
 import playwright, { connect } from '@cloudflare/playwright';
 import { env } from 'cloudflare:workers';
-import fs from '@cloudflare/playwright/fs';
 import { expect as baseExpect } from '@cloudflare/playwright/test';
 
 import type { BrowserBindingName } from '../utils';
@@ -326,7 +327,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   },
 
   asset: async ({}, run) => {
-    await run((p: string) => `/assets/${p}`);
+    await run((p: string) => `/tmp/assets/${p}`);
   },
 
   mode: ['service', { scope: 'worker', option: true }],

@@ -59,14 +59,13 @@ const assets = [
   .map(file => path.relative(sourceTestsDir, file).replace(/\\/g, '/'));
 
 writeFile(path.join(workerTestsDir, 'assets.ts'), `// @ts-nocheck
+import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 
-import fs from '@cloudflare/playwright/fs';
-
 ${decodeBase64ToFiles.toString()}
 
-decodeBase64ToFiles('/', ${JSON.stringify(encodeFilesToBase64(sourceTestsDir, assets), undefined, 2)});
+decodeBase64ToFiles('/tmp', ${JSON.stringify(encodeFilesToBase64(sourceTestsDir, assets), undefined, 2)});
 `);
 
 // generate workerTests/index.ts file
@@ -100,6 +99,7 @@ ${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(fi
         'dns': 'node:dns',
         'domain': 'node:domain',
         'events': 'node:events',
+        'fs': 'node:fs',
         'http': 'node:http',
         'http2': 'node:http2',
         'https': 'node:https',
@@ -138,7 +138,6 @@ ${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(fi
         'packages/playwright-core/lib': path.resolve(basedir, '../../playwright-core/src'),
         'playwright-core': '@cloudflare/playwright',
         '@playwright/test': path.resolve(basedir, '../tests/src/server/workerFixtures'),
-        'fs': '@cloudflare/playwright/fs',
         '@isomorphic': path.resolve(basedir, '../../playwright-core/src/utils/isomorphic'),
         '@testIsomorphic': path.resolve(basedir, '../../playwright/src/isomorphic'),
       },
@@ -177,6 +176,7 @@ ${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(fi
           'node:dns',
           'node:domain',
           'node:events',
+          'node:fs',
           'node:http',
           'node:http2',
           'node:https',

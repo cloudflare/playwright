@@ -11,9 +11,9 @@
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "wrangler": "^4.26.0"
+    "wrangler": "https://pkg.pr.new/wrangler@8dbc54a"
   },
   "dependencies": {
-    "@cloudflare/playwright": "^0.0.11"
+    "@cloudflare/playwright": "file:../.."
   }
 }
