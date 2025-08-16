@@ -21,6 +21,7 @@ export default defineConfig({
       'crypto': 'node:crypto',
       'dns': 'node:dns',
       'events': 'node:events',
+      'fs': 'node:fs',
       'http': 'node:http',
       'http2': 'node:http2',
       'https': 'node:https',
@@ -41,7 +42,6 @@ export default defineConfig({
       './utilsBundleImpl': path.resolve(__dirname, './src/bundles/utilsBundleImpl'),
       './zipBundleImpl': path.resolve(__dirname, './src/bundles/zipBundleImpl'),
       './expectBundleImpl': path.resolve(__dirname, './src/bundles/expectBundleImpl'),
-      'fs': path.resolve(__dirname, './src/bundles/fs'),
       'pngjs': path.resolve(__dirname, './src/bundles/pngjs'),
 
       // replace playwright transport with cloudflare workers transport
@@ -111,6 +111,7 @@ export default defineConfig({
         'node:crypto',
         'node:dns',
         'node:events',
+        'node:fs',
         'node:http',
         'node:http2',
         'node:https',

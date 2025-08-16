@@ -1,8 +1,8 @@
 name = "cloudflare-playwright-example"
 main = "src/index.ts"
 workers_dev = true
-compatibility_flags = ["nodejs_compat"]
-compatibility_date = "2025-03-05"
+compatibility_flags = ["nodejs_compat", "enable_nodejs_fs_module", "experimental"]
+compatibility_date = "2025-07-25"
 upload_source_maps = true
 
 [browser]
