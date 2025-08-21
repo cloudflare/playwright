@@ -1,9 +1,13 @@
 name = "playwright-test-workers"
 main = "src/server/index.ts"
-workers_dev = true
+workers_dev = false
 compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2025-03-05"
 upload_source_maps = true
+
+routes = [
+  { pattern = "playwright-test-workers.rendering.cfdata.org", custom_domain = true },
+]
 
 [browser]
 binding = "BROWSER"
@@ -23,3 +27,7 @@ new_sqlite_classes = ["TestsServer"]
 
 [env.cross-origin]
 name = "playwright-test-workers-cross-origin"
+
+routes = [
+  { pattern = "playwright-test-workers-cross-origin.rendering.cfdata.org", custom_domain = true },
+]
