@@ -7,6 +7,11 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
 const testsServerUrl = process.env.TESTS_SERVER_URL ?? `http://localhost:8787`;
 const proxyTestsDir = path.join(basedir, '..', 'tests', 'proxyTests');
 
+const authHeaders = {
+  'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID ?? '',
+  'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET ?? '',
+};
+
 // ensure proxyTestsDir directory is clean
 deleteDir(proxyTestsDir);
 
@@ -26,7 +31,7 @@ ${indent}}, testInfo));`;
 }
 
 (async () => {
-  const suites = await fetch(`${testsServerUrl}`).then(res => res.json());
+  const suites = await fetch(`${testsServerUrl}`, { headers: authHeaders }).then(res => res.json());
   for (const suite of suites) {
     const targetProxyTestFile = path.join(proxyTestsDir, suite.file);
     const proxyTests = path.join(basedir, '../tests/src/proxy/proxyTests.ts');
