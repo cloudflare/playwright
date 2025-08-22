@@ -7,6 +7,7 @@ upload_source_maps = true
 
 routes = [
   { pattern = "playwright-test-workers.rendering.cfdata.org", custom_domain = true },
+  { pattern = "playwright-test-workers-cross-origin.rendering.cfdata.org", custom_domain = true },
 ]
 
 [browser]
@@ -24,10 +25,3 @@ class_name = "TestsServer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["TestsServer"]
-
-[env.cross-origin]
-name = "playwright-test-workers-cross-origin"
-
-routes = [
-  { pattern = "playwright-test-workers-cross-origin.rendering.cfdata.org", custom_domain = true },
-]
