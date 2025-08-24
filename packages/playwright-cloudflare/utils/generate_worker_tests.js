@@ -132,6 +132,7 @@ ${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(fi
         '../../zipBundle': '@cloudflare/playwright/internal',
         '../../utilsBundle': '@cloudflare/playwright/internal',
         'playwright-core/lib/utilsBundle': '@cloudflare/playwright/internal',
+        'playwright-core/lib/utils': '@cloudflare/playwright/internal',
 
         '../../packages/playwright-core/lib': path.resolve(basedir, '../../playwright-core/src'),
         '../../../packages/playwright-core/lib': path.resolve(basedir, '../../playwright-core/src'),
