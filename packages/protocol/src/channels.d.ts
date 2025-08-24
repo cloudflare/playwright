@@ -347,6 +347,7 @@ export type FormField = {
   },
 };
 
+export type SDKLanguage = 'javascript' | 'python' | 'java' | 'csharp';
 // ----------- APIRequestContext -----------
 export type APIRequestContextInitializer = {
   tracing: TracingChannel,
@@ -608,7 +609,7 @@ export interface RootChannel extends RootEventTarget, Channel {
   initialize(params: RootInitializeParams, progress?: Progress): Promise<RootInitializeResult>;
 }
 export type RootInitializeParams = {
-  sdkLanguage: 'javascript' | 'python' | 'java' | 'csharp',
+  sdkLanguage: SDKLanguage,
 };
 export type RootInitializeOptions = {
 
@@ -738,14 +739,11 @@ export interface DebugControllerChannel extends DebugControllerEventTarget, Chan
   _type_DebugController: boolean;
   initialize(params: DebugControllerInitializeParams, progress?: Progress): Promise<DebugControllerInitializeResult>;
   setReportStateChanged(params: DebugControllerSetReportStateChangedParams, progress?: Progress): Promise<DebugControllerSetReportStateChangedResult>;
-  resetForReuse(params?: DebugControllerResetForReuseParams, progress?: Progress): Promise<DebugControllerResetForReuseResult>;
-  navigate(params: DebugControllerNavigateParams, progress?: Progress): Promise<DebugControllerNavigateResult>;
   setRecorderMode(params: DebugControllerSetRecorderModeParams, progress?: Progress): Promise<DebugControllerSetRecorderModeResult>;
   highlight(params: DebugControllerHighlightParams, progress?: Progress): Promise<DebugControllerHighlightResult>;
   hideHighlight(params?: DebugControllerHideHighlightParams, progress?: Progress): Promise<DebugControllerHideHighlightResult>;
   resume(params?: DebugControllerResumeParams, progress?: Progress): Promise<DebugControllerResumeResult>;
   kill(params?: DebugControllerKillParams, progress?: Progress): Promise<DebugControllerKillResult>;
-  closeAllBrowsers(params?: DebugControllerCloseAllBrowsersParams, progress?: Progress): Promise<DebugControllerCloseAllBrowsersResult>;
 }
 export type DebugControllerInspectRequestedEvent = {
   selector: string,
@@ -757,6 +755,16 @@ export type DebugControllerSetModeRequestedEvent = {
 };
 export type DebugControllerStateChangedEvent = {
   pageCount: number,
+  browsers: {
+    id: string,
+    name: string,
+    channel?: string,
+    contexts: {
+      pages: {
+        url: string,
+      }[],
+    }[],
+  }[],
 };
 export type DebugControllerSourceChangedEvent = {
   text: string,
@@ -769,7 +777,7 @@ export type DebugControllerPausedEvent = {
 };
 export type DebugControllerInitializeParams = {
   codegenId: string,
-  sdkLanguage: 'javascript' | 'python' | 'java' | 'csharp',
+  sdkLanguage: SDKLanguage,
 };
 export type DebugControllerInitializeOptions = {
 
@@ -782,22 +790,14 @@ export type DebugControllerSetReportStateChangedOptions = {
 
 };
 export type DebugControllerSetReportStateChangedResult = void;
-export type DebugControllerResetForReuseParams = {};
-export type DebugControllerResetForReuseOptions = {};
-export type DebugControllerResetForReuseResult = void;
-export type DebugControllerNavigateParams = {
-  url: string,
-};
-export type DebugControllerNavigateOptions = {
-
-};
-export type DebugControllerNavigateResult = void;
 export type DebugControllerSetRecorderModeParams = {
   mode: 'inspecting' | 'recording' | 'none',
   testIdAttributeName?: string,
+  generateAutoExpect?: boolean,
 };
 export type DebugControllerSetRecorderModeOptions = {
   testIdAttributeName?: string,
+  generateAutoExpect?: boolean,
 };
 export type DebugControllerSetRecorderModeResult = void;
 export type DebugControllerHighlightParams = {
@@ -818,9 +818,6 @@ export type DebugControllerResumeResult = void;
 export type DebugControllerKillParams = {};
 export type DebugControllerKillOptions = {};
 export type DebugControllerKillResult = void;
-export type DebugControllerCloseAllBrowsersParams = {};
-export type DebugControllerCloseAllBrowsersOptions = {};
-export type DebugControllerCloseAllBrowsersResult = void;
 
 export interface DebugControllerEvents {
   'inspectRequested': DebugControllerInspectRequestedEvent;
@@ -1720,6 +1717,7 @@ export type BrowserContextRecorderEventEvent = {
   event: 'actionAdded' | 'actionUpdated' | 'signalAdded',
   data: any,
   page: PageChannel,
+  code: string,
 };
 export type BrowserContextAddCookiesParams = {
   cookies: SetNetworkCookie[],
@@ -2110,7 +2108,7 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   touchscreenTap(params: PageTouchscreenTapParams, progress?: Progress): Promise<PageTouchscreenTapResult>;
   accessibilitySnapshot(params: PageAccessibilitySnapshotParams, progress?: Progress): Promise<PageAccessibilitySnapshotResult>;
   pdf(params: PagePdfParams, progress?: Progress): Promise<PagePdfResult>;
-  snapshotForAI(params?: PageSnapshotForAIParams, progress?: Progress): Promise<PageSnapshotForAIResult>;
+  snapshotForAI(params: PageSnapshotForAIParams, progress?: Progress): Promise<PageSnapshotForAIResult>;
   startJSCoverage(params: PageStartJSCoverageParams, progress?: Progress): Promise<PageStartJSCoverageResult>;
   stopJSCoverage(params?: PageStopJSCoverageParams, progress?: Progress): Promise<PageStopJSCoverageResult>;
   startCSSCoverage(params: PageStartCSSCoverageParams, progress?: Progress): Promise<PageStartCSSCoverageResult>;
@@ -2539,8 +2537,12 @@ export type PagePdfOptions = {
 export type PagePdfResult = {
   pdf: Binary,
 };
-export type PageSnapshotForAIParams = {};
-export type PageSnapshotForAIOptions = {};
+export type PageSnapshotForAIParams = {
+  timeout: number,
+};
+export type PageSnapshotForAIOptions = {
+
+};
 export type PageSnapshotForAIResult = {
   snapshot: string,
 };
@@ -2649,7 +2651,7 @@ export interface FrameChannel extends FrameEventTarget, Channel {
   fill(params: FrameFillParams, progress?: Progress): Promise<FrameFillResult>;
   focus(params: FrameFocusParams, progress?: Progress): Promise<FrameFocusResult>;
   frameElement(params?: FrameFrameElementParams, progress?: Progress): Promise<FrameFrameElementResult>;
-  generateLocatorString(params: FrameGenerateLocatorStringParams, progress?: Progress): Promise<FrameGenerateLocatorStringResult>;
+  resolveSelector(params: FrameResolveSelectorParams, progress?: Progress): Promise<FrameResolveSelectorResult>;
   highlight(params: FrameHighlightParams, progress?: Progress): Promise<FrameHighlightResult>;
   getAttribute(params: FrameGetAttributeParams, progress?: Progress): Promise<FrameGetAttributeResult>;
   goto(params: FrameGotoParams, progress?: Progress): Promise<FrameGotoResult>;
@@ -2744,11 +2746,10 @@ export type FrameAddStyleTagResult = {
 };
 export type FrameAriaSnapshotParams = {
   selector: string,
-  forAI?: boolean,
   timeout: number,
 };
 export type FrameAriaSnapshotOptions = {
-  forAI?: boolean,
+
 };
 export type FrameAriaSnapshotResult = {
   snapshot: string,
@@ -2905,14 +2906,14 @@ export type FrameFrameElementOptions = {};
 export type FrameFrameElementResult = {
   element: ElementHandleChannel,
 };
-export type FrameGenerateLocatorStringParams = {
+export type FrameResolveSelectorParams = {
   selector: string,
 };
-export type FrameGenerateLocatorStringOptions = {
+export type FrameResolveSelectorOptions = {
 
 };
-export type FrameGenerateLocatorStringResult = {
-  value?: string,
+export type FrameResolveSelectorResult = {
+  resolvedSelector: string,
 };
 export type FrameHighlightParams = {
   selector: string,

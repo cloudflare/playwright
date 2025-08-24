@@ -52,7 +52,7 @@ test('should collect trace with resources, but no js', async ({ context, page, s
     'Navigate to "/input/fileupload.html"',
     'Set input files',
     'Wait for timeout',
-    'Close',
+    'Close page',
   ]);
 
   expect(events.some(e => e.type === 'frame-snapshot')).toBeTruthy();
@@ -85,7 +85,9 @@ test('should use the correct title for event driven callbacks', async ({ context
   const { events, actions } = await parseTraceRaw(testInfo.outputPath('trace.zip'));
   expect(events[0].type).toBe('context-options');
   expect(actions).toEqual([
+    'Route requests',
     'Navigate to "/empty.html"',
+    'Continue request',
     'Navigate to "/grid.html"',
     'Evaluate',
     'Reload',
@@ -200,7 +202,7 @@ test('should collect two traces', async ({ context, page, server }, testInfo) =>
     expect(events[0].type).toBe('context-options');
     expect(actions).toEqual([
       'Double click',
-      'Close',
+      'Close page',
     ]);
   }
 });

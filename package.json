@@ -1,7 +1,7 @@
 {
   "name": "playwright-internal",
   "private": true,
-  "version": "1.54.1",
+  "version": "1.55.0",
   "description": "A high-level API to automate web browsers",
   "repository": {
     "type": "git",
@@ -44,8 +44,7 @@
     "roll": "node utils/roll_browser.js",
     "check-deps": "node utils/check_deps.js",
     "build-android-driver": "./utils/build_android_driver.sh",
-    "innerloop": "playwright run-server --reuse-browser",
-    "mdd": "playwright-mdd run packages/playwright-mdd/specs/integration.spec.md -o packages/playwright-mdd/tests/integration.spec.ts"
+    "innerloop": "playwright run-server --reuse-browser"
   },
   "workspaces": [
     "packages/*"
@@ -57,6 +56,7 @@
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.19.0",
+    "@modelcontextprotocol/sdk": "^1.17.3",
     "@octokit/graphql-schema": "^15.26.0",
     "@stylistic/eslint-plugin": "^3.0.1",
     "@types/codemirror": "^5.60.7",
@@ -75,7 +75,7 @@
     "@zip.js/zip.js": "^2.7.29",
     "ansi-styles": "^4.3.0",
     "chokidar": "^3.5.3",
-    "chromium-bidi": "^5.3.1",
+    "chromium-bidi": "^7.2.0",
     "colors": "^1.4.0",
     "concurrently": "^6.2.1",
     "cross-env": "^7.0.3",

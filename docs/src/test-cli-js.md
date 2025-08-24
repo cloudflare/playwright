@@ -86,7 +86,7 @@ npx playwright test --ui
 | `--fully-parallel` | Run all tests in parallel (default: false). |
 | `--global-timeout <timeout>` | Maximum time this test suite can run in milliseconds (default: unlimited). |
 | `-g <grep>` or `--grep <grep>` | Only run tests matching this regular expression (default: ".*"). |
-| `-gv <grep>` or `--grep-invert <grep>` | Only run tests that do not match this regular expression. |
+| `--grep-invert <grep>` | Only run tests that do not match this regular expression. |
 | `--headed` | Run tests in headed browsers (default: headless). |
 | `--ignore-snapshots` | Ignore screenshot and snapshot expectations. |
 | `-j <workers>` or `--workers <workers>` | Number of concurrent workers or percentage of logical CPU cores, use 1 to run in a single worker (default: 50%). |
@@ -112,6 +112,7 @@ npx playwright test --ui
 | `-u` or `--update-snapshots [mode]` | Update snapshots with actual results. Possible values are "all", "changed", "missing", and "none". Running tests without the flag defaults to "missing"; running tests with the flag but without a value defaults to "changed". |
 | `--update-source-method [mode]` | Update snapshots with actual results. Possible values are "patch" (default), "3way" and "overwrite". "Patch" creates a unified diff file that can be used to update the source code later. "3way" generates merge conflict markers in source code. "Overwrite" overwrites the source code with the new snapshot values.|
 | `-x` | Stop after the first failure. |
+
 
 ### Show Report
 

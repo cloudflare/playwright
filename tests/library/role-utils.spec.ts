@@ -439,11 +439,12 @@ test('control embedded in a target element', async ({ page }) => {
   expect.soft(await getNameAndRole(page, 'h1')).toEqual({ role: 'heading', name: 'Foo bar' });
 });
 
-test('svg role=presentation', async ({ page }) => {
+test('svg role=presentation', async ({ page, server }) => {
   test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/26809' });
 
+  await page.goto(server.EMPTY_PAGE);
   await page.setContent(`
-		<img src="http://example.com/image.png" alt="Code is Poetry." />
+		<img src="pptr.png" alt="Code is Poetry." />
 		<svg viewBox="0 0 100 100" width="16" height="16" xmlns="http://www.w3.org/2000/svg" role="presentation" focusable="false"><circle cx="50" cy="50" r="50"></circle></svg>
   `);
   expect.soft(await getNameAndRole(page, 'img')).toEqual({ role: 'img', name: 'Code is Poetry.' });
@@ -561,6 +562,32 @@ test('should support search element', async ({ page }) => {
   expect.soft(await getNameAndRole(page, '#search1')).toEqual({ role: 'search', name: 'example' });
   expect.soft(await getNameAndRole(page, '#search2')).toEqual({ role: 'search', name: '' });
   await expect.soft(page.getByRole('search', { name: 'example' })).toBeVisible();
+});
+
+test('should consider inert elements to be hidden', async ({ page }) => {
+  await page.setContent(`
+        <div aria-hidden="true">
+            <button type="button">First</button>
+        </div>
+        <div inert>
+            <button type="button">Second</button>
+        </div>
+        <button type="button" inert>Third</button>
+    `);
+
+  await expect(page.getByRole('button', { name: 'First' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Second' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Third' })).toHaveCount(0);
+
+  await expect(
+      page.getByRole('button', { name: 'First', includeHidden: true })
+  ).toHaveCount(1);
+  await expect(
+      page.getByRole('button', { name: 'Second', includeHidden: true })
+  ).toHaveCount(1);
+  await expect(
+      page.getByRole('button', { name: 'Third', includeHidden: true })
+  ).toHaveCount(1);
 });
 
 function toArray(x: any): any[] {

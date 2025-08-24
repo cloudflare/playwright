@@ -17,12 +17,13 @@
 import type { TestAttachment, TestCase, TestCaseSummary, TestResult, TestResultSummary } from './types';
 import * as React from 'react';
 import * as icons from './icons';
-import { TreeItem } from './treeItem';
 import { CopyToClipboard } from './copyToClipboard';
 import './links.css';
 import { linkifyText } from '@web/renderUtils';
 import { clsx, useFlash } from '@web/uiUtils';
 import { trace } from './icons';
+import { Expandable } from './expandable';
+import { Label } from './labels';
 
 export function navigate(href: string | URL) {
   window.history.pushState({}, '', href);
@@ -64,9 +65,7 @@ export const ProjectLink: React.FunctionComponent<{
   const encoded = encodeURIComponent(projectName);
   const value = projectName === encoded ? projectName : `"${encoded.replace(/%22/g, '%5C%22')}"`;
   return <Link href={`#?q=p:${value}`}>
-    <span className={clsx('label', `label-color-${projectNames.indexOf(projectName) % 6}`)} style={{ margin: '6px 0 0 6px' }}>
-      {projectName}
-    </span>
+    <Label label={projectName} colorIndex={projectNames.indexOf(projectName) % 6} />
   </Link>;
 };
 
@@ -79,29 +78,55 @@ export const AttachmentLink: React.FunctionComponent<{
 }> = ({ attachment, result, href, linkName, openInNewTab }) => {
   const [flash, triggerFlash] = useFlash();
   useAnchor('attachment-' + result.attachments.indexOf(attachment), triggerFlash);
-  return <TreeItem title={<span>
-    {attachment.contentType === kMissingContentType ? icons.warning() : icons.attachment()}
-    {attachment.path && (
-      openInNewTab
-        ? <a href={href || attachment.path} target='_blank' rel='noreferrer'>{linkName || attachment.name}</a>
-        : <a href={href || attachment.path} download={downloadFileNameForAttachment(attachment)}>{linkName || attachment.name}</a>
-    )}
-    {!attachment.path && (
-      openInNewTab
-        ? (
-          <a
-            href={URL.createObjectURL(new Blob([attachment.body!], { type: attachment.contentType }))}
-            target='_blank' rel='noreferrer'
-            onClick={e => e.stopPropagation() /* dont expand the tree item */}
-          >
-            {attachment.name}
-          </a>
-        )
-        : <span>{linkifyText(attachment.name)}</span>
-    )}
-  </span>} loadChildren={attachment.body ? () => {
-    return [<div key={1} className='attachment-body'><CopyToClipboard value={attachment.body!}/>{linkifyText(attachment.body!)}</div>];
-  } : undefined} depth={0} style={{ lineHeight: '32px' }} flash={flash}></TreeItem>;
+
+  const summaryContent = (
+    <span>
+      {attachment.contentType === kMissingContentType ? icons.warning() : icons.attachment()}
+      {attachment.path && (
+        openInNewTab
+          ? <a href={href || attachment.path} target='_blank' rel='noreferrer'>{linkName || attachment.name}</a>
+          : <a href={href || attachment.path} download={downloadFileNameForAttachment(attachment)}>{linkName || attachment.name}</a>
+      )}
+      {!attachment.path && (
+        openInNewTab
+          ? (
+            <a
+              href={URL.createObjectURL(new Blob([attachment.body!], { type: attachment.contentType }))}
+              target='_blank' rel='noreferrer'
+              onClick={e => e.stopPropagation() /* dont expand the details */}
+            >
+              {attachment.name}
+            </a>
+          )
+          : <span>{linkifyText(attachment.name)}</span>
+      )}
+    </span>
+  );
+
+  if (!attachment.body) {
+    return (
+      <div
+        style={{ lineHeight: '32px', whiteSpace: 'nowrap', paddingLeft: 4 }}
+        className={clsx(flash && 'flash')}
+      >
+        <span style={{ visibility: 'hidden' }}>{icons.rightArrow()}</span>
+        {summaryContent}
+      </div>
+    );
+  }
+
+  return (
+    <Expandable
+      style={{ lineHeight: '32px' }}
+      className={clsx(flash && 'flash')}
+      summary={summaryContent}
+    >
+      <div className='attachment-body'>
+        <CopyToClipboard value={attachment.body!}/>
+        {linkifyText(attachment.body!)}
+      </div>
+    </Expandable>
+  );
 };
 
 export const TraceLink: React.FC<{ test: TestCaseSummary, trailingSeparator?: boolean, dim?: boolean }> = ({ test, trailingSeparator, dim }) => {

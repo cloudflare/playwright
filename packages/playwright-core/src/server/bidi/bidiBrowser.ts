@@ -47,40 +47,11 @@ export class BidiBrowser extends Browser {
     if ((options as any).__testHookOnConnectToBrowser)
       await (options as any).__testHookOnConnectToBrowser();
 
-    let proxy: bidi.Session.ManualProxyConfiguration | undefined;
-    if (options.proxy) {
-      proxy = {
-        proxyType: 'manual',
-      };
-      const url = new URL(options.proxy.server);  // Validate proxy server.
-      switch (url.protocol) {
-        case 'http:':
-          proxy.httpProxy = url.host;
-          break;
-        case 'https:':
-          proxy.httpsProxy = url.host;
-          break;
-        case 'socks4:':
-          proxy.socksProxy = url.host;
-          proxy.socksVersion = 4;
-          break;
-        case 'socks5:':
-          proxy.socksProxy = url.host;
-          proxy.socksVersion = 5;
-          break;
-        default:
-          throw new Error('Invalid proxy server protocol: ' + options.proxy.server);
-      }
-      if (options.proxy.bypass)
-        proxy.noProxy = options.proxy.bypass.split(',');
-      // TODO: support authentication.
-    }
-
     browser._bidiSessionInfo = await browser._browserSession.send('session.new', {
       capabilities: {
         alwaysMatch: {
-          acceptInsecureCerts: false,
-          proxy,
+          acceptInsecureCerts: options.persistent?.internalIgnoreHTTPSErrors || options.persistent?.ignoreHTTPSErrors,
+          proxy: getProxyConfiguration(options.originalLaunchOptions.proxyOverride ?? options.proxy),
           unhandledPromptBehavior: {
             default: bidi.Session.UserPromptHandlerType.Ignore,
           },
@@ -124,8 +95,10 @@ export class BidiBrowser extends Browser {
   }
 
   async doCreateNewContext(options: types.BrowserContextOptions): Promise<BrowserContext> {
+    const proxy = options.proxyOverride || options.proxy;
     const { userContext } = await this._browserSession.send('browser.createUserContext', {
-      acceptInsecureCerts: options.ignoreHTTPSErrors,
+      acceptInsecureCerts: options.internalIgnoreHTTPSErrors || options.ignoreHTTPSErrors,
+      proxy: getProxyConfiguration(proxy),
     });
     const context = new BidiBrowserContext(this, userContext, options);
     await context._initialize();
@@ -208,7 +181,6 @@ export class BidiBrowser extends Browser {
 export class BidiBrowserContext extends BrowserContext {
   declare readonly _browser: BidiBrowser;
   private _originToPermissions = new Map<string, string[]>();
-  private _blockingPageCreations: Set<Promise<unknown>> = new Set();
   private _initScriptIds = new Map<InitScript, string>();
 
   constructor(browser: BidiBrowser, browserContextId: string | undefined, options: types.BrowserContextOptions) {
@@ -227,6 +199,12 @@ export class BidiBrowserContext extends BrowserContext {
     promises.push(this.doUpdateDefaultViewport());
     if (this._options.geolocation)
       promises.push(this.setGeolocation(this._options.geolocation));
+    if (this._options.locale) {
+      promises.push(this._browser._browserSession.send('emulation.setLocaleOverride', {
+        locale: this._options.locale,
+        userContexts: [this._userContextId()],
+      }));
+    }
     await Promise.all(promises);
   }
 
@@ -234,30 +212,12 @@ export class BidiBrowserContext extends BrowserContext {
     return this._bidiPages().map(bidiPage => bidiPage._page);
   }
 
-  override async doCreateNewPage(markAsServerSideOnly?: boolean): Promise<Page> {
-    const promise = this._createNewPageImpl(markAsServerSideOnly);
-    if (markAsServerSideOnly)
-      this._blockingPageCreations.add(promise);
-    try {
-      return await promise;
-    } finally {
-      this._blockingPageCreations.delete(promise);
-    }
-  }
-
-  private async _createNewPageImpl(markAsServerSideOnly?: boolean): Promise<Page> {
+  override async doCreateNewPage(): Promise<Page> {
     const { context } = await this._browser._browserSession.send('browsingContext.create', {
       type: bidi.BrowsingContext.CreateType.Window,
       userContext: this._browserContextId,
     });
-    const page = this._browser._bidiPages.get(context)!._page;
-    if (markAsServerSideOnly)
-      page.markAsServerSideOnly();
-    return page;
-  }
-
-  async waitForBlockingPageCreations() {
-    await Promise.all([...this._blockingPageCreations].map(command => command.catch(() => {})));
+    return this._browser._bidiPages.get(context)!._page;
   }
 
   async doGetCookies(urls: string[]): Promise<channels.NetworkCookie[]> {
@@ -323,7 +283,7 @@ export class BidiBrowserContext extends BrowserContext {
       },
       state,
       origin,
-      userContext: this._browserContextId || 'default',
+      userContext: this._userContextId(),
     });
   }
 
@@ -338,7 +298,7 @@ export class BidiBrowserContext extends BrowserContext {
         longitude: geolocation.longitude,
         accuracy: geolocation.accuracy,
       } : null,
-      userContexts: [this._browserContextId || 'default'],
+      userContexts: [this._userContextId()],
     });
   }
 
@@ -361,7 +321,7 @@ export class BidiBrowserContext extends BrowserContext {
     const { script } = await this._browser._browserSession.send('script.addPreloadScript', {
       // TODO: remove function call from the source.
       functionDeclaration: `() => { return ${initScript.source} }`,
-      userContexts: [this._browserContextId || 'default'],
+      userContexts: [this._userContextId()],
     });
     this._initScriptIds.set(initScript, script);
   }
@@ -471,6 +431,40 @@ function toBidiSameSite(sameSite: channels.SetNetworkCookie['sameSite']): bidi.N
     case 'None': return bidi.Network.SameSite.None;
   }
   return bidi.Network.SameSite.None;
+}
+
+function getProxyConfiguration(proxySettings?: types.ProxySettings): bidi.Session.ManualProxyConfiguration | undefined {
+  if (!proxySettings)
+    return undefined;
+
+  const proxy: bidi.Session.ManualProxyConfiguration = {
+    proxyType: 'manual',
+  };
+  const url = new URL(proxySettings.server);  // Validate proxy server.
+  switch (url.protocol) {
+    case 'http:':
+      proxy.httpProxy = url.host;
+      break;
+    case 'https:':
+      proxy.sslProxy = url.host;
+      break;
+    case 'socks4:':
+      proxy.socksProxy = url.host;
+      proxy.socksVersion = 4;
+      break;
+    case 'socks5:':
+      proxy.socksProxy = url.host;
+      proxy.socksVersion = 5;
+      break;
+    default:
+      throw new Error('Invalid proxy server protocol: ' + proxySettings.server);
+  }
+  const bypass = proxySettings.bypass ?? process.env.PLAYWRIGHT_PROXY_BYPASS_FOR_TESTING;
+  if (bypass)
+    proxy.noProxy = bypass.split(',');
+  // TODO: support authentication.
+
+  return proxy;
 }
 
 export namespace Network {

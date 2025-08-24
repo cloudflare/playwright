@@ -24,9 +24,10 @@ import { unsafeLocatorOrSelectorAsSelector } from '../utils/isomorphic/locatorPa
 import { generateCode } from './codegen/language';
 import { collapseActions } from './recorder/recorderUtils';
 import { JavaScriptLanguageGenerator } from './codegen/javascript';
+import { Frame } from './frames';
+import { Page } from './page';
 
 import type { Language } from '../utils';
-import type { Browser } from './browser';
 import type { BrowserContext } from './browserContext';
 import type { InstrumentationListener } from './instrumentation';
 import type { Playwright } from './playwright';
@@ -43,9 +44,11 @@ export class DebugController extends SdkObject {
     SetModeRequested: 'setModeRequested',
   };
 
-  private _trackHierarchyListener: InstrumentationListener | undefined;
+  private _reportState = false;
+  private _disposeListeners = new Set<() => void>();
   private _playwright: Playwright;
   _sdkLanguage: Language = 'javascript';
+  _generateAutoExpect = false;
 
   constructor(playwright: Playwright) {
     super({ attribution: { isInternalPlaywright: true }, instrumentation: createInstrumentation() } as any, undefined, 'DebugController');
@@ -61,34 +64,34 @@ export class DebugController extends SdkObject {
   }
 
   setReportStateChanged(enabled: boolean) {
-    if (enabled && !this._trackHierarchyListener) {
-      this._trackHierarchyListener = {
-        onPageOpen: () => this._emitSnapshot(false),
+    if (this._reportState === enabled)
+      return;
+    this._reportState = enabled;
+    if (enabled) {
+      const listener: InstrumentationListener = {
+        onPageOpen: page => {
+          this._emitSnapshot(false);
+          const handleNavigation = () => this._emitSnapshot(false);
+          page.mainFrame().on(Frame.Events.InternalNavigation, handleNavigation);
+          const dispose = () => page.mainFrame().off(Frame.Events.InternalNavigation, handleNavigation);
+          this._disposeListeners.add(dispose);
+          page.on(Page.Events.Close, () => this._disposeListeners.delete(dispose));
+        },
         onPageClose: () => this._emitSnapshot(false),
       };
-      this._playwright.instrumentation.addListener(this._trackHierarchyListener, null);
+      this._playwright.instrumentation.addListener(listener, null);
+      this._disposeListeners.add(() => this._playwright.instrumentation.removeListener(listener));
       this._emitSnapshot(true);
-    } else if (!enabled && this._trackHierarchyListener) {
-      this._playwright.instrumentation.removeListener(this._trackHierarchyListener);
-      this._trackHierarchyListener = undefined;
+    } else {
+      for (const dispose of this._disposeListeners)
+        dispose();
+      this._disposeListeners.clear();
     }
   }
 
-  async resetForReuse(progress: Progress) {
-    const contexts = new Set<BrowserContext>();
-    for (const page of this._playwright.allPages())
-      contexts.add(page.browserContext);
-    for (const context of contexts)
-      await context.resetForReuse(progress, null);
-  }
-
-  async navigate(progress: Progress, url: string) {
-    for (const p of this._playwright.allPages())
-      await p.mainFrame().goto(progress, url);
-  }
-
-  async setRecorderMode(progress: Progress, params: { mode: Mode, testIdAttributeName?: string }) {
+  async setRecorderMode(progress: Progress, params: { mode: Mode, testIdAttributeName?: string, generateAutoExpect?: boolean }) {
     await progress.race(this._closeBrowsersWithoutPages());
+    this._generateAutoExpect = !!params.generateAutoExpect;
 
     if (params.mode === 'none') {
       for (const recorder of await progress.race(this._allRecorders())) {
@@ -105,7 +108,7 @@ export class DebugController extends SdkObject {
     if (!pages.length) {
       const [browser] = this._playwright.allBrowsers();
       const context = await browser.newContextForReuse(progress, {});
-      await context.newPage(progress, false /* isServerSide */);
+      await context.newPage(progress);
     }
     // Update test id attribute.
     if (params.testIdAttributeName) {
@@ -137,11 +140,7 @@ export class DebugController extends SdkObject {
     for (const recorder of await progress.race(this._allRecorders()))
       recorder.hideHighlightedSelector();
     // Hide all locator.highlight highlights.
-    await this._playwright.hideHighlight();
-  }
-
-  allBrowsers(): Browser[] {
-    return [...this._playwright.allBrowsers()];
+    await Promise.all(this._playwright.allPages().map(p => p.hideHighlight().catch(() => {})));
   }
 
   async resume(progress: Progress) {
@@ -153,15 +152,23 @@ export class DebugController extends SdkObject {
     gracefullyProcessExitDoNotHang(0);
   }
 
-  async closeAllBrowsers() {
-    await Promise.all(this.allBrowsers().map(browser => browser.close({ reason: 'Close all browsers requested' })));
-  }
-
   private _emitSnapshot(initial: boolean) {
     const pageCount = this._playwright.allPages().length;
     if (initial && !pageCount)
       return;
-    this.emit(DebugController.Events.StateChanged, { pageCount });
+    this.emit(DebugController.Events.StateChanged, {
+      pageCount,
+      browsers: this._playwright.allBrowsers().map(browser => ({
+        id: browser.guid,
+        name: browser.options.name,
+        channel: browser.options.channel,
+        contexts: browser.contexts().map(context => ({
+          pages: context.pages().map(page => ({
+            url: page.mainFrame().url(),
+          }))
+        }))
+      }))
+    });
   }
 
   private async _allRecorders(): Promise<Recorder[]> {
@@ -203,6 +210,7 @@ function wireListeners(recorder: Recorder, debugController: DebugController) {
       browserName: 'chromium',
       launchOptions: {},
       contextOptions: {},
+      generateAutoExpect: debugController._generateAutoExpect,
     });
     debugController.emit(DebugController.Events.SourceChanged, { text, header, footer, actions: actionTexts });
   };

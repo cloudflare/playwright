@@ -513,10 +513,41 @@ for (const useIntermediateMergeReport of [true, false] as const) {
 
       await showReport();
       await page.getByRole('link', { name: 'fails' }).click();
-      await page.locator('text=stdout').click();
-      await expect(page.locator('.attachment-body')).toHaveText('First line\nSecond line');
-      await page.locator('text=stderr').click();
+      await page.getByText('stdout').click();
+      await expect(page.locator('.attachment-body').nth(0)).toHaveText('First line\nSecond line');
+      await page.getByText('stderr').click();
       await expect(page.locator('.attachment-body').nth(1)).toHaveText('Third line');
+    });
+
+    test('should include stdout/stderr in copy prompt', async ({ runInlineTest, page, showReport }) => {
+      const result = await runInlineTest({
+        'a.test.js': `
+          import { test, expect } from '@playwright/test';
+          test('fails', async ({ page }) => {
+            console.log('Output line 1');
+            process.stdout.write('Output line 2\\n');
+            console.error('Error line 1');
+            process.stderr.write('Error line 2\\n');
+            await expect(true).toBeFalsy();
+          });
+        `,
+      }, { reporter: 'dot,html' }, { PLAYWRIGHT_HTML_OPEN: 'never' });
+      expect(result.exitCode).toBe(1);
+      expect(result.failed).toBe(1);
+
+      await showReport();
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+      await page.getByRole('link', { name: 'fails' }).click();
+      await page.getByRole('button', { name: 'Copy prompt' }).click();
+      await page.waitForFunction(() => navigator.clipboard.readText());
+      const prompt = await page.evaluate(() => navigator.clipboard.readText());
+      expect(prompt, 'should contain stdout content').toContain('Output line 1');
+      expect(prompt, 'should contain stdout content').toContain('Output line 2');
+      expect(prompt, 'should contain stderr content').toContain('Error line 1');
+      expect(prompt, 'should contain stderr content').toContain('Error line 2');
+      expect(prompt, 'should contain stdout section').toContain('# Stdout');
+      expect(prompt, 'should contain stderr section').toContain('# Stderr');
     });
 
     test('should highlight error', async ({ runInlineTest, page, showReport }) => {
@@ -620,7 +651,8 @@ for (const useIntermediateMergeReport of [true, false] as const) {
       await showReport();
       await page.getByRole('link', { name: 'passes' }).click();
       await page.click('img');
-      await expect(page.locator('.workbench-loader .title')).toHaveText('a.test.js:3 › passes');
+      await expect(page.locator('.progress-dialog')).toBeHidden();
+      await expect(page.locator('.workbench-loader > .header > .title')).toHaveText('a.test.js:3 › passes');
     });
 
     test('should show multi trace source', async ({ runInlineTest, page, server, showReport }) => {
@@ -684,9 +716,9 @@ for (const useIntermediateMergeReport of [true, false] as const) {
 
       // Trace viewer should not hang here when displaying parallal requests.
       await expect(page.getByTestId('actions-tree')).toContainText('GET');
-      await page.getByText('GET').nth(2).click();
-      await page.getByText('GET').nth(1).click();
-      await page.getByText('GET').nth(0).click();
+      await page.getByText('GET "/empty.html"').nth(2).click();
+      await page.getByText('GET "/empty.html"').nth(1).click();
+      await page.getByText('GET "/empty.html"').nth(0).click();
     });
 
     test('should warn user when viewing via file:// protocol', async ({ runInlineTest, page, showReport }, testInfo) => {
@@ -2960,7 +2992,7 @@ for (const useIntermediateMergeReport of [true, false] as const) {
 
       await showReport();
       await page.getByText('my test').click();
-      await expect(page.locator('.tree-item', { hasText: 'stdout' })).toHaveCount(1);
+      await expect(page.getByTestId('attachments').getByText('stdout')).toHaveCount(1);
     });
 
     test('should include diff in AI prompt', async ({ runInlineTest, writeFiles, showReport, page }) => {
@@ -3063,6 +3095,92 @@ for (const useIntermediateMergeReport of [true, false] as const) {
       await showReport();
       await page.getByRole('link', { name: 'fail without snippet' }).click();
       await expect(page.getByTestId('test-snippet')).not.toBeVisible();
+    });
+
+    test('should support keyboard shortcuts', async ({ runInlineTest, showReport, page }) => {
+      await runInlineTest({
+        'playwright.config.ts': `
+          module.exports = { name: 'project-name' };
+        `,
+        'a.test.js': `
+          import { test, expect } from '@playwright/test';
+          test('passes', async ({}) => {});
+          test('passes2', async ({}) => {});
+          test('fails', async ({}) => {
+            expect(1).toBe(2);
+          });
+          test('skipped', async ({}) => {
+            test.skip('Does not work')
+          });
+          test('flaky', async ({}, testInfo) => {
+            expect(testInfo.retry).toBe(1);
+          });
+        `,
+      }, { reporter: 'dot,html', retries: 1 }, { PLAYWRIGHT_HTML_OPEN: 'never' });
+
+      await showReport();
+
+      // Focus the page
+      await page.getByRole('link', { name: 'All' }).click();
+
+      await test.step('next', async () => {
+        await page.keyboard.press('ArrowRight');
+        await expect(page.locator('.header-title')).toHaveText('fails');
+        await page.keyboard.press('ArrowRight');
+        await expect(page.locator('.header-title')).toHaveText('flaky');
+        await page.keyboard.press('ArrowRight');
+        await expect(page.locator('.header-title')).toHaveText('passes');
+        await page.keyboard.press('ArrowRight');
+        await expect(page.locator('.header-title')).toHaveText('passes2');
+        // Bounce
+        await page.keyboard.press('ArrowRight');
+        await expect(page.locator('.header-title')).toHaveText('passes2');
+      });
+
+      await test.step('prev', async () => {
+        await page.keyboard.press('ArrowLeft');
+        await expect(page.locator('.header-title')).toHaveText('passes');
+        await page.keyboard.press('ArrowLeft');
+        await expect(page.locator('.header-title')).toHaveText('flaky');
+        await page.keyboard.press('ArrowLeft');
+        await expect(page.locator('.header-title')).toHaveText('fails');
+        await page.keyboard.press('ArrowLeft');
+        await expect(page.locator('.header-title')).toHaveText('fails');
+      });
+
+      await test.step('p', async () => {
+        await page.keyboard.press('p');
+        await expect(page.locator('.test-file-test')).toHaveCount(2);
+      });
+
+      await test.step('a', async () => {
+        await page.keyboard.press('a');
+        await expect(page.locator('.test-file-test')).toHaveCount(4);
+      });
+
+      await test.step('f', async () => {
+        await page.keyboard.press('f');
+        await expect(page.locator('.test-file-test')).toHaveCount(1);
+      });
+
+      await test.step('should ignore when modifiers are pressed', async () => {
+        await page.keyboard.down('ControlOrMeta');
+        await page.keyboard.press('p');
+        await expect(page.locator('.test-file-test')).toHaveCount(1);
+        await page.keyboard.up('ControlOrMeta');
+
+        await page.keyboard.down('Shift');
+        await page.keyboard.press('a');
+        await expect(page.locator('.test-file-test')).toHaveCount(1);
+        await page.keyboard.up('Shift');
+
+        await page.keyboard.press('p');
+
+        await page.keyboard.down('Alt');
+        await page.keyboard.press('f');
+        await expect(page.locator('.test-file-test')).toHaveCount(2);
+        await page.keyboard.up('Alt');
+      });
     });
   });
 }
