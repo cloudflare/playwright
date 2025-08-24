@@ -246,14 +246,12 @@ const importOrderRules = {
     2,
     {
       groups: [
-        "builtin",
-        "external",
+        ["builtin", "external"],
         "internal",
         ["parent", "sibling"],
         "index",
         "type",
       ],
-      "newlines-between": "always",
     },
   ],
   "import/consistent-type-specifier-style": [2, "prefer-top-level"],
@@ -342,6 +340,8 @@ export default [
           message:
             "Please use gracefullyProcessExitDoNotHang function to exit the process.",
         },
+        { object: "process", property: "stdout" },
+        { object: "process", property: "stderr" },
       ],
     },
   },
@@ -355,13 +355,6 @@ export default [
     files: ["packages/playwright/**/*.ts"],
     rules: {
       ...noFloatingPromisesRules,
-    },
-  },
-  {
-    files: ["packages/playwright/src/reporters/**/*.ts"],
-    languageOptions: languageOptionsWithTsConfig,
-    rules: {
-      "no-console": "off",
     },
   },
   {

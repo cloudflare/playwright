@@ -1495,6 +1495,7 @@ its geolocation.
 
 Whether to emulate network being offline for the browser context.
 
+
 ## async method: BrowserContext.storageState
 * since: v1.8
 - returns: <[Object]>

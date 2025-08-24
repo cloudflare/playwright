@@ -117,7 +117,7 @@ export class FrameDispatcher extends Dispatcher<Frame, channels.FrameChannel, Br
   }
 
   async queryCount(params: channels.FrameQueryCountParams, progress: Progress): Promise<channels.FrameQueryCountResult> {
-    return { value: await progress.race(this._frame.queryCount(params.selector)) };
+    return { value: await progress.race(this._frame.queryCount(params.selector, params)) };
   }
 
   async content(params: channels.FrameContentParams, progress: Progress): Promise<channels.FrameContentResult> {
@@ -178,8 +178,8 @@ export class FrameDispatcher extends Dispatcher<Frame, channels.FrameChannel, Br
     return { value: await this._frame.innerHTML(progress, params.selector, params) };
   }
 
-  async generateLocatorString(params: channels.FrameGenerateLocatorStringParams, progress: Progress): Promise<channels.FrameGenerateLocatorStringResult> {
-    return { value: await this._frame.generateLocatorString(progress, params.selector) };
+  async resolveSelector(params: channels.FrameResolveSelectorParams, progress: Progress): Promise<channels.FrameResolveSelectorResult> {
+    return await this._frame.resolveSelector(progress, params.selector);
   }
 
   async getAttribute(params: channels.FrameGetAttributeParams, progress: Progress): Promise<channels.FrameGetAttributeResult> {
@@ -266,17 +266,13 @@ export class FrameDispatcher extends Dispatcher<Frame, channels.FrameChannel, Br
     let expectedValue = params.expectedValue ? parseArgument(params.expectedValue) : undefined;
     if (params.expression === 'to.match.aria' && expectedValue)
       expectedValue = parseAriaSnapshotUnsafe(yaml, expectedValue);
-    const result = await this._frame.expect(progress, params.selector, { ...params, expectedValue }, params.timeout, result => {
-      if (result.received !== undefined)
-        result.received = serializeResult(result.received);
-      return result;
-    });
+    const result = await this._frame.expect(progress, params.selector, { ...params, expectedValue }, params.timeout);
     if (result.received !== undefined)
       result.received = serializeResult(result.received);
     return result;
   }
 
   async ariaSnapshot(params: channels.FrameAriaSnapshotParams, progress: Progress): Promise<channels.FrameAriaSnapshotResult> {
-    return { snapshot: await this._frame.ariaSnapshot(progress, params.selector, params) };
+    return { snapshot: await this._frame.ariaSnapshot(progress, params.selector) };
   }
 }

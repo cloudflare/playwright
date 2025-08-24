@@ -502,6 +502,9 @@ for (const kind of ['launchServer', 'run-server'] as const) {
       await new Promise(r => setTimeout(r, 1000));
       await context.close();
 
+      test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/36685' });
+      expect(fs.readdirSync(videosPath), 'recordVideo.dir might be unaccessible in server mode, so /tmp/artifacts should be used').toHaveLength(0);
+
       const savedAsPath = testInfo.outputPath('my-video.webm');
       await page.video().saveAs(savedAsPath);
       expect(fs.existsSync(savedAsPath)).toBeTruthy();
@@ -1042,6 +1045,14 @@ test.describe('launchServer only', () => {
     const remoteServer = await startRemoteServer('launchServer');
     const browser = await connect(remoteServer.wsEndpoint()) as any;
     await expect(browser._parent.launch({ timeout: 0 })).rejects.toThrowError('Launching more browsers is not allowed.');
+  });
+
+  test('should work with existing browser', async ({ connect, startRemoteServer, mode }) => {
+    test.skip(mode === 'driver', 'Driver mode does not support browserType.launchServer');
+    const remoteServer = await startRemoteServer('launchServer', { existingBrowser: { content: 'hello world' } });
+    const browser = await connect(remoteServer.wsEndpoint());
+    const page = browser.contexts()[0].pages()[0];
+    expect(await page.content()).toContain('hello world');
   });
 });
 

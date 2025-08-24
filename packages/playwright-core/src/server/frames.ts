@@ -21,7 +21,7 @@ import { TimeoutError } from './errors';
 import { prepareFilesForUpload } from './fileUploadUtils';
 import { FrameSelectors } from './frameSelectors';
 import { helper } from './helper';
-import { SdkObject, serverSideCallMetadata } from './instrumentation';
+import { SdkObject } from './instrumentation';
 import * as js from './javascript';
 import * as network from './network';
 import { Page } from './page';
@@ -166,14 +166,16 @@ export class FrameManager {
       return action();
     const barrier = new SignalBarrier(progress);
     this._signalBarriers.add(barrier);
-    progress.cleanupWhenAborted(() => this._signalBarriers.delete(barrier));
-    const result = await action();
-    await progress.race(this._page.delegate.inputActionEpilogue());
-    await barrier.waitFor();
-    this._signalBarriers.delete(barrier);
-    // Resolve in the next task, after all waitForNavigations.
-    await new Promise<void>(makeWaitForNextTask());
-    return result;
+    try {
+      const result = await action();
+      await progress.race(this._page.delegate.inputActionEpilogue());
+      await barrier.waitFor();
+      // Resolve in the next task, after all waitForNavigations.
+      await new Promise<void>(makeWaitForNextTask());
+      return result;
+    } finally {
+      this._signalBarriers.delete(barrier);
+    }
   }
 
   frameWillPotentiallyRequestNavigation() {
@@ -601,7 +603,7 @@ export class Frame extends SdkObject {
   }
 
   redirectNavigation(url: string, documentId: string, referer: string | undefined) {
-    const controller = new ProgressController(serverSideCallMetadata(), this);
+    const controller = new ProgressController();
     const data = {
       url,
       gotoPromise: controller.run(progress => this.gotoImpl(progress, url, { referer }), 0),
@@ -761,7 +763,7 @@ export class Frame extends SdkObject {
           return null;
         return continuePolling;
       }
-      const result = await progress.raceWithCleanup(resolved.injected.evaluateHandle((injected, { info, root }) => {
+      const result = await progress.race(resolved.injected.evaluateHandle((injected, { info, root }) => {
         if (root && !root.isConnected)
           throw injected.createStacklessError('Element is not attached to the DOM');
         const elements = injected.querySelectorAll(info.parsed, root || document);
@@ -776,7 +778,7 @@ export class Frame extends SdkObject {
           log = `  locator resolved to ${visible ? 'visible' : 'hidden'} ${injected.previewNode(element)}`;
         }
         return { log, element, visible, attached: !!element };
-      }, { info: resolved.info, root: resolved.frame === this ? scope : undefined }), handle => handle.dispose());
+      }, { info: resolved.info, root: resolved.frame === this ? scope : undefined }));
       const { log, visible, attached } = await progress.race(result.evaluate(r => ({ log: r.log, visible: r.visible, attached: r.attached })));
       if (log)
         progress.log(log);
@@ -839,8 +841,14 @@ export class Frame extends SdkObject {
     return this.selectors.queryAll(selector);
   }
 
-  async queryCount(selector: string): Promise<number> {
-    return await this.selectors.queryCount(selector);
+  async queryCount(selector: string, options: any): Promise<number> {
+    try {
+      return await this.selectors.queryCount(selector, options);
+    } catch (e) {
+      if (this.isNonRetriableError(e))
+        throw e;
+      return 0;
+    }
   }
 
   async content(): Promise<string> {
@@ -862,10 +870,10 @@ export class Frame extends SdkObject {
   }
 
   async setContent(progress: Progress, html: string, options: types.NavigateOptions): Promise<void> {
+    const tag = `--playwright--set--content--${this._id}--${++this._setContentCounter}--`;
     await this.raceNavigationAction(progress, async () => {
       const waitUntil = options.waitUntil === undefined ? 'load' : options.waitUntil;
       progress.log(`setting frame content, waiting until "${waitUntil}"`);
-      const tag = `--playwright--set--content--${this._id}--${++this._setContentCounter}--`;
       const context = await progress.race(this._utilityContext());
       const tagPromise = new ManualPromise<void>();
       this._page.frameManager._consoleMessageTags.set(tag, () => {
@@ -873,7 +881,6 @@ export class Frame extends SdkObject {
         this._onClearLifecycle();
         tagPromise.resolve();
       });
-      progress.cleanupWhenAborted(() => this._page.frameManager._consoleMessageTags.delete(tag));
       const lifecyclePromise = progress.race(tagPromise).then(() => this._waitForLoadState(progress, waitUntil));
       const contentPromise = progress.race(context.evaluate(({ html, tag }) => {
         document.open();
@@ -883,6 +890,8 @@ export class Frame extends SdkObject {
       }, { html, tag }));
       await Promise.all([contentPromise, lifecyclePromise]);
       return null;
+    }).finally(() => {
+      this._page.frameManager._consoleMessageTags.delete(tag);
     });
   }
 
@@ -1085,7 +1094,7 @@ export class Frame extends SdkObject {
       const resolved = await progress.race(this.selectors.resolveInjectedForSelector(selector, { strict }));
       if (!resolved)
         return continuePolling;
-      const result = await progress.raceWithCleanup(resolved.injected.evaluateHandle((injected, { info, callId }) => {
+      const result = await progress.race(resolved.injected.evaluateHandle((injected, { info, callId }) => {
         const elements = injected.querySelectorAll(info.parsed, document);
         if (callId)
           injected.markTargetElements(new Set(elements), callId);
@@ -1099,7 +1108,7 @@ export class Frame extends SdkObject {
           log = `  locator resolved to ${injected.previewNode(element)}`;
         }
         return { log, success: !!element, element };
-      }, { info: resolved.info, callId: progress.metadata.id }), handle => handle.dispose());
+      }, { info: resolved.info, callId: progress.metadata.id }));
       const { log, success } = await progress.race(result.evaluate(r => ({ log: r.log, success: r.success })));
       if (log)
         progress.log(log);
@@ -1179,16 +1188,16 @@ export class Frame extends SdkObject {
     dom.assertDone(await this._retryWithProgressIfNotConnected(progress, selector, options.strict, true /* performActionPreChecks */, handle => handle._blur(progress)));
   }
 
-  async generateLocatorString(progress: Progress, selector: string): Promise<string | undefined> {
-    const element = await progress.race(this.selectors.query(selector));
+  async resolveSelector(progress: Progress, selector: string, options: { mainWorld?: boolean } = {}): Promise<{ resolvedSelector: string }> {
+    const element = await progress.race(this.selectors.query(selector, options));
     if (!element)
-      throw new Error(`No element matching ${this._asLocator(selector)}`);
+      throw new Error(`No element matching ${selector}`);
 
     const generated = await progress.race(element.evaluateInUtility(async ([injected, node]) => {
       return injected.generateSelectorSimple(node as unknown as Element);
     }, {}));
     if (!generated)
-      throw new Error(`Unable to generate locator for ${this._asLocator(selector)}`);
+      throw new Error(`Unable to generate locator for ${selector}`);
 
     let frame: Frame | null = element._frame;
     const result = [generated];
@@ -1200,12 +1209,13 @@ export class Frame extends SdkObject {
         }, {}));
         frameElement.dispose();
         if (generated === 'error:notconnected' || !generated)
-          throw new Error(`Unable to generate locator for ${this._asLocator(selector)}`);
+          throw new Error(`Unable to generate locator for ${selector}`);
         result.push(generated);
       }
       frame = frame.parentFrame();
     }
-    return asLocator(this._page.browserContext._browser.sdkLanguage(), result.reverse().join(' >> internal:control=enter-frame >> '));
+    const resolvedSelector = result.reverse().join(' >> internal:control=enter-frame >> ');
+    return { resolvedSelector };
   }
 
   async textContent(progress: Progress, selector: string, options: types.QueryOnSelectorOptions, scope?: dom.ElementHandle): Promise<string | null> {
@@ -1340,39 +1350,18 @@ export class Frame extends SdkObject {
     return progress.wait(timeout);
   }
 
-  async ariaSnapshot(progress: Progress, selector: string, options: { forAI?: boolean }): Promise<string> {
-    return await this._retryWithProgressIfNotConnected(progress, selector, true /* strict */, true /* performActionPreChecks */, handle => progress.race(handle.ariaSnapshot(options)));
+  async ariaSnapshot(progress: Progress, selector: string): Promise<string> {
+    return await this._retryWithProgressIfNotConnected(progress, selector, true /* strict */, true /* performActionPreChecks */, handle => progress.race(handle.ariaSnapshot()));
   }
 
-  // TODO: remove errorResultHandler once legacy progress is removed.
-  async expect(progress: Progress, selector: string | undefined, options: FrameExpectParams, timeout?: number, errorResultHandler?: (result: ExpectResult) => ExpectResult): Promise<ExpectResult> {
+  async expect(progress: Progress, selector: string | undefined, options: FrameExpectParams, timeout?: number): Promise<ExpectResult> {
     progress.log(`${renderTitleForCall(progress.metadata)}${timeout ? ` with timeout ${timeout}ms` : ''}`);
-    const result = await this._expectImpl(progress, selector, options, errorResultHandler);
-    return result;
-  }
-
-  private async _expectImpl(progress: Progress, selector: string | undefined, options: FrameExpectParams, errorResultHandler?: (result: ExpectResult) => ExpectResult): Promise<ExpectResult> {
     const lastIntermediateResult: { received?: any, isSet: boolean } = { isSet: false };
     const fixupMetadataError = (result: ExpectResult) => {
       // Library mode special case for the expect errors which are return values, not exceptions.
       if (result.matches === options.isNot)
         progress.metadata.error = { error: { name: 'Expect', message: 'Expect failed' } };
     };
-    const handleError = (e: any, isProgressError: boolean) => {
-      // Q: Why not throw upon isNonRetriableError(e) as in other places?
-      // A: We want user to receive a friendly message containing the last intermediate result.
-      if (js.isJavaScriptErrorInEvaluate(e) || isInvalidSelectorError(e))
-        throw e;
-      const result: ExpectResult = { matches: options.isNot, log: compressCallLog(progress.metadata.log) };
-      if (lastIntermediateResult.isSet)
-        result.received = lastIntermediateResult.received;
-      if (e instanceof TimeoutError)
-        result.timedOut = true;
-      fixupMetadataError(result);
-      return (isProgressError && errorResultHandler) ? errorResultHandler(result) : result;
-    };
-    progress.legacySetErrorHandler(e => handleError(e, true));
-
     try {
       // Step 1: perform locator handlers checkpoint with a specified timeout.
       if (selector)
@@ -1382,7 +1371,6 @@ export class Frame extends SdkObject {
       // Step 2: perform one-shot expect check without a timeout.
       // Supports the case of `expect(locator).toBeVisible({ timeout: 1 })`
       // that should succeed when the locator is already visible.
-      progress.legacyDisableTimeout();
       try {
         const resultOneShot = await this._expectInternal(progress, selector, options, lastIntermediateResult, true);
         if (resultOneShot.matches !== options.isNot)
@@ -1392,7 +1380,6 @@ export class Frame extends SdkObject {
           throw e;
         // Ignore any other errors from one-shot, we'll handle them during retries.
       }
-      progress.legacyEnableTimeout();
 
       // Step 3: auto-retry expect with increasing timeouts. Bounded by the total remaining time.
       const result = await this.retryWithProgressAndTimeouts(progress, [100, 250, 500, 1000], async continuePolling => {
@@ -1409,7 +1396,17 @@ export class Frame extends SdkObject {
       fixupMetadataError(result);
       return result;
     } catch (e) {
-      return handleError(e, false);
+      // Q: Why not throw upon isNonRetriableError(e) as in other places?
+      // A: We want user to receive a friendly message containing the last intermediate result.
+      if (js.isJavaScriptErrorInEvaluate(e) || isInvalidSelectorError(e))
+        throw e;
+      const result: ExpectResult = { matches: options.isNot, log: compressCallLog(progress.metadata.log) };
+      if (lastIntermediateResult.isSet)
+        result.received = lastIntermediateResult.received;
+      if (e instanceof TimeoutError)
+        result.timedOut = true;
+      fixupMetadataError(result);
+      return result;
     }
   }
 
@@ -1458,19 +1455,23 @@ export class Frame extends SdkObject {
       const context = world === 'main' ? await progress.race(this._mainContext()) : await progress.race(this._utilityContext());
       const injectedScript = await progress.race(context.injectedScript());
       const handle = await progress.race(injectedScript.evaluateHandle((injected, { expression, isFunction, polling, arg }) => {
+        let evaledExpression: any;
         const predicate = (): R => {
           // NOTE: make sure to use `globalThis.eval` instead of `self.eval` due to a bug with sandbox isolation
           // in firefox.
           // See https://bugzilla.mozilla.org/show_bug.cgi?id=1814898
-          let result = globalThis.eval(expression);
+          let result = evaledExpression ?? globalThis.eval(expression);
           if (isFunction === true) {
+            evaledExpression = result;
             result = result(arg);
           } else if (isFunction === false) {
             result = result;
           } else {
             // auto detect.
-            if (typeof result === 'function')
+            if (typeof result === 'function') {
+              evaledExpression = result;
               result = result(arg);
+            }
           }
           return result;
         };
@@ -1501,10 +1502,16 @@ export class Frame extends SdkObject {
         next();
         return { result, abort: () => aborted = true };
       }, { expression, isFunction, polling: options.pollingInterval, arg }));
-      progress.cleanupWhenAborted(() => handle.evaluate(h => h.abort()).finally(() => handle.dispose()));
-      const result = await progress.race(handle.evaluateHandle(h => h.result));
-      handle.dispose();
-      return result;
+      try {
+        return await progress.race(handle.evaluateHandle(h => h.result));
+      } catch (error) {
+        // Note: it is important to await "abort()" to prevent any side effects
+        // after this method returns.
+        await handle.evaluate(h => h.abort()).catch(() => {});
+        throw error;
+      } finally {
+        handle.dispose();
+      }
     });
   }
 
@@ -1631,46 +1638,12 @@ export class Frame extends SdkObject {
     this._firedNetworkIdleSelf = false;
   }
 
-  async extendInjectedScript(source: string, arg?: any): Promise<js.JSHandle> {
+  async extendInjectedScript(source: string, arg?: any) {
     const context = await this._context('main');
     const injectedScriptHandle = await context.injectedScript();
-    return injectedScriptHandle.evaluateHandle((injectedScript, { source, arg }) => {
-      return injectedScript.extend(source, arg);
+    await injectedScriptHandle.evaluate((injectedScript, { source, arg }) => {
+      injectedScript.extend(source, arg);
     }, { source, arg });
-  }
-
-  async resetStorageForCurrentOriginBestEffort(newStorage: channels.SetOriginStorage | undefined) {
-    const context = await this._utilityContext();
-    await context.evaluate(async ({ ls }) => {
-      // Clean DOMStorage.
-      sessionStorage.clear();
-      localStorage.clear();
-
-      // Add new DOM Storage values.
-      for (const entry of ls || [])
-        localStorage[entry.name] = entry.value;
-
-      // Clean Service Workers
-      const registrations = navigator.serviceWorker ? await navigator.serviceWorker.getRegistrations() : [];
-      await Promise.all(registrations.map(async r => {
-        // Heuristic for service workers that stalled during main script fetch or importScripts:
-        // Waiting for them to finish unregistering takes ages so we do not await.
-        // However, they will unregister immediately after fetch finishes and should not affect next page load.
-        // Unfortunately, loading next page in Chromium still takes 5 seconds waiting for
-        // some operation on this bogus service worker to finish.
-        if (!r.installing && !r.waiting && !r.active)
-          r.unregister().catch(() => {});
-        else
-          await r.unregister().catch(() => {});
-      }));
-
-      // Clean IndexedDB
-      for (const db of await indexedDB.databases?.() || []) {
-        // Do not wait for the callback - it is called on timer in Chromium (slow).
-        if (db.name)
-          indexedDB.deleteDatabase(db.name!);
-      }
-    }, { ls: newStorage?.localStorage }).catch(() => {});
   }
 
   private _asLocator(selector: string) {

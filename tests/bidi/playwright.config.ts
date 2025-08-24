@@ -27,11 +27,16 @@ const trace = !!process.env.PWTEST_TRACE;
 const hasDebugOutput = process.env.DEBUG?.includes('pw:');
 
 function firefoxUserPrefs() {
+  const defaultPrefs = {
+    'network.proxy.allow_hijacking_localhost': true,
+    'network.proxy.testing_localhost_is_secure_when_hijacked': true,
+  };
   const prefsString = process.env.PWTEST_FIREFOX_USER_PREFS;
   if (!prefsString)
-    return undefined;
-  return JSON.parse(prefsString);
+    return defaultPrefs;
+  return { ...defaultPrefs, ...JSON.parse(prefsString) };
 }
+process.env.PLAYWRIGHT_PROXY_BYPASS_FOR_TESTING = '<-loopback>';
 
 const outputDir = path.join(__dirname, '..', '..', 'test-results');
 const testDir = path.join(__dirname, '..');
@@ -77,7 +82,7 @@ const getExecutablePath = (browserName: BrowserName) => {
 
 const browserToChannels = {
   '_bidiChromium': ['bidi-chromium', 'bidi-chrome-canary', 'bidi-chrome-stable'],
-  '_bidiFirefox': ['moz-firefox'],
+  '_bidiFirefox': ['moz-firefox', 'moz-firefox-beta', 'moz-firefox-nightly'],
 };
 
 for (const [key, channels] of Object.entries(browserToChannels)) {

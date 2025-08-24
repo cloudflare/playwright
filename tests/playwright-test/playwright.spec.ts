@@ -895,3 +895,71 @@ test('page.pause() should disable test timeout', async ({ runInlineTest }) => {
   expect(result.passed).toBe(1);
   expect(result.output).toContain('success!');
 });
+
+test('window.playwright should be undefined by default', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+
+      test('test', async ({ page }) => {
+        await page.setContent('<body></body>');
+        expect(await page.evaluate(() => window.playwright)).toBeUndefined();
+      });
+    `,
+  }, {}, {});
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+});
+
+test('window.playwright should not override existing property', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+
+      test('test', async ({ page }) => {
+        await page.setContent('<script>window.playwright = "foo"</script>');
+        expect(await page.evaluate(() => window.playwright)).toBe('foo');
+      });
+    `,
+  }, {}, { PWDEBUG: 'console' });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+});
+
+test('PWDEBUG=console should opt-in to exposing window.playwright', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+
+      test('test', async ({ page }) => {
+        await page.setContent('<body></body>');
+        expect(await page.evaluate(() => window.playwright)).toBeDefined();
+      });
+    `,
+  }, {}, { PWDEBUG: 'console' });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+});
+
+test('init script should not observe playwright internals', async ({ server, runInlineTest }) => {
+  test.skip(!!process.env.PW_CLOCK, 'clock installs globalThis.__pwClock');
+  const result = await runInlineTest({
+    'a.test.ts': `
+      import { test, expect } from '@playwright/test';
+
+      test('test', async ({ page }) => {
+        await page.addInitScript(() => {
+          window['check'] = () => {
+            const keys = Reflect.ownKeys(globalThis).map(k => k.toString());
+            return keys.find(name => name.includes('playwright') || name.includes('_pw')) || 'none';
+          };
+          window['found'] = window['check']();
+        });
+        await page.goto("${server.EMPTY_PAGE}");
+        expect(await page.evaluate(() => window['found'])).toBe('none');
+        expect(await page.evaluate(() => window['check']())).toBe('none');
+      });
+    `,
+  }, {}, { PWDEBUG: '0' });
+  expect(result.exitCode).toBe(0);
+});

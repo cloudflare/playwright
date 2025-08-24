@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import { assert } from '../../utils';
 import { eventsHelper } from '../utils/eventsHelper';
 import * as dialog from '../dialog';
 import * as dom from '../dom';
@@ -61,7 +60,7 @@ export class BidiPage implements PageDelegate {
     this._realmToContext = new Map();
     this._page = new Page(this, browserContext);
     this._browserContext = browserContext;
-    this._networkManager = new BidiNetworkManager(this._session, this._page, this._onNavigationResponseStarted.bind(this));
+    this._networkManager = new BidiNetworkManager(this._session, this._page);
     this._pdf = new BidiPDF(this._session);
     this._page.on(Page.Events.FrameDetached, (frame: frames.Frame) => this._removeContextsForFrame(frame, false));
     this._sessionListeners = [
@@ -69,9 +68,11 @@ export class BidiPage implements PageDelegate {
       eventsHelper.addEventListener(bidiSession, 'script.message', this._onScriptMessage.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.contextDestroyed', this._onBrowsingContextDestroyed.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.navigationStarted', this._onNavigationStarted.bind(this)),
+      eventsHelper.addEventListener(bidiSession, 'browsingContext.navigationCommitted', this._onNavigationCommitted.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.navigationAborted', this._onNavigationAborted.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.navigationFailed', this._onNavigationFailed.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.fragmentNavigated', this._onFragmentNavigated.bind(this)),
+      eventsHelper.addEventListener(bidiSession, 'browsingContext.historyUpdated', this._onHistoryUpdated.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.domContentLoaded', this._onDomContentLoaded.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.load', this._onLoad.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.userPromptOpened', this._onUserPromptOpened.bind(this)),
@@ -93,10 +94,6 @@ export class BidiPage implements PageDelegate {
       this.updateRequestInterception(),
       // If the page is created by the Playwright client's call, some initialization
       // may be pending. Wait for it to complete before reporting the page as new.
-      //
-      // TODO: ideally we'd wait only for the commands that created this page, but currently
-      // there is no way in Bidi to track which command created this page.
-      this._browserContext.waitForBlockingPageCreations(),
     ]);
   }
 
@@ -177,25 +174,11 @@ export class BidiPage implements PageDelegate {
   private _onNavigationStarted(params: bidi.BrowsingContext.NavigationInfo) {
     const frameId = params.context;
     this._page.frameManager.frameRequestedNavigation(frameId, params.navigation!);
-
-    const url = params.url.toLowerCase();
-    if (url.startsWith('file:') || url.startsWith('data:') || url === 'about:blank') {
-      // Navigation to file urls doesn't emit network events, so we fire 'commit' event right when navigation is started.
-      // Doing it in domcontentload would be too late as we'd clear frame tree.
-      const frame = this._page.frameManager.frame(frameId)!;
-      if (frame)
-        this._page.frameManager.frameCommittedNewDocumentNavigation(frameId, params.url, '', params.navigation!, /* initial */ false);
-    }
   }
 
-  // TODO: there is no separate event for committed navigation, so we approximate it with responseStarted.
-  private _onNavigationResponseStarted(params: bidi.Network.ResponseStartedParameters) {
-    const frameId = params.context!;
-    const frame = this._page.frameManager.frame(frameId);
-    assert(frame);
-    this._page.frameManager.frameCommittedNewDocumentNavigation(frameId, params.response.url, '', params.navigation!, /* initial */ false);
-    // if (!initial)
-    //   this._firstNonInitialNavigationCommittedFulfill();
+  private _onNavigationCommitted(params: bidi.BrowsingContext.NavigationInfo) {
+    const frameId = params.context;
+    this._page.frameManager.frameCommittedNewDocumentNavigation(frameId, params.url, '', params.navigation!, /* initial */ false);
   }
 
   private _onDomContentLoaded(params: bidi.BrowsingContext.NavigationInfo) {
@@ -216,6 +199,10 @@ export class BidiPage implements PageDelegate {
   }
 
   private _onFragmentNavigated(params: bidi.BrowsingContext.NavigationInfo) {
+    this._page.frameManager.frameCommittedSameDocumentNavigation(params.context, params.url);
+  }
+
+  private _onHistoryUpdated(params: bidi.BrowsingContext.HistoryUpdatedParameters) {
     this._page.frameManager.frameCommittedSameDocumentNavigation(params.context, params.url);
   }
 

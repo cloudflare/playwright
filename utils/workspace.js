@@ -220,8 +220,8 @@ const workspace = new Workspace(ROOT_PATH, [
     files: ['LICENSE'],
   }),
   new PWPackage({
-    name: 'playwright-mdd',
-    path: path.join(ROOT_PATH, 'packages', 'playwright-mdd'),
+    name: '@playwright/test-runner-mcp',
+    path: path.join(ROOT_PATH, 'packages', 'playwright-test-mcp'),
     files: ['LICENSE'],
   }),
 ]);

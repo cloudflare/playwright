@@ -199,6 +199,11 @@ export class Frame extends ChannelOwner<channels.FrameChannel> implements api.Fr
     return parseResult(result.value);
   }
 
+  async _evaluateFunction(functionDeclaration: string) {
+    const result = await this._channel.evaluateExpression({ expression: functionDeclaration, isFunction: true, arg: serializeArgument(undefined) });
+    return parseResult(result.value);
+  }
+
   async _evaluateExposeUtilityScript<R, Arg>(pageFunction: structs.PageFunction<Arg, R>, arg?: Arg): Promise<R> {
     assertMaxArguments(arguments.length, 2);
     const result = await this._channel.evaluateExpression({ expression: String(pageFunction), isFunction: typeof pageFunction === 'function', arg: serializeArgument(arg) });
@@ -242,8 +247,8 @@ export class Frame extends ChannelOwner<channels.FrameChannel> implements api.Fr
     return result.elements.map(e => ElementHandle.from(e) as ElementHandle<SVGElement | HTMLElement>);
   }
 
-  async _queryCount(selector: string): Promise<number> {
-    return (await this._channel.queryCount({ selector })).value;
+  async _queryCount(selector: string, options?: {}): Promise<number> {
+    return (await this._channel.queryCount({ selector, ...options })).value;
   }
 
   async content(): Promise<string> {

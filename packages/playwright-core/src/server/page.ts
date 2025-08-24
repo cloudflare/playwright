@@ -161,7 +161,7 @@ export class Page extends SdkObject {
   readonly requestInterceptors: network.RouteHandler[] = [];
   video: Artifact | null = null;
   private _opener: Page | undefined;
-  private _isServerSideOnly = false;
+  readonly isStorageStatePage: boolean;
   private _locatorHandlers = new Map<number, { selector: string, noWaitAfter?: boolean, resolved?: ManualPromise<void> }>();
   private _lastLocatorHandlerUid = 0;
   private _locatorHandlerRunningCounter = 0;
@@ -186,6 +186,7 @@ export class Page extends SdkObject {
     if (delegate.pdf)
       this.pdf = delegate.pdf.bind(delegate);
     this.coverage = delegate.coverage ? delegate.coverage() : null;
+    this.isStorageStatePage = browserContext.isCreatingStorageStatePage();
   }
 
   async reportAsNew(opener: Page | undefined, error: Error | undefined = undefined, contextEvent: string = BrowserContext.Events.Page) {
@@ -234,13 +235,13 @@ export class Page extends SdkObject {
   }
 
   emitOnContext(event: string | symbol, ...args: any[]) {
-    if (this._isServerSideOnly)
+    if (this.isStorageStatePage)
       return;
     this.browserContext.emit(event, ...args);
   }
 
   emitOnContextOnceInitialized(event: string | symbol, ...args: any[]) {
-    if (this._isServerSideOnly)
+    if (this.isStorageStatePage)
       return;
     // Some events, like console messages, may come before page is ready.
     // In this case, postpone the event until page is initialized,
@@ -324,10 +325,14 @@ export class Page extends SdkObject {
     await progress.race(this.browserContext.exposePlaywrightBindingIfNeeded());
     const binding = new PageBinding(name, playwrightBinding, needsHandle);
     this._pageBindings.set(name, binding);
-    progress.cleanupWhenAborted(() => this._pageBindings.delete(name));
-    await progress.race(this.delegate.addInitScript(binding.initScript));
-    await progress.race(this.safeNonStallingEvaluateInAllFrames(binding.initScript.source, 'main'));
-    return binding;
+    try {
+      await progress.race(this.delegate.addInitScript(binding.initScript));
+      await progress.race(this.safeNonStallingEvaluateInAllFrames(binding.initScript.source, 'main'));
+      return binding;
+    } catch (error) {
+      this._pageBindings.delete(name);
+      throw error;
+    }
   }
 
   async removeExposedBindings(bindings: PageBinding[]) {
@@ -341,12 +346,15 @@ export class Page extends SdkObject {
 
   async setExtraHTTPHeaders(progress: Progress, headers: types.HeadersArray) {
     const oldHeaders = this._extraHTTPHeaders;
-    this._extraHTTPHeaders = headers;
-    progress.cleanupWhenAborted(async () => {
+    try {
+      this._extraHTTPHeaders = headers;
+      await progress.race(this.delegate.updateExtraHTTPHeaders());
+    } catch (error) {
       this._extraHTTPHeaders = oldHeaders;
-      await this.delegate.updateExtraHTTPHeaders();
-    });
-    await progress.race(this.delegate.updateExtraHTTPHeaders());
+      // Note: no await, headers will be updated in the background as soon as possible.
+      this.delegate.updateExtraHTTPHeaders().catch(() => {});
+      throw error;
+    }
   }
 
   extraHTTPHeaders(): types.HeadersArray | undefined {
@@ -501,10 +509,6 @@ export class Page extends SdkObject {
 
   async emulateMedia(progress: Progress, options: Partial<EmulatedMedia>) {
     const oldEmulatedMedia = { ...this._emulatedMedia };
-    progress.cleanupWhenAborted(async () => {
-      this._emulatedMedia = oldEmulatedMedia;
-      await this.delegate.updateEmulateMedia();
-    });
 
     if (options.media !== undefined)
       this._emulatedMedia.media = options.media;
@@ -517,7 +521,14 @@ export class Page extends SdkObject {
     if (options.contrast !== undefined)
       this._emulatedMedia.contrast = options.contrast;
 
-    await progress.race(this.delegate.updateEmulateMedia());
+    try {
+      await progress.race(this.delegate.updateEmulateMedia());
+    } catch (error) {
+      this._emulatedMedia = oldEmulatedMedia;
+      // Note: no await, emulated media will be updated in the background as soon as possible.
+      this.delegate.updateEmulateMedia().catch(() => {});
+      throw error;
+    }
   }
 
   emulatedMedia(): EmulatedMedia {
@@ -533,13 +544,15 @@ export class Page extends SdkObject {
 
   async setViewportSize(progress: Progress, viewportSize: types.Size) {
     const oldEmulatedSize = this._emulatedSize;
-    progress.cleanupWhenAborted(async () => {
+    try {
+      this._setEmulatedSize({ viewport: { ...viewportSize }, screen: { ...viewportSize } });
+      await progress.race(this.delegate.updateEmulatedViewportSize());
+    } catch (error) {
       this._emulatedSize = oldEmulatedSize;
-      await this.delegate.updateEmulatedViewportSize();
-    });
-
-    this._setEmulatedSize({ viewport: { ...viewportSize }, screen: { ...viewportSize } });
-    await progress.race(this.delegate.updateEmulatedViewportSize());
+      // Note: no await, emulated size will be updated in the background as soon as possible.
+      this.delegate.updateEmulatedViewportSize().catch(() => {});
+      throw error;
+    }
   }
 
   setEmulatedSizeFromWindowOpen(emulatedSize: EmulatedSize) {
@@ -565,8 +578,13 @@ export class Page extends SdkObject {
   async addInitScript(progress: Progress, source: string) {
     const initScript = new InitScript(source);
     this.initScripts.push(initScript);
-    progress.cleanupWhenAborted(() => this.removeInitScripts([initScript]));
-    await progress.race(this.delegate.addInitScript(initScript));
+    try {
+      await progress.race(this.delegate.addInitScript(initScript));
+    } catch (error) {
+      // Note: no await, script will be removed in the background as soon as possible.
+      this.removeInitScripts([initScript]).catch(() => {});
+      throw error;
+    }
     return initScript;
   }
 
@@ -632,22 +650,6 @@ export class Page extends SdkObject {
         intermediateResult = { errorMessage: comparatorResult.errorMessage, diff: comparatorResult.diff, actual, previous };
       return false;
     };
-    const handleError = (e: any) => {
-      // Q: Why not throw upon isNonRetriableError(e) as in other places?
-      // A: We want user to receive a friendly diff between actual and expected/previous.
-      if (js.isJavaScriptErrorInEvaluate(e) || isInvalidSelectorError(e))
-        throw e;
-      let errorMessage = e.message;
-      if (e instanceof TimeoutError && intermediateResult?.previous)
-        errorMessage = `Failed to take two consecutive stable screenshots.`;
-      return {
-        log: compressCallLog(e.message ? [...progress.metadata.log, e.message] : progress.metadata.log),
-        ...intermediateResult,
-        errorMessage,
-        timedOut: (e instanceof TimeoutError),
-      };
-    };
-    progress.legacySetErrorHandler(handleError);
 
     try {
       let actual: Buffer | undefined;
@@ -700,7 +702,19 @@ export class Page extends SdkObject {
       }
       throw new Error(intermediateResult!.errorMessage);
     } catch (e) {
-      return handleError(e);
+      // Q: Why not throw upon isNonRetriableError(e) as in other places?
+      // A: We want user to receive a friendly diff between actual and expected/previous.
+      if (js.isJavaScriptErrorInEvaluate(e) || isInvalidSelectorError(e))
+        throw e;
+      let errorMessage = e.message;
+      if (e instanceof TimeoutError && intermediateResult?.previous)
+        errorMessage = `Failed to take two consecutive stable screenshots.`;
+      return {
+        log: compressCallLog(e.message ? [...progress.metadata.log, e.message] : progress.metadata.log),
+        ...intermediateResult,
+        errorMessage,
+        timedOut: (e instanceof TimeoutError),
+      };
     }
   }
 
@@ -815,10 +829,6 @@ export class Page extends SdkObject {
 
   async hideHighlight() {
     await Promise.all(this.frames().map(frame => frame.hideHighlight().catch(() => {})));
-  }
-
-  markAsServerSideOnly() {
-    this._isServerSideOnly = true;
   }
 
   async snapshotForAI(progress: Progress): Promise<string> {
@@ -1009,7 +1019,7 @@ async function snapshotFrameForAI(progress: Progress, frame: frames.Frame, frame
         const node = injected.document.body;
         if (!node)
           return true;
-        return injected.ariaSnapshot(node, { forAI: true, refPrefix });
+        return injected.ariaSnapshot(node, { mode: 'ai', refPrefix });
       }, frameOrdinal ? 'f' + frameOrdinal : ''));
       if (snapshotOrRetry === true)
         return continuePolling;
@@ -1024,7 +1034,7 @@ async function snapshotFrameForAI(progress: Progress, frame: frames.Frame, frame
   const lines = snapshot.split('\n');
   const result = [];
   for (const line of lines) {
-    const match = line.match(/^(\s*)- iframe (?:\[active\] )?\[ref=(.*)\]/);
+    const match = line.match(/^(\s*)- iframe (?:\[active\] )?\[ref=([^\]]*)\]/);
     if (!match) {
       result.push(line);
       continue;

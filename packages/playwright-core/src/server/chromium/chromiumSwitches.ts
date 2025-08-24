@@ -20,23 +20,14 @@
 const disabledFeatures = (assistantMode?: boolean) => [
   // See https://github.com/microsoft/playwright/pull/10380
   'AcceptCHFrame',
-  // See https://github.com/microsoft/playwright/pull/10679
-  'AutoExpandDetailsElement',
   // See https://github.com/microsoft/playwright/issues/14047
   'AvoidUnnecessaryBeforeUnloadCheckSync',
-  // See https://github.com/microsoft/playwright/pull/12992
-  'CertificateTransparencyComponentUpdater',
   'DestroyProfileOnBrowserClose',
   // See https://github.com/microsoft/playwright/pull/13854
   'DialMediaRouteProvider',
-  // Chromium is disabling manifest version 2. Allow testing it as long as Chromium can actually run it.
-  // Disabled in https://chromium-review.googlesource.com/c/chromium/src/+/6265903.
-  'ExtensionManifestV2Disabled',
   'GlobalMediaControls',
   // See https://github.com/microsoft/playwright/pull/27605
   'HttpsUpgrades',
-  'ImprovedCookieControls',
-  'LazyFrameLoading',
   // Hides the Lens feature in the URL address bar. Its not working in unofficial builds.
   'LensOverlay',
   // See https://github.com/microsoft/playwright/pull/8162
@@ -47,6 +38,8 @@ const disabledFeatures = (assistantMode?: boolean) => [
   'ThirdPartyStoragePartitioning',
   // See https://github.com/microsoft/playwright/issues/16126
   'Translate',
+  // See https://issues.chromium.org/u/1/issues/435410220
+  'AutoDeElevate',
   assistantMode ? 'AutomationControlled' : '',
 ].filter(Boolean);
 

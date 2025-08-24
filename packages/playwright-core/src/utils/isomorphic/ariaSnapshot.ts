@@ -64,22 +64,23 @@ type YamlLibrary = {
 };
 
 type ParsedYamlPosition = { line: number; col: number; };
+type ParsingOptions = yamlTypes.ParseOptions;
 
 export type ParsedYamlError = {
   message: string;
   range: [ParsedYamlPosition, ParsedYamlPosition];
 };
 
-export function parseAriaSnapshotUnsafe(yaml: YamlLibrary, text: string): AriaTemplateNode {
-  const result = parseAriaSnapshot(yaml, text);
+export function parseAriaSnapshotUnsafe(yaml: YamlLibrary, text: string, options: ParsingOptions = {}): AriaTemplateNode {
+  const result = parseAriaSnapshot(yaml, text, options);
   if (result.errors.length)
     throw new Error(result.errors[0].message);
   return result.fragment;
 }
 
-export function parseAriaSnapshot(yaml: YamlLibrary, text: string, options: yamlTypes.ParseOptions = {}): { fragment: AriaTemplateNode, errors: ParsedYamlError[] } {
+export function parseAriaSnapshot(yaml: YamlLibrary, text: string, options: ParsingOptions = {}): { fragment: AriaTemplateNode, errors: ParsedYamlError[] } {
   const lineCounter = new yaml.LineCounter();
-  const parseOptions: yamlTypes.ParseOptions = {
+  const parseOptions: ParsingOptions = {
     keepSourceTokens: true,
     lineCounter,
     ...options,
@@ -265,10 +266,11 @@ export class KeyParser {
   private _input: string;
   private _pos: number;
   private _length: number;
+  private _options: ParsingOptions;
 
-  static parse(text: yamlTypes.Scalar<string>, options: yamlTypes.ParseOptions, errors: ParsedYamlError[]): AriaTemplateRoleNode | null {
+  static parse(text: yamlTypes.Scalar<string>, options: ParsingOptions, errors: ParsedYamlError[]): AriaTemplateRoleNode | null {
     try {
-      return new KeyParser(text.value)._parse();
+      return new KeyParser(text.value, options)._parse();
     } catch (e) {
       if (e instanceof ParserError) {
         const message = options.prettyErrors === false ? e.message : e.message + ':\n\n' + text.value + '\n' + ' '.repeat(e.pos) + '^\n';
@@ -282,10 +284,11 @@ export class KeyParser {
     }
   }
 
-  constructor(input: string) {
+  constructor(input: string, options: ParsingOptions) {
     this._input = input;
     this._pos = 0;
     this._length = input.length;
+    this._options = options;
   }
 
   private _peek() {
