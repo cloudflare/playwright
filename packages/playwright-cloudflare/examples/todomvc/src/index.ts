@@ -1,22 +1,43 @@
-import { launch } from '@cloudflare/playwright';
-import { expect } from '@cloudflare/playwright/test';
-import fs from '@cloudflare/playwright/fs';
+import { connect, acquire, BrowserWorker } from '@cloudflare/playwright/client';
+import { debug } from '@cloudflare/playwright/internal';
+
+// eslint-disable-next-line no-console
+const log = console.log;
+
+export function localBrowserSim(baseUrl: string) {
+  // hack to allow for local only dev, which calls a local chrome
+  return {
+    async fetch(request: string, requestInit?: RequestInit | Request): Promise<Response> {
+      // The puppeteer fork calls the binding with a fake host
+      const u = request.replace('http://fake.host', '');
+      log(`LOCAL ${baseUrl}${u}`);
+      return fetch(`${baseUrl}${u}`, requestInit).catch(err => {
+        log(err);
+        throw new Error('Unable to create new browser: code: 429: message: Too Many Requests. Local sim');
+      });
+    },
+  };
+}
+
+function getBrowserConnection(isLocalEnv = true): BrowserWorker {
+  return localBrowserSim('http://localhost:3000') as BrowserWorker;
+}
 
 export default {
   async fetch(request: Request, env: Env) {
-    const { searchParams } = new URL(request.url);
-    const todos = searchParams.getAll('todo');
-    const trace = searchParams.has('trace');
+    debug.enable('pw:*');
+    const binding = getBrowserConnection();
+    const { sessionId } = await acquire(binding);
+    log(`Acquired session ID: ${sessionId}`);
+    const browser = await connect(binding, { sessionId });
 
-    const browser = await launch(env.MYBROWSER);
+    log(`Connected to browser with session ID: ${sessionId}`);
+
     const page = await browser.newPage();
-
-    if (trace)
-      await page.context().tracing.start({ screenshots: true, snapshots: true });
 
     await page.goto('https://demo.playwright.dev/todomvc');
 
-    const TODO_ITEMS = todos.length > 0 ? todos : [
+    const TODO_ITEMS = [
       'buy some cheese',
       'feed the cat',
       'book a doctors appointment'
@@ -28,32 +49,13 @@ export default {
       await newTodo.press('Enter');
     }
 
-    await expect(page.getByTestId('todo-title')).toHaveCount(TODO_ITEMS.length);
+    const img = await page.screenshot();
+    await browser.close();
 
-    await Promise.all(TODO_ITEMS.map(
-        (value, index) => expect(page.getByTestId('todo-title').nth(index)).toHaveText(value)
-    ));
-
-    if (trace) {
-      await page.context().tracing.stop({ path: 'trace.zip' });
-      await browser.close();
-      const file = await fs.promises.readFile('trace.zip');
-
-      return new Response(file, {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/zip',
-        },
-      });
-    } else {
-      const img = await page.screenshot();
-      await browser.close();
-
-      return new Response(img, {
-        headers: {
-          'Content-Type': 'image/png',
-        },
-      });
-    }
+    return new Response(img, {
+      headers: {
+        'Content-Type': 'image/png',
+      },
+    });
   },
 };
