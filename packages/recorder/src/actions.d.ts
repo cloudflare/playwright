@@ -37,10 +37,12 @@ export type ActionBase = {
   name: ActionName,
   signals: Signal[],
   ariaSnapshot?: string,
+  preconditionSelector?: string,
 };
 
 export type ActionWithSelector = ActionBase & {
   selector: string,
+  ref?: string,
 };
 
 export type ClickAction = ActionWithSelector & {
@@ -78,9 +80,8 @@ export type ClosesPageAction = ActionBase & {
   name: 'closePage',
 };
 
-export type PressAction = ActionBase & {
+export type PressAction = ActionWithSelector & {
   name: 'press',
-  selector: string,
   key: string,
   modifiers: number,
 };

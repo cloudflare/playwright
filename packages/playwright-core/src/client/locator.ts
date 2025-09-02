@@ -128,6 +128,10 @@ export class Locator implements api.Locator {
     return await this._withElement(h => h.evaluate(pageFunction, arg), { title: 'Evaluate', timeout: options?.timeout });
   }
 
+  async _evaluateFunction(functionDeclaration: string, options?: TimeoutOptions) {
+    return await this._withElement(h => h._evaluateFunction(functionDeclaration), { title: 'Evaluate', timeout: options?.timeout });
+  }
+
   async evaluateAll<R, Arg>(pageFunction: structs.PageFunctionOn<Element[], Arg, R>, arg?: Arg): Promise<R> {
     return await this._frame.$$eval(this._selector, pageFunction, arg);
   }
@@ -245,13 +249,13 @@ export class Locator implements api.Locator {
     await this._frame._channel.blur({ selector: this._selector, strict: true, ...options, timeout: this._frame._timeout(options) });
   }
 
-  async count(): Promise<number> {
-    return await this._frame._queryCount(this._selector);
+  // options are only here for testing
+  async count(_options?: {}): Promise<number> {
+    return await this._frame._queryCount(this._selector, _options);
   }
 
-  async _generateLocatorString(): Promise<string | null> {
-    const { value } = await this._frame._channel.generateLocatorString({ selector: this._selector });
-    return value === undefined ? null : value;
+  async _resolveSelector(): Promise<{ resolvedSelector: string }> {
+    return await this._frame._channel.resolveSelector({ selector: this._selector });
   }
 
   async getAttribute(name: string, options?: TimeoutOptions): Promise<string | null> {

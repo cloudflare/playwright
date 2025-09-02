@@ -13,6 +13,7 @@ import * as packageJson from '../package.json';
 import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
 import type { AcquireResponse, ActiveSession, Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, ConnectOverCDPOptions, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
+import type { ChannelOwner } from 'playwright-core/lib/client/channelOwner';
 
 function resetMonotonicTime() {
   // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
@@ -131,9 +132,9 @@ export async function launch(endpoint: BrowserEndpoint, launchOptions?: WorkersL
   const webSocket = await connectDevtools(getBrowserBinding(endpoint), options);
   const transport = new WebSocketTransport(webSocket, sessionId);
   // keeps the endpoint and options for client -> server async communication
-  const browser = await createBrowser(transport, options) as Browser;
+  const browser = await createBrowser(transport, options) as Browser & ChannelOwner;
 
-  const browserImpl = (browser as any)._toImpl() as CRBrowser;
+  const browserImpl = browser._connection.toImpl!(browser) as CRBrowser;
   // ensure we actually close the browser
   const doClose = async () => {
     const message: ProtocolRequest = { method: 'Browser.close', id: kBrowserCloseMessageId, params: {} };

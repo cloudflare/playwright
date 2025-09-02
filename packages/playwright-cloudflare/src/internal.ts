@@ -1,6 +1,6 @@
 import fs from 'fs';
 
-import { asLocator, asLocatorDescription, currentZone, isString, ManualPromise, renderTitleForCall, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
+import { asLocatorDescription, currentZone, ManualPromise, renderTitleForCall, setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils';
 import { loadConfig } from 'playwright/lib/common/configLoader';
 import { currentTestInfo, setCurrentlyLoadingFileSuite } from 'playwright/lib/common/globals';
 import { bindFileSuiteToProject } from 'playwright/lib/common/suiteUtils';
@@ -14,10 +14,9 @@ import { isUnsupportedOperationError } from './cloudflare/unsupportedOperations'
 import playwright from '.';
 
 import type { Attachment, SuiteInfo, TestCaseInfo, TestContext, TestResult } from '../internal';
-import type { ApiCallData, ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
-import { stepTitle } from 'playwright/lib/util';
+import type { ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
 
-export { isUnderTest } from 'playwright-core/lib/utils';
+export { isUnderTest, asLocator } from 'playwright-core/lib/utils';
 export { debug } from 'playwright-core/lib/utilsBundle';
 export { mergeTests } from 'playwright/lib/common/testType';
 
@@ -108,6 +107,7 @@ class TestWorker extends WorkerMain {
         },
       },
       artifactsDir: `/tmp/tests`,
+      recoverFromStepErrors: false,
     });
   }
 
@@ -224,7 +224,7 @@ const expectApiListener: ClientInstrumentationListener = {
       if (zone.apiName)
         data.apiName = zone.apiName;
       if (zone.title)
-        data.title = stepTitle(zone.category, zone.title);
+        data.title = zone.title;
       data.stepId = zone.stepId;
       return;
     }

@@ -446,8 +446,7 @@ class FrameSession {
   }
 
   async _initialize(hasUIWindow: boolean) {
-    const isSettingStorageState = this._page.browserContext.isSettingStorageState();
-    if (!isSettingStorageState && hasUIWindow &&
+    if (!this._page.isStorageStatePage && hasUIWindow &&
       !this._crPage._browserContext._browser.isClank() &&
       !this._crPage._browserContext._options.noDefaultViewport) {
       const { windowId } = await this._client.send('Browser.getWindowForTarget');
@@ -455,7 +454,7 @@ class FrameSession {
     }
 
     let screencastOptions: types.PageScreencastOptions | undefined;
-    if (!isSettingStorageState && this._isMainFrame() && this._crPage._browserContext._options.recordVideo && hasUIWindow) {
+    if (!this._page.isStorageStatePage && this._isMainFrame() && this._crPage._browserContext._options.recordVideo && hasUIWindow) {
       const screencastId = createGuid();
       const outputFile = path.join(this._crPage._browserContext._options.recordVideo.dir, screencastId + '.webm');
       screencastOptions = {
@@ -516,9 +515,18 @@ class FrameSession {
         worldName: this._crPage.utilityWorldName,
       }),
       this._crPage._networkManager.addSession(this._client, undefined, this._isMainFrame()),
-      this._client.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }),
+      this._client.send('Target.setAutoAttach', {
+        autoAttach: true,
+        waitForDebuggerOnStart: true,
+        flatten: true,
+        filter: [
+          { type: 'iframe' },
+          { type: 'worker' },
+          { type: 'service_worker', exclude: !process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS }
+        ]
+      }),
     ];
-    if (!isSettingStorageState) {
+    if (!this._page.isStorageStatePage) {
       if (this._crPage._browserContext.needsPlaywrightBinding())
         promises.push(this.exposePlaywrightBinding());
       if (this._isMainFrame())
@@ -569,6 +577,8 @@ class FrameSession {
 
   async _navigate(frame: frames.Frame, url: string, referrer: string | undefined): Promise<frames.GotoResult> {
     const response = await this._client.send('Page.navigate', { url, referrer, frameId: frame._id, referrerPolicy: 'unsafeUrl' });
+    if (response.isDownload)
+      throw new frames.NavigationAbortedError(response.loaderId, 'Download is starting');
     if (response.errorText)
       throw new frames.NavigationAbortedError(response.loaderId, `${response.errorText} at ${url}`);
     return { newDocumentId: response.loaderId };
@@ -734,7 +744,15 @@ class FrameSession {
     // TODO: attribute workers to the right frame.
     this._crPage._networkManager.addSession(session, this._page.frameManager.frame(this._targetId) ?? undefined).catch(() => {});
     session._sendMayFail('Runtime.runIfWaitingForDebugger');
-    session._sendMayFail('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
+    session._sendMayFail('Target.setAutoAttach', {
+      autoAttach: true,
+      waitForDebuggerOnStart: true,
+      flatten: true,
+      filter: [
+        { type: 'worker' },
+        { type: 'service_worker', exclude: !process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS }
+      ]
+    });
     session.on('Target.attachedToTarget', event => this._onAttachedToTarget(event));
     session.on('Target.detachedFromTarget', event => this._onDetachedFromTarget(event));
     session.on('Runtime.consoleAPICalled', event => {

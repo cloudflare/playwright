@@ -21,6 +21,7 @@ import type { TraceViewerFixtures } from '../config/traceViewerFixtures';
 import { traceViewerFixtures } from '../config/traceViewerFixtures';
 import fs from 'fs';
 import path from 'path';
+import type http from 'http';
 import { pathToFileURL } from 'url';
 import { expect, playwrightTest } from '../config/browserTest';
 import type { FrameLocator } from '@playwright/test';
@@ -109,12 +110,14 @@ test('should open trace viewer on specific host', async ({ showTraceViewer }, te
 });
 
 test('should show tracing.group in the action list with location', async ({ runAndTrace, page, context }) => {
+  test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/36483' });
+
   const traceViewer = await test.step('create trace with groups', async () => {
     await page.context().tracing.group('ignored group');
     return await runAndTrace(async () => {
       await context.tracing.group('outer group');
       await page.goto(`data:text/html,<!DOCTYPE html><body><div>Hello world</div></body>`);
-      await context.tracing.group('inner group 1', { location: { file: __filename, line: 17, column: 1 } });
+      await context.tracing.group('inner group 1 {{ eager_beaver }}', { location: { file: __filename, line: 17, column: 1 } });
       await page.locator('body').click();
       await context.tracing.groupEnd();
       await context.tracing.group('inner group 2');
@@ -127,7 +130,7 @@ test('should show tracing.group in the action list with location', async ({ runA
   await expect(traceViewer.actionTitles).toHaveText([
     /outer group/,
     /Navigate/,
-    /inner group 1/,
+    /inner group 1 {{ eager_beaver }}/,
     /inner group 2/,
     /toBeVisible/,
   ]);
@@ -137,7 +140,7 @@ test('should show tracing.group in the action list with location', async ({ runA
   await expect(traceViewer.actionTitles).toHaveText([
     /outer group/,
     /Navigate/,
-    /inner group 1/,
+    /inner group 1 {{ eager_beaver }}/,
     /Click.*locator/,
     /inner group 2/,
   ]);
@@ -167,6 +170,8 @@ test('should open simple trace viewer', async ({ showTraceViewer }) => {
     /Wait for timeout/,
     /Navigate to "\/frames\/frame.html"/,
     /Set viewport size/,
+    /Hover/,
+    /Close page/,
   ]);
 });
 
@@ -906,6 +911,8 @@ test('should highlight target elements', async ({ page, runAndTrace, browserName
     });
   }
 
+  await traceViewer.showAllActions();
+
   const framePageClick = await traceViewer.snapshotFrame('Click');
   await expect.poll(() => highlightedDivs(framePageClick)).toEqual(['t1']);
   const box1 = await framePageClick.getByText('t1').boundingBox();
@@ -1475,6 +1482,7 @@ test('should open snapshot in new browser context', async ({ browser, page, runA
 
 test('should show similar actions from legacy library-only trace', async ({ showTraceViewer, asset }) => {
   const traceViewer = await showTraceViewer([asset('trace-library-1.46.zip')]);
+  await traceViewer.showAllActions();
   await expect(traceViewer.actionTitles).toHaveText([
     /page\.setContent/,
     /locator\.getAttribute/,
@@ -1538,13 +1546,17 @@ test('should not record network actions', {
   annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/33558' },
 }, async ({ page, runAndTrace, server }) => {
   const traceViewer = await runAndTrace(async () => {
+    let counter = 0;
     page.on('request', async request => {
       await request.allHeaders();
+      ++counter;
     });
     page.on('response', async response => {
       await response.text();
+      ++counter;
     });
     await page.goto(server.EMPTY_PAGE);
+    await expect.poll(() => counter).toBe(2);
   });
 
   await expect(traceViewer.actionTitles).toHaveText([
@@ -1596,7 +1608,8 @@ test('should not leak recorders', {
     return frame;
   };
 
-  await expect(traceViewer.snapshotContainer.contentFrame().locator('body')).toContainText(`Hi, I'm frame`);
+  const frame0 = await traceViewer.snapshotFrame('Set viewport');
+  await expect(frame0.locator('body')).toContainText(`Hi, I'm frame`);
 
   const frame1 = await forceRecorder('Navigate');
   await expect(frame1.locator('body')).toContainText('Hello world');
@@ -1844,6 +1857,8 @@ test('should render blob trace received from message', async ({ showTraceViewer 
     /Wait for timeout/,
     /Navigate to "\/frames\/frame.html"/,
     /Set viewport size/,
+    /Hover/,
+    /Close page/,
   ]);
 });
 
@@ -1913,4 +1928,54 @@ test('should render locator descriptions', async ({ runAndTrace, page }) => {
     - treeitem /Click.*custom/
     - treeitem /Click.*input.*first/
   `);
+});
+
+test('should load trace from HTTP with progress indicator', async ({ showTraceViewer, server }) => {
+  const [traceViewer, res] = await Promise.all([
+    showTraceViewer([server.PREFIX]),
+    new Promise<http.ServerResponse>(resolve => {
+      server.setRoute('/', (req, res) => resolve(res));
+    }),
+  ]);
+
+  const file = await fs.promises.readFile(traceFile);
+
+  const dialog = traceViewer.page.locator('dialog', { hasText: 'Loading' });
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Length', file.byteLength);
+  res.writeHead(200);
+  await expect(dialog).not.toBeVisible({ timeout: 100 });
+  // Should become visible after ~200ms
+  await expect(dialog).toBeVisible();
+
+  res.end(file);
+  await expect(dialog).not.toBeVisible();
+  await expect(traceViewer.actionTitles).toContainText([/Create page/]);
+});
+
+test('should show all actions', async ({ runAndTrace, page }) => {
+  const traceViewer = await runAndTrace(async () => {
+    await page.route('**/*', async route => {
+      await route.fulfill({ contentType: 'text/html', body: '<input type=checkbox checked>' });
+    });
+    await page.goto('https://does.not.exist');
+    await page.locator('input').getAttribute('checked');
+    await expect(page.locator('input')).toBeChecked();
+  });
+
+  await expect(traceViewer.actionTitles).toHaveText([
+    /Navigate to/,
+    /Expect "toBeChecked"/,
+  ]);
+
+  await traceViewer.showAllActions();
+
+  await expect(traceViewer.actionTitles).toHaveText([
+    /Route requests/,
+    /Navigate to/,
+    /Fulfill request/,
+    /Get attribute "checked"/,
+    /Expect "toBeChecked"/,
+  ]);
 });

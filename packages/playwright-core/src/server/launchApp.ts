@@ -17,9 +17,8 @@
 import fs from 'fs';
 import path from 'path';
 
-import { isUnderTest } from '../utils';
-import { serverSideCallMetadata } from './instrumentation';
-import { findChromiumChannel } from './registry';
+import { isUnderTest, rewriteErrorMessage, wrapInASCIIBox } from '../utils';
+import { buildPlaywrightCLICommand, findChromiumChannelBestEffort } from './registry';
 import { registryDirectory } from './registry';
 import { ProgressController } from './progress';
 
@@ -46,19 +45,32 @@ export async function launchApp(browserType: BrowserType, options: {
         '--test-type=',
     );
     if (!channel && !options.persistentContextOptions?.executablePath)
-      channel = findChromiumChannel(options.sdkLanguage);
+      channel = findChromiumChannelBestEffort(options.sdkLanguage);
   }
 
-  const controller = new ProgressController(serverSideCallMetadata(), browserType);
-  const context = await controller.run(progress => browserType.launchPersistentContext(progress, '', {
-    ignoreDefaultArgs: ['--enable-automation'],
-    ...options?.persistentContextOptions,
-    channel,
-    noDefaultViewport: options.persistentContextOptions?.noDefaultViewport ?? true,
-    acceptDownloads: options?.persistentContextOptions?.acceptDownloads ?? (isUnderTest() ? 'accept' : 'internal-browser-default'),
-    colorScheme: options?.persistentContextOptions?.colorScheme ?? 'no-override',
-    args,
-  }), 0); // Deliberately no timeout for our apps.
+  const controller = new ProgressController();
+  let context;
+  try {
+    context = await controller.run(progress => browserType.launchPersistentContext(progress, '', {
+      ignoreDefaultArgs: ['--enable-automation'],
+      ...options?.persistentContextOptions,
+      channel,
+      noDefaultViewport: options.persistentContextOptions?.noDefaultViewport ?? true,
+      acceptDownloads: options?.persistentContextOptions?.acceptDownloads ?? (isUnderTest() ? 'accept' : 'internal-browser-default'),
+      colorScheme: options?.persistentContextOptions?.colorScheme ?? 'no-override',
+      args,
+    }), 0); // Deliberately no timeout for our apps.
+  } catch (error) {
+    if (channel) {
+      error = rewriteErrorMessage(error, [
+        `Failed to launch "${channel}" channel.`,
+        'Using custom channels could lead to unexpected behavior due to Enterprise policies (chrome://policy).',
+        'Install the default browser instead:',
+        wrapInASCIIBox(`${buildPlaywrightCLICommand(options.sdkLanguage, 'install')}`, 2),
+      ].join('\n'));
+    }
+    throw error;
+  }
   const [page] = context.pages();
   // Chromium on macOS opens a new tab when clicking on the dock icon.
   // See https://github.com/microsoft/playwright/issues/9434
@@ -88,7 +100,7 @@ export async function syncLocalStorageWithSettings(page: Page, appName: string) 
     return;
   const settingsFile = path.join(registryDirectory, '.settings', `${appName}.json`);
 
-  const controller = new ProgressController(serverSideCallMetadata(), page);
+  const controller = new ProgressController();
   await controller.run(async progress => {
     await page.exposeBinding(progress, '_saveSerializedSettings', false, (_, settings) => {
       fs.mkdirSync(path.dirname(settingsFile), { recursive: true });

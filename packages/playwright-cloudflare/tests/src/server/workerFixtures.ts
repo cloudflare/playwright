@@ -332,7 +332,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   mode: ['service', { scope: 'worker', option: true }],
 
   toImpl: async ({}, use) => {
-    await use(obj => obj._toImpl());
+    await use(obj => obj._connection.toImpl(obj));
   },
 
   loopback: async ({}, run, testInfo) => {
@@ -379,7 +379,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   }, { auto: 'all-hooks-included', timeout: 0 } as any],
 
   toImplInWorkerScope: [async ({ playwright }, use) => {
-    await use((playwright as any)._toImpl);
+    await use((playwright as any)._connection.toImpl);
   }, { scope: 'worker' }],
 
   _annotations: [async ({ sessionId, cdnTraces, browserVersion }, use, testInfo) => {

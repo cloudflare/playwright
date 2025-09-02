@@ -710,7 +710,7 @@ test('should run CT on changed deps', async ({ runWatchTest, writeFiles }) => {
         await expect(component).toHaveText('hello');
       });
     `,
-  });
+  }, undefined, { PWTEST_RECOVERY_DISABLED: '1' });
   await testProcess.waitForOutput('Waiting for file changes.');
   await writeFiles({
     'src/button.tsx': `
@@ -720,7 +720,8 @@ test('should run CT on changed deps', async ({ runWatchTest, writeFiles }) => {
 
   await testProcess.waitForOutput(`src${path.sep}button.spec.tsx:4:11 › pass`);
   expect(testProcess.output).not.toContain(`src${path.sep}link.spec.tsx`);
-  await testProcess.waitForOutput(`Error: Timed out 1000ms waiting for expect(locator).toHaveText(expected)`);
+  await testProcess.waitForOutput(`Error: expect(locator).toHaveText(expected) failed`);
+  await testProcess.waitForOutput('Timeout: 1000ms');
   await testProcess.waitForOutput('Waiting for file changes.');
 });
 

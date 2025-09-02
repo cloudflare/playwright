@@ -57,7 +57,7 @@ export class Chromium extends BrowserType {
   constructor(parent: SdkObject) {
     super(parent, 'chromium');
 
-    if (debugMode())
+    if (debugMode() === 'inspector')
       this._devtools = this._createDevTools();
   }
 
@@ -76,43 +76,50 @@ export class Chromium extends BrowserType {
       headersMap['User-Agent'] = getUserAgent();
 
     const artifactsDir = await progress.race(fs.promises.mkdtemp(ARTIFACTS_FOLDER));
-
-    const wsEndpoint = await urlToWSEndpoint(progress, endpointURL, headersMap);
-    const chromeTransport = await WebSocketTransport.connect(progress, wsEndpoint, { headers: headersMap });
-    progress.cleanupWhenAborted(() => chromeTransport.close());
-    const cleanedUp = new ManualPromise<void>();
     const doCleanup = async () => {
       await removeFolders([artifactsDir]);
-      await onClose?.();
-      cleanedUp.resolve();
+      const cb = onClose;
+      onClose = undefined; // Make sure to only call onClose once.
+      await cb?.();
     };
+
+    let chromeTransport: WebSocketTransport | undefined;
     const doClose = async () => {
-      await chromeTransport.closeAndWait();
-      await cleanedUp;
+      await chromeTransport?.closeAndWait();
+      await doCleanup();
     };
-    const browserProcess: BrowserProcess = { close: doClose, kill: doClose };
-    // in cloudflare workers, noDefaultViewport will set height to 1px, which is not what we want
-    const noDefaultViewport = globalThis.navigator?.userAgent !== 'Cloudflare-Workers';
-    const persistent = new URL(endpointURL).searchParams.has('persistent') ? { noDefaultViewport } : undefined;
-    const browserOptions: BrowserOptions = {
-      slowMo: options.slowMo,
-      name: 'chromium',
-      isChromium: true,
-      persistent,
-      browserProcess,
-      protocolLogger: helper.debugProtocolLogger(),
-      browserLogsCollector: new RecentLogsCollector(),
-      artifactsDir,
-      downloadsPath: options.downloadsPath || artifactsDir,
-      tracesDir: options.tracesDir || artifactsDir,
-      originalLaunchOptions: {},
-    };
-    if (persistent)
-      validateBrowserContextOptions(persistent, browserOptions);
-    const browser = await progress.race(CRBrowser.connect(this.attribution.playwright, chromeTransport, browserOptions));
-    browser._isCollocatedWithServer = false;
-    browser.on(Browser.Events.Disconnected, doCleanup);
-    return browser;
+
+    try {
+      const wsEndpoint = await urlToWSEndpoint(progress, endpointURL, headersMap);
+      chromeTransport = await WebSocketTransport.connect(progress, wsEndpoint, { headers: headersMap });
+
+      const browserProcess: BrowserProcess = { close: doClose, kill: doClose };
+      // in cloudflare workers, noDefaultViewport will set height to 1px, which is not what we want
+      const noDefaultViewport = globalThis.navigator?.userAgent !== 'Cloudflare-Workers';
+      const persistent = new URL(endpointURL).searchParams.has('persistent') ? { noDefaultViewport } : undefined;
+      const browserOptions: BrowserOptions = {
+        slowMo: options.slowMo,
+        name: 'chromium',
+        isChromium: true,
+        persistent,
+        browserProcess,
+        protocolLogger: helper.debugProtocolLogger(),
+        browserLogsCollector: new RecentLogsCollector(),
+        artifactsDir,
+        downloadsPath: options.downloadsPath || artifactsDir,
+        tracesDir: options.tracesDir || artifactsDir,
+        originalLaunchOptions: {},
+      };
+      if (persistent)
+        validateBrowserContextOptions(persistent, browserOptions);
+      const browser = await progress.race(CRBrowser.connect(this.attribution.playwright, chromeTransport, browserOptions));
+      browser._isCollocatedWithServer = false;
+      browser.on(Browser.Events.Disconnected, doCleanup);
+      return browser;
+    } catch (error) {
+      await doClose().catch(() => {});
+      throw error;
+    }
   }
 
   private _createDevTools() {
@@ -166,6 +173,7 @@ export class Chromium extends BrowserType {
   }
 
   override attemptToGracefullyCloseBrowser(transport: ConnectionTransport): void {
+    // Note that it's fine to reuse the transport, since our connection ignores kBrowserCloseMessageId.
     const message: ProtocolRequest = { method: 'Browser.close', id: kBrowserCloseMessageId, params: {} };
     transport.send(message);
   }
@@ -302,8 +310,6 @@ export class Chromium extends BrowserType {
     const chromeArguments = [...chromiumSwitches(options.assistantMode, options.channel)];
 
     if (os.platform() === 'darwin') {
-      // See https://github.com/microsoft/playwright/issues/7362
-      chromeArguments.push('--enable-use-zoom-for-dsf=false');
       // See https://issues.chromium.org/issues/40277080
       chromeArguments.push('--enable-unsafe-swiftshader');
     }
