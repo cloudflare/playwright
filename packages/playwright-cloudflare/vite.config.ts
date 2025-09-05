@@ -82,25 +82,15 @@ export default defineConfig({
     // prevents __defProp, __defNormalProp, __publicField in compiled code
     target: 'esnext',
     rollupOptions: {
-      output: [
-        {
-          format: 'es',
-          dir: 'lib/esm',
-          preserveModules: true,
-          preserveModulesRoot: 'src',
-          entryFileNames: '[name].js',
-          chunkFileNames: '[name].js',
-        },
-        {
-          format: 'cjs',
-          dir: 'lib/cjs',
-          preserveModules: true,
-          preserveModulesRoot: 'src',
-          entryFileNames: '[name].js',
-          chunkFileNames: '[name].js',
-          exports: 'named',
-        },
-      ],
+      output: [{
+        format: 'es',
+        dir: 'lib',
+        preserveModules: true,
+        preserveModulesRoot: 'src',
+        entryFileNames: '[name].js',
+        chunkFileNames: '[name].js',
+        exports: 'named',
+      }],
       external: [
         'node:async_hooks',
         'node:assert',

@@ -7,27 +7,19 @@
   "exports": {
     ".": {
       "types": "./index.d.ts",
-      "import": "./lib/esm/index.js",
-      "require": "./lib/cjs/index.js",
-      "default": "./lib/esm/index.js"
+      "default": "./lib/index.js"
     },
     "./test": {
       "types": "./test.d.ts",
-      "import": "./lib/esm/test.js",
-      "require": "./lib/cjs/test.js",
-      "default": "./lib/esm/test.js"
+      "default": "./lib/test.js"
     },
     "./internal": {
       "types": "./internal.d.ts",
-      "import": "./lib/esm/internal.js",
-      "require": "./lib/cjs/internal.js",
-      "default": "./lib/esm/internal.js"
+      "default": "./lib/internal.js"
     },
     "./fs": {
       "types": "./fs.d.ts",
-      "import": "./lib/esm/bundles/fs.js",
-      "require": "./lib/cjs/bundles/fs.js",
-      "default": "./lib/esm/bundles/fs.js"
+      "default": "./lib/bundles/fs.js"
     }
   },
   "scripts": {
