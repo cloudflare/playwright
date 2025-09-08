@@ -8,7 +8,7 @@ export * from './types/types';
 declare module './types/types' {
   interface Browser {
     /**
-     * Get the BISO session ID associated with this browser
+     * Get the Browser Rendering session ID associated with this browser
      *
      * @public
      */
@@ -41,7 +41,7 @@ export interface ActiveSession {
   // connection info, if present means there's a connection established
   // from a worker to that session
   connectionId?: string;
-  connectionStartTime?: string;
+  connectionStartTime?: number;
 }
 
 /**
@@ -88,17 +88,24 @@ export interface WorkersLaunchOptions {
   keep_alive?: number; // milliseconds to keep browser alive even if it has no activity (from 10_000ms to 600_000ms, default is 60_000)
 }
 
+/**
+ * @public
+ */
+export interface WorkersConnectOptions {
+  sessionId: string; // session ID to connect to
+}
+
 // Extracts the keys whose values match a specified type `ValueType`
-type KeysByValue<T, ValueType> = {
+type KeysByValueType<T, ValueType> = {
   [K in keyof T]: T[K] extends ValueType ? K : never;
 }[keyof T];
 
-export type BrowserBindingKey = KeysByValue<typeof env, BrowserWorker>;
+export type BrowserBindingKey = KeysByValueType<typeof env, BrowserWorker>;
 
-export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: { sessionId?: string, persistent?: boolean }): string;
+export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: WorkersLaunchOptions | WorkersConnectOptions): string;
 
 export function connect(endpoint: string | URL): Promise<Browser>;
-export function connect(endpoint: BrowserWorker, sessionIdOrOptions: string | { sessionId: string, persistent?: boolean }): Promise<Browser>;
+export function connect(endpoint: BrowserWorker, sessionIdOrOptions: string | WorkersConnectOptions): Promise<Browser>;
 
 export function launch(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<Browser>;
 
