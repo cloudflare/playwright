@@ -8,6 +8,7 @@ import { Suite, TestCase } from 'playwright/lib/common/test';
 import { rootTestType } from 'playwright/lib/common/testType';
 import { WorkerMain } from 'playwright/lib/worker/workerMain';
 import { TestStepInternal } from 'playwright/lib/worker/testInfo';
+import { debug } from 'playwright-core/lib/utilsBundle';
 
 import { isUnsupportedOperationError } from './cloudflare/unsupportedOperations';
 
@@ -22,6 +23,9 @@ export { mergeTests } from 'playwright/lib/common/testType';
 
 export * from 'playwright-core/lib/zipBundle';
 export * from 'playwright-core/lib/utilsBundle';
+
+// console.log must be called inside a function because it's undefined on startup
+debug.log = (...args: any[]) => console.log(...args);
 
 // @ts-ignore
 export const _baseTest: TestType<{}, {}> = rootTestType.test;

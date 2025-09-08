@@ -29,8 +29,9 @@ const HTTP_FAKE_HOST = 'http://fake.host';
 const WS_FAKE_HOST = 'ws://fake.host';
 
 const originalConnectOverCDP = playwright.chromium.connectOverCDP;
-// playwright-mcp uses playwright.chromium.connectOverCDP if a CDP endpoint is passed,
-// so we need to override it to use our own connectOverCDP implementation
+// HACK this is a major hack, but we need it to make playwright-mcp and stagehand work without modifying their code extensively.
+// Both playwright-mcp and stagehand use playwright.chromium.connectOverCDP if a CDP endpoint is passed,
+// so we need to override it to use our own connectOverCDP implementation.
 (playwright.chromium as any).connectOverCDP = (endpointURLOrOptions: (ConnectOverCDPOptions & { wsEndpoint?: string }) | string) => {
   const wsEndpoint = typeof endpointURLOrOptions === 'string' ? endpointURLOrOptions : endpointURLOrOptions.wsEndpoint ?? endpointURLOrOptions.endpointURL;
   if (!wsEndpoint)
