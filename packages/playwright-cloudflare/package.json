@@ -51,6 +51,7 @@
     "test:smoke": "npm run test:generate:proxy && cd tests && npx playwright test --grep \"@smoke\""
   },
   "devDependencies": {
+    "pkg-pr-new": "^0.0.59",
     "vite": "^6.1.0"
   }
 }
