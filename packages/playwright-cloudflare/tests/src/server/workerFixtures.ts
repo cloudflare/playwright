@@ -21,8 +21,8 @@ export type WorkersWorkerFixtures = {
   bindingName: BrowserBindingName;
   binding: BrowserWorker;
   cdnTraces: {
-    worker: CdnTrace;
-    browser: CdnTrace;
+    worker?: CdnTrace;
+    browser?: CdnTrace;
   };
 };
 
@@ -69,8 +69,7 @@ class TestServer {
   }
 
   get PORT() {
-    this._testInfo.skip(true, 'server.PORT not supported, skipping');
-    return 443;
+    return Number(new URL(this.PREFIX).port);
   }
 
   onceWebSocketConnection() {
@@ -111,6 +110,10 @@ class TestServer {
 
   sendOnWebSocketConnection() {
     this._testInfo.skip(true, 'sendOnWebSocketConnection not supported, skipping');
+  }
+
+  setExtraHeaders() {
+    this._testInfo.skip(true, 'setExtraHeaders not supported, skipping');
   }
 }
 
@@ -178,10 +181,11 @@ export type TestModeTestFixtures = {
 };
 
 function parseTrace(trace: string) {
-  return Object.fromEntries(trace.split('\n').filter(line => line).map(line => {
+  const { loc, colo } = Object.fromEntries(trace.split('\n').filter(line => line).map(line => {
     const [key, value] = line.split('=');
     return [key, value];
-  })) as { loc: string, colo: string };
+  })) as { loc?: string, colo?: string };
+  return loc && colo ? { loc, colo } : undefined;
 }
 
 export const test = platformTest.extend<PageTestFixtures & ServerFixtures & TestModeTestFixtures & BrowserTestTestFixtures, WorkersWorkerFixtures & PlaywrightWorkerArgs & BrowserTestWorkerFixtures & PageWorkerFixtures & TestModeWorkerOptions>({
@@ -215,15 +219,15 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   }, { scope: 'worker' }],
 
   cdnTraces: [async ({ sessionId, browser }, run, workerInfo) => {
-    const worker = parseTrace(await fetch('https://1.1.1.1/cdn-cgi/trace').then(resp => resp.text()));
+    const worker = parseTrace(await fetch('https://1.1.1.1/cdn-cgi/trace').then(resp => resp.text()).catch(() => ''));
     const context = await browser.newContext();
     const page = await context.newPage();
-    const browserCdnTrace = parseTrace(await page.goto('https://1.1.1.1/cdn-cgi/trace').then(resp => resp!.text()));
+    const browserCdnTrace = parseTrace(await page.goto('https://1.1.1.1/cdn-cgi/trace').then(resp => resp!.text()).catch(() => ''));
     await page.close();
     await context.close();
 
     // eslint-disable-next-line no-console
-    console.log(`ℹ️ Session ID: ${sessionId}, Worker: ${worker.colo}, Browser: ${browserCdnTrace.colo}`);
+    console.log(`ℹ️ Session ID: ${sessionId}, Worker: ${worker ? worker.colo : 'N/A'}, Browser: ${browserCdnTrace ? browserCdnTrace.colo : 'N/A'}`);
 
     await run({ worker, browser: browserCdnTrace });
   }, { scope: 'worker' }],
@@ -327,7 +331,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   },
 
   asset: async ({}, run) => {
-    await run((p: string) => `/tmp/assets/${p}`);
+    await run((p: string) => `/bundle/assets/${p}`);
   },
 
   mode: ['service', { scope: 'worker', option: true }],
@@ -344,7 +348,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
     testInfo.skip(true, 'socksPort not supported, skipping');
   },
 
-  contextFactory: async ({ browser }: any, run) => {
+  contextFactory: async ({ browser, asset }, run) => {
     const contexts: BrowserContext[] = [];
     await run(async options => {
       const context = await browser.newContext(options);
@@ -392,10 +396,10 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
       description: sessionId,
     }, {
       type: 'worker colo',
-      description: cdnTraces.worker.colo,
+      description: cdnTraces.worker?.colo ?? 'N/A',
     }, {
       type: 'browser colo',
-      description: cdnTraces.browser.colo,
+      description: cdnTraces.browser?.colo ?? 'N/A',
     });
     await use();
   }, { auto: true }],

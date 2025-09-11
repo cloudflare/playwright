@@ -1,20 +1,17 @@
 import path from "path";
 import { fileURLToPath } from "url";
-import { decodeBase64ToFiles, deleteDir, encodeFilesToBase64, listFiles, writeFile } from "./utils.js";
+import { deleteDir, listFiles, writeFile } from "./utils.js";
 
 const basedir = path.dirname(fileURLToPath(import.meta.url));
 
 const excludedFiles = [
-  'page/interception.spec.ts',
   'page/page-leaks.spec.ts',
-
   'library/browsertype-connect.spec.ts',
   'library/browsertype-launch-selenium.spec.ts',
   'library/browsertype-launch-server.spec.ts',
   'library/browsertype-launch.spec.ts',
   'library/client-certificates.spec.ts',
   'library/debug-controller.spec.ts',
-  'library/har.spec.ts',
   'library/headful.spec.ts',
   'library/launcher.spec.ts',
   'library/snapshotter.spec.ts',
@@ -29,34 +26,20 @@ const workerTestsDir = path.join(basedir, '..', 'tests', 'workerTests');
 
 deleteDir(workerTestsDir);
 
-// generate workerTests/assets.ts file
-const assets = [
-    ...['page', 'library'].flatMap(dir => listFiles(path.join(sourceTestsDir, dir), { recursive: true })).filter(file => /-chromium\.(png|jpg)/.test(file)),
-    ...listFiles(path.join(sourceTestsDir, 'assets'), { recursive: true }),
-  ]
-  .map(file => path.relative(sourceTestsDir, file).replace(/\\/g, '/'));
-
-writeFile(path.join(workerTestsDir, 'assets.ts'), `// @ts-nocheck
-import fs from 'fs';
-import path from 'path';
-import zlib from 'zlib';
-
-${decodeBase64ToFiles.toString()}
-
-decodeBase64ToFiles('/tmp', ${JSON.stringify(encodeFilesToBase64(sourceTestsDir, assets), undefined, 2)});
-`);
-
 // generate workerTests/index.ts file
 const testFiles = ['page', 'library']
   .flatMap(dir => listFiles(path.join(sourceTestsDir, dir)))
   .filter(file => /\.(test|spec)\.ts$/.test(file))
   .filter(file => !excludedFiles.includes(path.relative(sourceTestsDir, file).replace(/\\/g, '/')))
   .map(file => `@workerTests/${path.relative(sourceTestsDir, file)}`.replace(/\\/g, '/').replace(/\.ts$/, ''));
+
 const cloudflareTestFiles = listFiles(cloudflareSourceTestsDir, { recursive: true })
   .filter(file => /\.(test|spec)\.ts$/.test(file))
   .map(file => `@cloudflareTests/${path.relative(cloudflareSourceTestsDir, file)}`.replace(/\\/g, '/').replace(/\.ts$/, ''));
 
-writeFile(path.join(workerTestsDir, 'index.ts'), `import "./assets";
-
-${[...testFiles, ...cloudflareTestFiles].map(file => `import ${JSON.stringify(file)};`).join('\n')}
-`);
+writeFile(path.join(
+  workerTestsDir, 'index.ts'),
+  [...testFiles, ...cloudflareTestFiles]
+    .map(file => `import ${JSON.stringify(file)};`)
+    .join('\n')
+);
