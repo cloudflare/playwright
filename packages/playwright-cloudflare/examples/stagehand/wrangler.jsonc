@@ -1,0 +1,21 @@
+{
+  "name": "cloudflare-stagehand-example",
+  "main": "src/index.ts",
+  "compatibility_flags": ["nodejs_compat", "enable_nodejs_fs_module"],
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "upload_source_maps": true,
+  "alias": {
+    "playwright": "@cloudflare/playwright"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "browser": {
+    "binding": "BROWSER",
+    "experimental_remote": true
+  },
+  "ai": {
+    "binding": "AI"
+  }
+}
