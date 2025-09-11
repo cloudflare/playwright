@@ -1,7 +1,7 @@
 name = "playwright-test-workers"
 main = "src/server/index.ts"
-compatibility_flags = ["nodejs_compat", "enable_nodejs_fs_module"]
-compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-09-17"
 upload_source_maps = true
 
 base_dir = "../../../tests"
