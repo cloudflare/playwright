@@ -86,7 +86,9 @@ export class HarRecorder implements HarTracerDelegate {
       (this._zipFile as unknown as EventEmitter).on('error', error => result.reject(error));
       this._zipFile.addBuffer(Buffer.from(harFileContent, 'utf-8'), 'har.har');
       this._zipFile.end();
-      this._zipFile.outputStream.pipe(fs.createWriteStream(this._artifact.localPath())).on('close', () => {
+      const chunks: Buffer[] = [];
+      this._zipFile.outputStream.on('data', data => chunks.push(data)).on('close', () => {
+        fs.writeFileSync(this._artifact.localPath(), Buffer.concat(chunks));
         result.resolve();
       });
       await result;

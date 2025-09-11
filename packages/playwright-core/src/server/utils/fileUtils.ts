@@ -193,9 +193,13 @@ export class SerializedFS {
         for (const entry of op.entries)
           zipFile.addFile(entry.value, entry.name);
         zipFile.end();
+        const chunks: Buffer[] = [];
         zipFile.outputStream
-            .pipe(fs.createWriteStream(op.zipFileName))
-            .on('close', () => result.resolve())
+            .on('data', data => chunks.push(data))
+            .on('close', () => {
+              fs.writeFileSync(op.zipFileName, Buffer.concat(chunks));
+              result.resolve();
+            })
             .on('error', error => result.reject(error));
         await result;
         return;
