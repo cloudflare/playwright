@@ -85,10 +85,15 @@ export async function zip(progress: Progress, stackSessions: Map<string, StackSe
     // New file, just compress the entries.
     await progress.race(fs.promises.mkdir(path.dirname(params.zipFile), { recursive: true }));
     zipFile.end(undefined, () => {
-      zipFile.outputStream.pipe(fs.createWriteStream(params.zipFile))
-          .on('close', () => promise.resolve())
+      const chunks: Buffer[] = [];
+      zipFile.outputStream
+          .on('data', data => chunks.push(data))
+          .on('close', () => {
+            fs.writeFileSync(params.zipFile, Buffer.concat(chunks));
+            promise.resolve();
+          })
           .on('error', error => promise.reject(error));
-    });
+      });
     await progress.race(promise);
     await deleteStackSession(progress, stackSessions, params.stacksId);
     return;
@@ -114,8 +119,10 @@ export async function zip(progress: Progress, stackSessions: Map<string, StackSe
         zipFile.addReadStream(readStream!, entry.fileName);
         if (--pendingEntries === 0) {
           zipFile.end(undefined, () => {
-            zipFile.outputStream.pipe(fs.createWriteStream(params.zipFile)).on('close', () => {
+            const chunks: Buffer[] = [];
+            zipFile.outputStream.on('data', data => chunks.push(data)).on('close', () => {
               fs.promises.unlink(tempFile).then(() => {
+                fs.writeFileSync(params.zipFile, Buffer.concat(chunks));
                 promise.resolve();
               }).catch(error => promise.reject(error));
             });
