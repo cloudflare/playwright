@@ -16,6 +16,7 @@ import playwright from '.';
 
 import type { Attachment, SuiteInfo, TestCaseInfo, TestContext, TestResult } from '../internal';
 import type { ClientInstrumentationListener } from 'playwright-core/lib/client/clientInstrumentation';
+import { Project } from '../types/test';
 
 export { isUnderTest, asLocator } from 'playwright-core/lib/utils';
 export { debug } from 'playwright-core/lib/utilsBundle';
@@ -39,7 +40,7 @@ export function setCurrentTestFile(file?: string) {
   }
 
   const suite = new Suite(file, 'file');
-  suite._requireFile = file;
+  suite._requireFile = `/bundle/${file}`;
   suite.location = { file, line: 0, column: 0 };
   setCurrentlyLoadingFileSuite(suite);
   _rootSuites.push(suite);
@@ -72,13 +73,15 @@ export const playwrightTestConfig = {
     {
       timeout: 5000,
       name: 'chromium',
-    },
+      outputDir: '/tmp/test-results',
+      testDir: '/bundle',
+    } satisfies Partial<Project>,
   ],
 };
 
 export const configLocation = {
-  resolvedConfigFile: '/tmp/workerTests/playwright.config.ts',
-  configDir: '/tmp/workerTests',
+  resolvedConfigFile: '/bundle/playwright.config.ts',
+  configDir: '/bundle',
 };
 
 async function bindSuites() {
@@ -102,7 +105,7 @@ class TestWorker extends WorkerMain {
       workerIndex: 0,
       parallelIndex: 0,
       repeatEachIndex: 0,
-      projectId: playwrightTestConfig.projects[0].name,
+      projectId: playwrightTestConfig.projects[0].name!,
       config: {
         location: configLocation,
         configCLIOverrides: {
@@ -201,15 +204,6 @@ export class TestRunner {
       await testWorker.gracefullyClose();
       context = undefined;
     }
-  }
-}
-
-function paramsToRender(apiName: string) {
-  switch (apiName) {
-    case 'locator.fill':
-      return ['value'];
-    default:
-      return ['url', 'selector', 'text', 'key'];
   }
 }
 

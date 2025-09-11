@@ -1,14 +1,17 @@
 export const skipTests: string[][] = [
-  ['library/browsercontext-cookies.spec.ts', 'should get a cookie @smoke'],
-  ['library/browsercontext-credentials.spec.ts', 'should work with correct credentials @smoke'],
-  ['library/browsercontext-device.spec.ts', 'device', 'should work @smoke'],
-  ['library/capabilities.spec.ts', 'should play webm video @smoke'],
-  ['library/capabilities.spec.ts', 'should support webgl @smoke'],
-  ['library/capabilities.spec.ts', 'should support webgl 2 @smoke'],
-  ['library/capabilities.spec.ts', 'should play audio @smoke'],
-  ['page/frame-hierarchy.spec.ts', 'should handle nested frames @smoke'],
-  ['page/page-drag.spec.ts', 'Drag and drop', 'should work @smoke'],
-  ['page/page-event-popup.spec.ts', 'should work @smoke'],
-  ['page/page-history.spec.ts', 'page.goBack should work @smoke'],
-  ['page/page-route.spec.ts', 'should intercept @smoke'],
+  ['library/har.spec.ts', 'should include content @smoke'],
+  ['page/wheel.spec.ts', 'should dispatch wheel events @smoke'],
+  ['page/wheel.spec.ts', 'should dispatch wheel events after popup was opened @smoke'],
+  ['page/workers.spec.ts', 'Page.workers @smoke'],
+];
+
+export const skipErrorMessages: Array<string | RegExp> = [
+  'Cloudflare Workers does not support',
+  '__filename is not defined',
+  '__dirname is not defined',
+  `\\(\\) => {}`, // Cloudflare serializes empty arrow function with new lines
+  'createHttp2Server is not defined',
+  /\[unenv\] .* is not implemented yet!/,
+  /Received string:\s+"Cloudflare-Workers"/,
+  '.rendering.cfdata.org',
 ];

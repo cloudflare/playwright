@@ -12,6 +12,10 @@ on:
           - BISO
           - BRAPI Staging
           - BRAPI Production
+      grep:
+        description: 'Test filter grep'
+        required: false
+        type: string
 
 jobs:
   full-tests:
@@ -38,7 +42,7 @@ jobs:
       - name: Run tests
         run: |
           cd packages/playwright-cloudflare
-          npm run test:full -- --reporter=html --project="${{ github.event.inputs.project || 'BISO' }}"
+          npm run test:full -- --reporter=html --project="${{ github.event.inputs.project || 'BISO' }}" ${{ github.event.inputs.grep && format('--grep="{0}"', github.event.inputs.grep) }}
 
       - name: Upload HTML report
         uses: actions/upload-artifact@v4
@@ -49,7 +53,7 @@ jobs:
           retention-days: 14
 
       - name: Deploy to Cloudflare Pages
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !github.event.inputs.grep }}
         run: |
           cd packages/playwright-cloudflare/tests
           npx wrangler pages deploy ./playwright-report --project-name playwright-full-test-report
