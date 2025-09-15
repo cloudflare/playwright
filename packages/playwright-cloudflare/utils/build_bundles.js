@@ -49,6 +49,9 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
           'node:fs': 'fs',
           'node:process': 'process',
 
+          'commander': path.join(basedir, '../src/mocks/commander'),
+          'socks-proxy-agent': path.join(basedir, '../src/mocks/socksProxyAgent'),
+
           ...(name === 'pngjs' ? { 'zlib': 'browserify-zlib' } :
           { 'pngjs': path.join(basedir, `../src/bundles/pngjs.js` ) }),
         },
