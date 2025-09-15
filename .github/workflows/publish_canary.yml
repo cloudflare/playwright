@@ -21,8 +21,8 @@ jobs:
       contents: read   # This is required for actions/checkout to succeed
     environment: allow-publish-driver-to-cdn # This is required for OIDC login (azure/login)
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
       with:
         node-version: 18
         registry-url: 'https://registry.npmjs.org'
@@ -67,8 +67,8 @@ jobs:
     runs-on: ubuntu-24.04
     if: github.repository == 'microsoft/playwright'
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
       with:
         node-version: 18
     - uses: actions/create-github-app-token@v2
