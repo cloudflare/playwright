@@ -37,14 +37,15 @@ https://<your-worker>.workers.dev
 ```
 Returns a screenshot of the TodoMVC app with default todo items.
 
-### Custom Todo Items
-```
-https://<your-worker>.workers.dev?todo=first&todo=second
-```
-Returns a screenshot with your custom todo items.
-
 ### Generate Trace
+
+To generate a trace and open it in [Playwright Trace Viewer](https://trace.playwright.dev/), use the following URL:
+
+```
+https://trace.playwright.dev/?trace=https://<your-worker>.workers.dev
+```
+
+To download the trace, use the following URL:
 ```
 https://<your-worker>.workers.dev?trace
 ```
-Returns a Playwright trace file that can be viewed in [Playwright Trace Viewer](https://playwright.dev/docs/trace-viewer).
