@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "wrangler": "^4.37.1"
+    "wrangler": "^4.38.0"
   },
   "dependencies": {
     "@cloudflare/playwright": "file:../.."
