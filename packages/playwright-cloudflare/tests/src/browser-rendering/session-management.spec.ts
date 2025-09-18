@@ -1,24 +1,24 @@
-import { launch, connect, sessions, history, acquire, limits, endpointURLString } from '@cloudflare/playwright';
+import { launch, connect, sessions, history, acquire, limits, endpointURLString, BrowserEndpoint, BrowserWorker, ActiveSession } from '@cloudflare/playwright';
 import playwright from '@cloudflare/playwright';
 
 import { test, expect } from '../server/workerFixtures';
 
-import type { BrowserWorker, Browser, WorkersLaunchOptions } from '@cloudflare/playwright';
-
-async function launchAndGetSession(endpoint: BrowserWorker, options?: WorkersLaunchOptions): Promise<[Browser, string]> {
-  const browser = await launch(endpoint, options);
-  const sessionId = browser.sessionId();
-  expect(sessionId).toBeDefined();
-  return [browser, sessionId];
+async function fetchSingleSession(endpoint: BrowserWorker, sessionId: string) {
+  const response = await endpoint.fetch(`http://fake.host/v1/sessions?sessionId=${sessionId}`);
+  const { sessions } = await response.json() as { sessions: ActiveSession[] };
+  expect(sessions).toHaveLength(1);
+  const session = sessions[0];
+  expect(session.sessionId).toBe(sessionId);
+  return session;
 }
 
 test(`should list sessions @smoke`, async ({ binding }) => {
   const before = await sessions(binding);
-  const [browser, sessionId] = await launchAndGetSession(binding);
-  const after = await sessions(binding);
-
-  expect(before.map(a => a.sessionId)).not.toContain(sessionId);
-  expect(after.map(a => a.sessionId)).toContain(sessionId);
+  const browser = await launch(binding);
+  
+  expect(before.map(a => a.sessionId)).not.toContain(browser.sessionId());
+  // fails if session doesn't exist
+  await fetchSingleSession(binding, browser.sessionId());
 
   browser.close();
 });
@@ -39,40 +39,40 @@ test(`should keep session open when closing browser created with connect`, async
 });
 
 test(`should close session when launched browser is closed`, async ({ binding }) => {
-  const [browser, sessionId] = await launchAndGetSession(binding);
+  const browser = await launch(binding);
   await browser.close();
   const afterClose = await sessions(binding);
-  expect(afterClose.map(a => a.sessionId)).not.toContain(sessionId);
+  expect(afterClose.map(a => a.sessionId)).not.toContain(browser.sessionId());
 });
 
 test(`should close session after keep_alive`, async ({ binding }) => {
-  const [browser, sessionId] = await launchAndGetSession(binding, { keep_alive: 15000 });
+  const browser = await launch(binding, { keep_alive: 15000 });
   await new Promise(resolve => setTimeout(resolve, 11000));
   const beforeKeepAlive = await sessions(binding);
-  expect(beforeKeepAlive.map(a => a.sessionId)).toContain(sessionId);
+  expect(beforeKeepAlive.map(a => a.sessionId)).toContain(browser.sessionId());
   expect(browser.isConnected()).toBe(true);
   await new Promise(resolve => setTimeout(resolve, 5000));
   const afterKeepAlive = await sessions(binding);
-  expect(afterKeepAlive.map(a => a.sessionId)).toContain(sessionId);
+  expect(afterKeepAlive.map(a => a.sessionId)).toContain(browser.sessionId());
   expect(browser.isConnected()).toBe(true);
 });
 
 test(`should add new session to history when launching browser`, async ({ binding }) => {
   const before = await history(binding);
-  const [launchedBrowser, sessionId] = await launchAndGetSession(binding);
+  const launchedBrowser = await launch (binding);
   const after = await history(binding);
 
-  expect(before.map(a => a.sessionId)).not.toContain(sessionId);
-  expect(after.map(a => a.sessionId)).toContain(sessionId);
+  expect(before.map(a => a.sessionId)).not.toContain(launchedBrowser.sessionId());
+  expect(after.map(a => a.sessionId)).toContain(launchedBrowser.sessionId());
 
   await launchedBrowser.close();
 });
 
 test(`should show sessionId in active sessions under limits endpoint`, async ({ binding }) => {
-  const [launchedBrowser, sessionId] = await launchAndGetSession(binding);
+  const launchedBrowser = await launch(binding);
 
   const response = await limits(binding);
-  expect(response.activeSessions.map(s => s.id)).toContain(sessionId);
+  expect(response.activeSessions.map(s => s.id)).toContain(launchedBrowser.sessionId());
 
   await launchedBrowser.close();
 });
@@ -116,6 +116,7 @@ test(`should launch browser with no persistent context by default`, async ({ bin
 });
 
 test(`should launch browser with persistent context is persistent=true`, async ({ binding }) => {
+  // @ts-expect-error
   const url = endpointURLString(binding, { persistent: true });
   const browser = await launch(url);
   expect(browser.contexts()).toHaveLength(1);
