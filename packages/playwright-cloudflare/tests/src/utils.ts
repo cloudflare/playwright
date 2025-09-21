@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 
 import type { BrowserWorker } from '@cloudflare/playwright';
 
-export type BrowserBindingName = 'BROWSER' | 'BROWSER_BRAPI_STAGING' | 'BROWSER_BRAPI_PRODUCTION';
+export type BrowserBindingName = 'BROWSER' | 'BROWSER_BRAPI_TEST' | 'BROWSER_BRAPI_STAGING' | 'BROWSER_BRAPI_PRODUCTION';
 
 export function getBinding(url: URL): BrowserWorker {
   const bindingName = url.searchParams.get('binding');

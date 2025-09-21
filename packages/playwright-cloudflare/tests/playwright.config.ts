@@ -17,6 +17,12 @@ export default defineConfig<{}, WorkerOptions>({
       }
     },
     {
+      name: 'BRAPI Test',
+      use: {
+        binding: 'BROWSER_BRAPI_TEST',
+      }
+    },
+    {
       name: 'BRAPI Staging',
       use: {
         binding: 'BROWSER_BRAPI_STAGING',

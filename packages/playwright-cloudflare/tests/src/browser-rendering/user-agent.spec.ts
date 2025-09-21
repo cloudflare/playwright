@@ -20,3 +20,8 @@ test(`context should be able to specify a user agent`, async ({ browser, server 
   ]);
   expect(request.headers()['user-agent']).toBe('foobar');
 });
+
+test(`empty page url should be correct`, async ({ page, server }) => {
+  await page.goto(server.EMPTY_PAGE);
+  expect(page.url()).toBe('http://localhost:8001/empty.html');
+});

@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - BISO
+          - BRAPI Test
           - BRAPI Staging
           - BRAPI Production
       grep:

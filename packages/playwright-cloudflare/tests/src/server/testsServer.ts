@@ -46,7 +46,7 @@ export class TestsServer extends DurableObject<Env> {
 
     const timeout = parseInt(url.searchParams.get('timeout') ?? '10', 10) * 1000;
     const { testId, fullTitle, retry } = await request.json() as TestRequestPayload;
-    const assetsUrl = url.origin.replace(/^http:/, 'https:');
+    const assetsUrl = url.origin.startsWith('http://localhost') ? url.origin : 'http://localhost:8001';
     const { env } = this;
     const context = { env, sessionId, assetsUrl, retry, binding };
     const testRunner = new TestRunner(context, { timeout });
