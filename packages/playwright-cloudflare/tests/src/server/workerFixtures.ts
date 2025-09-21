@@ -60,12 +60,14 @@ class TestServer {
   readonly PREFIX: string;
   readonly CROSS_PROCESS_PREFIX: string;
   readonly EMPTY_PAGE: string;
+  readonly HOSTNAME: string;
 
   constructor(testInfo: TestInfo, assetsUrl: string) {
     this._testInfo = testInfo;
     this.PREFIX = assetsUrl;
-    this.CROSS_PROCESS_PREFIX = assetsUrl.replace(/\:\/\/([^.]+)\./, '://$1-cross-origin.');
-    this.EMPTY_PAGE = `${assetsUrl}/empty.html`;
+    this.CROSS_PROCESS_PREFIX = this.PREFIX.replace(/\:\/\/([^.]+)\./, '://$1-cross-origin.');
+    this.EMPTY_PAGE = `${this.PREFIX}/empty.html`;
+    this.HOSTNAME = new URL(this.PREFIX).hostname;
   }
 
   get PORT() {
