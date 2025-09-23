@@ -51,6 +51,7 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
 
           'commander': path.join(basedir, '../src/mocks/commander'),
           'socks-proxy-agent': path.join(basedir, '../src/mocks/socksProxyAgent'),
+          'open': path.join(basedir, '../src/mocks/open'),
 
           ...(name === 'pngjs' ? { 'zlib': 'browserify-zlib' } :
           { 'pngjs': path.join(basedir, `../src/bundles/pngjs.js` ) }),
