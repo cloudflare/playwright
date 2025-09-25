@@ -2,7 +2,7 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/playwright/tree/main/packages/playwright-cloudflare/examples/stagehand)
 
-This example demonstrates how to run integrate Stagehand in a Cloudflare Worker using Vite to extract information from a movie from The Movie Database.
+This example demonstrates how to integrate Stagehand in a Cloudflare Worker using Vite to extract information from a movie.
 
 It uses Workers AI [@cf/meta/llama-3.3-70b-instruct-fp8-fast](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/) as the model by default.
 
@@ -96,10 +96,11 @@ export default defineConfig({
 
 It's also possible to use Stagehand without Vite. For that, just ensure that wrangler configuration file has the following [module alias](https://developers.cloudflare.com/workers/wrangler/configuration/#module-aliasing):
 
-```json
- {
+```jsonc
+{
   // ...
-	"alias": {
-		"playwright": "@cloudflare/playwright"
-	}
+  "alias": {
+    "playwright": "@cloudflare/playwright"
+  }
 }
+```
