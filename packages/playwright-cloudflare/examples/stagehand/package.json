@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^2.5.0",
-    "@cloudflare/playwright": "file:../..",
+    "@cloudflare/playwright": "^1.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   }
