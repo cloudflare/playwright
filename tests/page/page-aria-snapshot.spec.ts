@@ -669,3 +669,28 @@ it('should not show unhidden children of aria-hidden elements', { annotation: { 
 
   expect(await page.locator('body').ariaSnapshot()).toBe('');
 });
+
+it('should snapshot placeholder when different from the name', async ({ page }) => {
+  await page.setContent(`
+    <input placeholder="Placeholder">
+  `);
+  expect(await page.locator('body').ariaSnapshot()).toContainYaml(`
+    - textbox "Placeholder"
+  `);
+
+  await page.setContent(`
+    <input placeholder="Placeholder" aria-label="Label">
+  `);
+  expect(await page.locator('body').ariaSnapshot()).toContainYaml(`
+    - textbox "Label":
+      - /placeholder: Placeholder
+  `);
+});
+
+it('match values both against regex and string', async ({ page }) => {
+  await page.setContent(`<a href="/auth?r=/">Log in</a>`);
+  await checkAndMatchSnapshot(page.locator('body'), `
+    - link "Log in":
+      - /url: /auth?r=/
+  `);
+});

@@ -159,8 +159,9 @@ for (const kind of ['launchServer', 'run-server'] as const) {
       }
     });
 
-    test('should be able to visit ipv6', async ({ connect, startRemoteServer, ipV6ServerPort }) => {
+    test('should be able to visit ipv6', async ({ connect, startRemoteServer, ipV6ServerPort, channel }) => {
       test.fail(!!process.env.INSIDE_DOCKER, 'docker does not support IPv6 by default');
+      test.fail(channel === 'webkit-wsl', 'WebKit on WSL does not support IPv6: https://github.com/microsoft/WSL/issues/10803');
       const remoteServer = await startRemoteServer(kind);
       const browser = await connect(remoteServer.wsEndpoint());
       const page = await browser.newPage();
@@ -185,8 +186,9 @@ for (const kind of ['launchServer', 'run-server'] as const) {
       (browserType as any)._playwright._defaultLaunchOptions.headless = headless;
     });
 
-    test('should be able to visit ipv6 through localhost', async ({ connect, startRemoteServer, ipV6ServerPort }) => {
+    test('should be able to visit ipv6 through localhost', async ({ connect, startRemoteServer, ipV6ServerPort, channel }) => {
       test.fail(!!process.env.INSIDE_DOCKER, 'docker does not support IPv6 by default');
+      test.skip(channel === 'webkit-wsl', 'WebKit on WSL does not support IPv6: https://github.com/microsoft/WSL/issues/10803');
       const remoteServer = await startRemoteServer(kind);
       const browser = await connect(remoteServer.wsEndpoint());
       const page = await browser.newPage();
@@ -1045,14 +1047,6 @@ test.describe('launchServer only', () => {
     const remoteServer = await startRemoteServer('launchServer');
     const browser = await connect(remoteServer.wsEndpoint()) as any;
     await expect(browser._parent.launch({ timeout: 0 })).rejects.toThrowError('Launching more browsers is not allowed.');
-  });
-
-  test('should work with existing browser', async ({ connect, startRemoteServer, mode }) => {
-    test.skip(mode === 'driver', 'Driver mode does not support browserType.launchServer');
-    const remoteServer = await startRemoteServer('launchServer', { existingBrowser: { content: 'hello world' } });
-    const browser = await connect(remoteServer.wsEndpoint());
-    const page = browser.contexts()[0].pages()[0];
-    expect(await page.content()).toContain('hello world');
   });
 });
 

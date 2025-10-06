@@ -25,7 +25,7 @@ it('should fire', async ({ page, server, browserName }) => {
   ]);
   expect(error.name).toBe('Error');
   expect(error.message).toBe('Fancy error!');
-  if (browserName === 'chromium') {
+  if (browserName === 'chromium' || browserName === '_bidiChromium' || browserName === '_bidiFirefox') {
     expect(error.stack).toBe(`Error: Fancy error!
     at c (myscript.js:14:11)
     at b (myscript.js:10:5)
@@ -149,4 +149,22 @@ it('should emit error from unhandled rejects', async ({ page, browserName }) => 
     `),
   ]);
   expect(error.message).toContain('sad :(');
+});
+
+it('pageErrors should work', async ({ page }) => {
+  await page.evaluate(async () => {
+    for (let i = 0; i < 301; i++)
+      window.builtins.setTimeout(() => { throw new Error('error' + i); }, 0);
+    await new Promise(f => window.builtins.setTimeout(f, 100));
+  });
+
+  const errors = await page.pageErrors();
+  const messages = errors.map(e => e.message);
+
+  const expected = [];
+  for (let i = 201; i < 301; i++)
+    expected.push('error' + i);
+
+  expect(messages.length, 'should be at least 100 errors').toBeGreaterThanOrEqual(100);
+  expect(messages.slice(messages.length - expected.length), 'should return last errors').toEqual(expected);
 });

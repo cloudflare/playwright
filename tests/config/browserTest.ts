@@ -73,14 +73,14 @@ const test = baseTest.extend<BrowserTestTestFixtures, BrowserTestWorkerFixtures>
       await run(false);
   }, { scope: 'worker' }],
 
-  defaultSameSiteCookieValue: [async ({ browserName, platform, macVersion }, run) => {
-    if (browserName === 'chromium' || browserName as any === '_bidiChromium')
+  defaultSameSiteCookieValue: [async ({ browserName, platform, channel }, run) => {
+    if (browserName === 'chromium' || browserName as any === '_bidiChromium' || browserName as any === '_bidiFirefox')
       await run('Lax');
-    else if (browserName === 'webkit' && platform === 'linux')
+    else if (browserName === 'webkit' && (platform === 'linux' || channel === 'webkit-wsl'))
       await run('Lax');
     else if (browserName === 'webkit')
       await run('None'); // Windows + older macOS
-    else if (browserName === 'firefox' || browserName as any === '_bidiFirefox')
+    else if (browserName === 'firefox')
       await run('None');
     else
       throw new Error('unknown browser - ' + browserName);

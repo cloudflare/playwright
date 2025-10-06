@@ -18,10 +18,10 @@ jobs:
     if: github.repository == 'microsoft/playwright'
     environment: allow-publishing-docker-to-acr
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
       with:
-        node-version: 18
+        node-version: 20
         registry-url: 'https://registry.npmjs.org'
     - name: Set up Docker QEMU for arm64 docker builds
       uses: docker/setup-qemu-action@v3

@@ -34,7 +34,7 @@ jobs:
         os: [ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: ${{ matrix.browser }} chromium
@@ -52,16 +52,14 @@ jobs:
       matrix:
         # Intel: *-large
         # Arm64: *-xlarge
-        os: [macos-13-large, macos-13-xlarge, macos-14-large, macos-14-xlarge]
+        os: [macos-14-large, macos-14-xlarge, macos-15-large, macos-15-xlarge]
         browser: [chromium, firefox, webkit]
         include:
-          - os: macos-15-large
-            browser: webkit
-          - os: macos-15-xlarge
+          - os: macos-26-xlarge
             browser: webkit
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: ${{ matrix.browser }} chromium
@@ -80,7 +78,7 @@ jobs:
         browser: [chromium, firefox, webkit]
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: ${{ matrix.browser }} chromium
@@ -106,7 +104,7 @@ jobs:
           node_version: 24
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: npm install -g yarn@1
     - run: npm install -g pnpm@8
     - name: Setup Ubuntu Binary Installation # TODO: Remove when https://github.com/electron/electron/issues/42510 is fixed
@@ -139,7 +137,7 @@ jobs:
             os: ubuntu-22.04
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: ${{ matrix.browser }} chromium
@@ -158,7 +156,7 @@ jobs:
         mode: [driver, service]
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: chromium
@@ -189,7 +187,7 @@ jobs:
             channel: chromium-tip-of-tree
     runs-on: ${{ matrix.runs-on }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: ${{ matrix.browser }} chromium ${{ matrix.channel }}
@@ -212,7 +210,7 @@ jobs:
         channel: [chrome, chrome-beta, msedge, msedge-beta, msedge-dev]
         runs-on: [ubuntu-22.04, macos-latest, windows-latest]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: ${{ matrix.channel }}
@@ -238,7 +236,7 @@ jobs:
           - os: ubuntu-22.04
             headed: ''
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: chromium-tip-of-tree
@@ -259,7 +257,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: chromium-tip-of-tree-headless-shell
@@ -280,7 +278,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: firefox-beta chromium
@@ -296,10 +294,10 @@ jobs:
     name: "build-playwright-driver"
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
       with:
-        node-version: 18
+        node-version: 20
     - run: npm ci
     - run: npm run build
     - run: utils/build/build-playwright-driver.sh
@@ -313,7 +311,7 @@ jobs:
         runs-on: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.runs-on }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         # TODO: this should pass --no-shell.

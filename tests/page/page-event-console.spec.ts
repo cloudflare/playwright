@@ -134,7 +134,7 @@ it('should trigger correct Log', async ({ page, server, browserName, isWindows }
     page.waitForEvent('console'),
     page.evaluate(async url => fetch(url).catch(e => {}), server.EMPTY_PAGE)
   ]);
-  expect(message.text()).toContain('Access-Control-Allow-Origin');
+  expect(message.text()).toMatch(/Access-Control-Allow-Origin|CORS/);
   expect(message.type()).toEqual('error');
 });
 
@@ -199,7 +199,9 @@ it('should use object previews for errors', async ({ page, browserName }) => {
   await page.evaluate(() => console.log(new Error('Exception')));
   if (browserName === 'chromium')
     expect(text).toContain('.evaluate');
-  if (browserName === 'webkit')
+  if (browserName as any === '_bidiChromium')
+    expect(text).toEqual('error');
+  if (browserName === 'webkit' || browserName as any === '_bidiFirefox')
     expect(text).toEqual('Error: Exception');
   if (browserName === 'firefox')
     expect(text).toEqual('Error');
@@ -221,4 +223,21 @@ it('do not update console count on unhandled rejections', async ({ page }) => {
   });
 
   await expect.poll(() => messages).toEqual(['begin', 'end']);
+});
+
+it('consoleMessages should work', async ({ page }) => {
+  await page.evaluate(() => {
+    for (let i = 0; i < 301; i++)
+      console.log('message' + i);
+  });
+
+  const messages = await page.consoleMessages();
+  const objects = messages.map(m => ({ text: m.text(), type: m.type(), page: m.page() }));
+
+  const expected = [];
+  for (let i = 201; i < 301; i++)
+    expected.push(expect.objectContaining({ text: 'message' + i, type: 'log', page }));
+
+  expect(objects.length, 'should be at least 100 messages').toBeGreaterThanOrEqual(100);
+  expect(objects.slice(objects.length - expected.length), 'should return last messages').toEqual(expected);
 });

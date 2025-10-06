@@ -197,6 +197,7 @@ async function run() {
                   'java',
                   'css',
                   'js',
+                  'markdown',
                   'ts',
                   'python',
                   'py',
@@ -217,7 +218,7 @@ async function run() {
                   'Dockerfile',
                 ]);
                 if (!allowedCodeLangs.has(node.codeLang.split(' ')[0]))
-                  throw new Error(`${path.relative(PROJECT_DIR, filePath)} contains code block with invalid code block language ${node.codeLang}`);
+                  throw new Error(`${path.relative(PROJECT_DIR, filePath)} contains code block with invalid code block language "${node.codeLang}"`);
               }
               if (node.type.startsWith('h')) {
                 const hash = mdSectionHash(node.text || '');

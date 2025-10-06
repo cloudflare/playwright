@@ -90,7 +90,7 @@ export class NavigationAbortedError extends Error {
   }
 }
 
-type ExpectResult = { matches: boolean, received?: any, log?: string[], timedOut?: boolean };
+type ExpectResult = { matches: boolean, received?: any, log?: string[], timedOut?: boolean, errorMessage?: string };
 
 const kDummyFrameId = '<dummy>';
 
@@ -302,6 +302,7 @@ export class FrameManager {
       route?.abort('aborted').catch(() => {});
       return;
     }
+    this._page.addNetworkRequest(request);
     this._page.emitOnContext(BrowserContext.Events.Request, request);
     if (route)
       new network.Route(request, route).handle([...this._page.requestInterceptors, ...this._page.browserContext.requestInterceptors]);
@@ -918,10 +919,10 @@ export class Frame extends SdkObject {
   }
 
   async addScriptTag(params: {
-      url?: string,
-      content?: string,
-      type?: string,
-    }): Promise<dom.ElementHandle> {
+    url?: string,
+    content?: string,
+    type?: string,
+  }): Promise<dom.ElementHandle> {
     const {
       url = null,
       content = null,
@@ -1356,7 +1357,7 @@ export class Frame extends SdkObject {
 
   async expect(progress: Progress, selector: string | undefined, options: FrameExpectParams, timeout?: number): Promise<ExpectResult> {
     progress.log(`${renderTitleForCall(progress.metadata)}${timeout ? ` with timeout ${timeout}ms` : ''}`);
-    const lastIntermediateResult: { received?: any, isSet: boolean } = { isSet: false };
+    const lastIntermediateResult: { received?: any, isSet: boolean, errorMessage?: string } = { isSet: false };
     const fixupMetadataError = (result: ExpectResult) => {
       // Library mode special case for the expect errors which are return values, not exceptions.
       if (result.matches === options.isNot)
@@ -1398,11 +1399,15 @@ export class Frame extends SdkObject {
     } catch (e) {
       // Q: Why not throw upon isNonRetriableError(e) as in other places?
       // A: We want user to receive a friendly message containing the last intermediate result.
-      if (js.isJavaScriptErrorInEvaluate(e) || isInvalidSelectorError(e))
-        throw e;
       const result: ExpectResult = { matches: options.isNot, log: compressCallLog(progress.metadata.log) };
-      if (lastIntermediateResult.isSet)
+      if (isInvalidSelectorError(e)) {
+        result.errorMessage = 'Error: ' + e.message;
+      } else if (js.isJavaScriptErrorInEvaluate(e)) {
+        result.errorMessage = e.message;
+      } else if (lastIntermediateResult.isSet) {
         result.received = lastIntermediateResult.received;
+        result.errorMessage = lastIntermediateResult.errorMessage;
+      }
       if (e instanceof TimeoutError)
         result.timedOut = true;
       fixupMetadataError(result);
@@ -1410,7 +1415,7 @@ export class Frame extends SdkObject {
     }
   }
 
-  private async _expectInternal(progress: Progress, selector: string | undefined, options: FrameExpectParams, lastIntermediateResult: { received?: any, isSet: boolean }, noAbort: boolean) {
+  private async _expectInternal(progress: Progress, selector: string | undefined, options: FrameExpectParams, lastIntermediateResult: { received?: any, isSet: boolean, errorMessage?: string }, noAbort: boolean) {
     // The first expect check, a.k.a. one-shot, always finishes - even when progress is aborted.
     const race = <T>(p: Promise<T>) => noAbort ? p : progress.race(p);
     const selectorInFrame = selector ? await race(this.selectors.resolveFrameForSelector(selector, { strict: true })) : undefined;
@@ -1439,7 +1444,10 @@ export class Frame extends SdkObject {
       progress.log(log);
     // Note: missingReceived avoids `unexpected value "undefined"` when element was not found.
     if (matches === options.isNot) {
-      lastIntermediateResult.received = missingReceived ? '<element(s) not found>' : received;
+      if (missingReceived)
+        lastIntermediateResult.errorMessage = 'Error: element(s) not found';
+      else
+        lastIntermediateResult.received = received;
       lastIntermediateResult.isSet = true;
       if (!missingReceived && !Array.isArray(received))
         progress.log(`  unexpected value "${renderUnexpectedValue(options.expression, received)}"`);

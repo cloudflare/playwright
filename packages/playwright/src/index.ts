@@ -22,6 +22,7 @@ import { setBoxedStackPrefixes, createGuid, currentZone, debugMode, jsonStringif
 
 import { currentTestInfo } from './common/globals';
 import { rootTestType } from './common/testType';
+import { runBrowserBackendAtEnd } from './mcp/test/browserBackend';
 
 import type { Fixtures, PlaywrightTestArgs, PlaywrightTestOptions, PlaywrightWorkerArgs, PlaywrightWorkerOptions, ScreenshotMode, TestInfo, TestType, VideoMode } from '../types/test';
 import type { ContextReuseMode } from './common/config';
@@ -236,7 +237,7 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
       (testInfo as TestInfoImpl)._setDebugMode();
 
     playwright._defaultContextOptions = _combinedContextOptions;
-    playwright._defaultContextTimeout = actionTimeout || 0;
+    playwright._defaultContextTimeout = (testInfo as TestInfoImpl)._pauseOnError() ? 5000 : actionTimeout || 0;
     playwright._defaultContextNavigationTimeout = navigationTimeout || 0;
     await use();
     playwright._defaultContextOptions = undefined;
@@ -261,7 +262,8 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
         if (!testInfo || data.apiName.includes('setTestIdAttribute') || data.apiName === 'tracing.groupEnd')
           return;
         const zone = currentZone().data<TestStepInternal>('stepZone');
-        if (zone && zone.category === 'expect') {
+        const isExpectCall = data.apiName === 'locator._expect' || data.apiName === 'frame._expect' || data.apiName === 'page._expectScreenshot';
+        if (zone && zone.category === 'expect' && isExpectCall) {
           // Display the internal locator._expect call under the name of the enclosing expect call,
           // and connect it to the existing expect step.
           if (zone.apiName)
@@ -286,12 +288,8 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
         if (data.apiName === 'tracing.group')
           tracingGroupSteps.push(step);
       },
-      onApiCallRecovery: (data, error, recoveryHandlers) => {
-        const step = data.userData as TestStepInternal;
-        if (step)
-          recoveryHandlers.push(() => step.recoverFromStepError(error));
-      },
       onApiCallEnd: data => {
+
         // "tracing.group" step will end later, when "tracing.groupEnd" finishes.
         if (data.apiName === 'tracing.group')
           return;
@@ -419,12 +417,14 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
     attachConnectedHeaderIfNeeded(testInfo, browserImpl);
     if (!_reuseContext) {
       const { context, close } = await _contextFactory();
+      (testInfo as TestInfoImpl)._onDidFinishTestFunctions.unshift(() => runBrowserBackendAtEnd(context, testInfo.errors[0]?.message));
       await use(context);
       await close();
       return;
     }
 
     const context = await browserImpl._wrapApiCall(() => browserImpl._newContextForReuse(), { internal: true });
+    (testInfo as TestInfoImpl)._onDidFinishTestFunctions.unshift(() => runBrowserBackendAtEnd(context, testInfo.errors[0]?.message));
     await use(context);
     const closeReason = testInfo.status === 'timedOut' ? 'Test timeout of ' + testInfo.timeout + 'ms exceeded.' : 'Test ended.';
     await browserImpl._wrapApiCall(() => browserImpl._disconnectFromReusedContext(closeReason), { internal: true });
@@ -647,7 +647,7 @@ class ArtifactsRecorder {
 
   async willStartTest(testInfo: TestInfoImpl) {
     this._testInfo = testInfo;
-    testInfo._onDidFinishTestFunction = () => this.didFinishTestFunction();
+    testInfo._onDidFinishTestFunctions.push(() => this.didFinishTestFunction());
 
     this._screenshotRecorder.fixOrdinal();
 

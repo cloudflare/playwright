@@ -1,6 +1,6 @@
 {
   "name": "playwright",
-  "version": "1.55.0",
+  "version": "1.56.0",
   "description": "A high-level API to automate web browsers",
   "repository": {
     "type": "git",
@@ -21,7 +21,11 @@
     "./package.json": "./package.json",
     "./lib/common/configLoader": "./lib/common/configLoader.js",
     "./lib/fsWatcher": "./lib/fsWatcher.js",
-    "./lib/mcp": "./lib/mcp/exports.js",
+    "./lib/mcp/index": "./lib/mcp/index.js",
+    "./lib/mcp/browser/tools": "./lib/mcp/browser/tools.js",
+    "./lib/mcp/program": "./lib/mcp/program.js",
+    "./lib/mcp/sdk/bundle": "./lib/mcp/sdk/bundle.js",
+    "./lib/mcp/sdk/exports": "./lib/mcp/sdk/exports.js",
     "./lib/program": "./lib/program.js",
     "./lib/reporters/base": "./lib/reporters/base.js",
     "./lib/reporters/list": "./lib/reporters/list.js",
@@ -60,7 +64,7 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "playwright-core": "1.55.0"
+    "playwright-core": "1.56.0"
   },
   "optionalDependencies": {
     "fsevents": "2.3.2"

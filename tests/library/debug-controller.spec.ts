@@ -76,14 +76,18 @@ const test = baseTest.extend<Fixtures>({
 test.slow(true, 'All controller tests are slow');
 test.skip(({ mode }) => mode.startsWith('service') || mode === 'driver');
 
+// Force a separate worker to avoid registered selector engines from other tests.
+// See https://github.com/microsoft/playwright/pull/37103.
+test.use({ launchOptions: [async ({ launchOptions }, use) => use(launchOptions), { scope: 'worker' }] });
+
 test('should pick element', async ({ backend, connectedBrowser }) => {
   const events = [];
   backend.on('inspectRequested', event => events.push(event));
 
-  const context = await connectedBrowser.newContextForReuse();
-  const page = await context.newPage();
-
   await backend.setRecorderMode({ mode: 'inspecting' });
+
+  const context = await connectedBrowser.newContextForReuse();
+  const [page] = context.pages();
 
   await page.setContent('<button>Submit</button>');
   await page.getByRole('button').click();
@@ -107,7 +111,7 @@ test('should pick element', async ({ backend, connectedBrowser }) => {
   expect(events).toHaveLength(2);
 });
 
-test('should report pages', async ({ backend, connectedBrowser, browserName, channel }) => {
+test('should report pages', async ({ backend, connectedBrowser }) => {
   const events = [];
   backend.on('stateChanged', event => events.push(event));
   await backend.setReportStateChanged({ enabled: true });
@@ -116,7 +120,6 @@ test('should report pages', async ({ backend, connectedBrowser, browserName, cha
   const page1 = await context.newPage();
   const page2 = await context.newPage();
   await page1.close();
-  await page2.goto('data:text/html,Foo');
   await page2.close();
 
   await backend.setReportStateChanged({ enabled: false });
@@ -126,63 +129,12 @@ test('should report pages', async ({ backend, connectedBrowser, browserName, cha
   expect(events).toEqual([
     {
       pageCount: 1,
-      browsers: [{
-        id: expect.any(String),
-        name: browserName,
-        channel,
-        contexts: [{
-          pages: [
-            { url: 'about:blank' }
-          ]
-        }]
-      }]
     }, {
       pageCount: 2,
-      browsers: [{
-        id: expect.any(String),
-        name: browserName,
-        channel,
-        contexts: [{
-          pages: [
-            { url: 'about:blank' },
-            { url: 'about:blank' }
-          ]
-        }]
-      }]
     }, {
       pageCount: 1,
-      browsers: [{
-        id: expect.any(String),
-        name: browserName,
-        channel,
-        contexts: [{
-          pages: [
-            { url: 'about:blank' }
-          ]
-        }]
-      }]
-    }, {
-      pageCount: 1,
-      browsers: [{
-        id: expect.any(String),
-        name: browserName,
-        channel,
-        contexts: [{
-          pages: [
-            { url: 'data:text/html,Foo' }
-          ]
-        }]
-      }]
     }, {
       pageCount: 0,
-      browsers: [{
-        id: expect.any(String),
-        name: browserName,
-        channel,
-        contexts: [{
-          pages: []
-        }]
-      }]
     }
   ]);
 });
@@ -359,42 +311,4 @@ test('should highlight aria template', async ({ backend, connectedBrowser }, tes
 test('should report error in aria template', async ({ backend }) => {
   const error = await backend.highlight({ ariaTemplate: `- button "Submit` }).catch(e => e);
   expect(error.message).toContain('Unterminated string:');
-});
-
-test('should work with browser._launchServer', async ({ browserType }) => {
-  const browser = await browserType.launch();
-  const server = await (browser as any)._launchServer({ _debugController: true });
-
-  const backend = new Backend();
-  const connectionString = new URL(server.wsEndpoint());
-  connectionString.searchParams.set('debug-controller', '');
-  await backend.connect(connectionString.toString());
-  await backend.initialize();
-  await backend.channel.setReportStateChanged({ enabled: true });
-  const pageCounts: number[] = [];
-  backend.channel.on('stateChanged', event => pageCounts.push(event.pageCount));
-
-  const page = await browser.newPage();
-  await page.close();
-  // this test shares an instance of Playwright with other tests, so we can't assert on the precise number of pages
-  expect(pageCounts.length).toBeGreaterThanOrEqual(2);
-
-  await server.close();
-  await browser.close();
-});
-
-test('should not work with browser._launchServer(_debugController: false)', async ({ browserType }) => {
-  const browser = await browserType.launch();
-  const server = await (browser as any)._launchServer({ _debugController: false });
-
-  const backend = new Backend();
-  const connectionString = new URL(server.wsEndpoint());
-  connectionString.searchParams.set('debug-controller', '');
-  await expect(async () => {
-    await backend.connect(connectionString.toString());
-    await backend.initialize();
-  }).rejects.toThrow();
-
-  await server.close();
-  await browser.close();
 });

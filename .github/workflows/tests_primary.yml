@@ -9,6 +9,8 @@ on:
     paths-ignore:
       - 'browser_patches/**'
       - 'docs/**'
+      - 'packages/playwright/src/mcp/**'
+      - 'tests/mcp/**'
     branches:
       - main
       - release-*
@@ -50,7 +52,7 @@ jobs:
       id-token: write   # This is required for OIDC login (azure/login) to succeed
       contents: read    # This is required for actions/checkout to succeed
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         node-version: ${{ matrix.node-version }}
@@ -73,7 +75,7 @@ jobs:
       id-token: write   # This is required for OIDC login (azure/login) to succeed
       contents: read    # This is required for actions/checkout to succeed
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         browsers-to-install: chromium-tip-of-tree
@@ -125,7 +127,7 @@ jobs:
       id-token: write   # This is required for OIDC login (azure/login) to succeed
       contents: read    # This is required for actions/checkout to succeed
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/run-test
       with:
         node-version: ${{matrix.node-version}}
@@ -141,10 +143,10 @@ jobs:
     name: Web Components
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
       with:
-        node-version: 18
+        node-version: 20
     - run: npm ci
     - run: npm run build
 
@@ -177,10 +179,10 @@ jobs:
       PWTEST_BOT_NAME: "vscode-extension"
       DEBUG_GIT_COMMIT_INFO: ""
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
       with:
-        node-version: 18
+        node-version: 20
     - run: npm ci
       env:
         DEBUG: pw:install
@@ -218,12 +220,12 @@ jobs:
         - macos-latest
         - windows-latest
     runs-on: ${{ matrix.os  }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       id-token: write   # This is required for OIDC login (azure/login) to succeed
       contents: read    # This is required for actions/checkout to succeed
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: npm install -g yarn@1
     - run: npm install -g pnpm@8
     - name: Setup Ubuntu Binary Installation # TODO: Remove when https://github.com/electron/electron/issues/42510 is fixed

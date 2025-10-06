@@ -16,8 +16,8 @@
 
 import { isRegExp } from 'playwright-core/lib/utils';
 
-import { callLogText, expectTypes } from '../util';
-import { matcherHint } from './matcherHint';
+import { expectTypes } from '../util';
+import { formatMatcherMessage } from './matcherHint';
 
 import type { MatcherResult } from './matcherHint';
 import type { ExpectMatcherState } from '../../types/test';
@@ -30,24 +30,18 @@ const RECEIVED_LABEL = 'Received';
 export async function toEqual<T>(
   this: ExpectMatcherState,
   matcherName: string,
-  receiver: Locator,
+  locator: Locator,
   receiverType: string,
-  query: (isNot: boolean, timeout: number) => Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean }>,
+  query: (isNot: boolean, timeout: number) => Promise<{ matches: boolean, received?: any, log?: string[], timedOut?: boolean, errorMessage?: string }>,
   expected: T,
   options: { timeout?: number, contains?: boolean } = {},
-  messagePreventExtraStatIndent?: boolean
 ): Promise<MatcherResult<any, any>> {
-  expectTypes(receiver, [receiverType], matcherName);
-
-  const matcherOptions = {
-    comment: options.contains ? '' : 'deep equality',
-    isNot: this.isNot,
-    promise: this.promise,
-  };
+  expectTypes(locator, [receiverType], matcherName);
 
   const timeout = options.timeout ?? this.timeout;
 
-  const { matches: pass, received, log, timedOut } = await query(!!this.isNot, timeout);
+  const { matches: pass, received, log, timedOut, errorMessage } = await query(!!this.isNot, timeout);
+
   if (pass === !this.isNot) {
     return {
       name: matcherName,
@@ -62,7 +56,9 @@ export async function toEqual<T>(
   let printedDiff: string | undefined;
   if (pass) {
     printedExpected = `Expected: not ${this.utils.printExpected(expected)}`;
-    printedReceived = `Received: ${this.utils.printReceived(received)}`;
+    printedReceived = errorMessage ? '' : `Received: ${this.utils.printReceived(received)}`;
+  } else if (errorMessage) {
+    printedExpected = `Expected: ${this.utils.printExpected(expected)}`;
   } else if (Array.isArray(expected) && Array.isArray(received)) {
     const normalizedExpected = expected.map((exp, index) => {
       const rec = received[index];
@@ -88,10 +84,20 @@ export async function toEqual<T>(
     );
   }
   const message = () => {
-    const details = printedDiff || `${printedExpected}\n${printedReceived}`;
-    const header = matcherHint(this, receiver, matcherName, 'locator', undefined, matcherOptions, timedOut ? timeout : undefined, details, messagePreventExtraStatIndent);
-    return `${header}${callLogText(log)}`;
+    return formatMatcherMessage(this, {
+      matcherName,
+      expectation: 'expected',
+      locator,
+      timeout,
+      timedOut,
+      printedExpected,
+      printedReceived,
+      printedDiff,
+      errorMessage,
+      log,
+    });
   };
+
   // Passing the actual and expected objects so that a custom reporter
   // could access them, for example in order to display a custom visual diff,
   // or create a different error message

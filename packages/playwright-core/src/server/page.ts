@@ -138,7 +138,8 @@ export class Page extends SdkObject {
   private _closedPromise = new ManualPromise<void>();
   private _initialized: Page | Error | undefined;
   private _initializedPromise = new ManualPromise<Page | Error>();
-  private _eventsToEmitAfterInitialized: { event: string | symbol, args: any[] }[] = [];
+  private _consoleMessages: ConsoleMessage[] = [];
+  private _pageErrors: Error[] = [];
   private _crashed = false;
   readonly openScope = new LongStandingScope();
   readonly browserContext: BrowserContext;
@@ -165,6 +166,7 @@ export class Page extends SdkObject {
   private _locatorHandlers = new Map<number, { selector: string, noWaitAfter?: boolean, resolved?: ManualPromise<void> }>();
   private _lastLocatorHandlerUid = 0;
   private _locatorHandlerRunningCounter = 0;
+  private _networkRequests: network.Request[] = [];
 
   // Aiming at 25 fps by default - each frame is 40ms, but we give some slack with 35ms.
   // When throttling for tracing, 200ms between frames, except for 10 frames around the action.
@@ -189,16 +191,16 @@ export class Page extends SdkObject {
     this.isStorageStatePage = browserContext.isCreatingStorageStatePage();
   }
 
-  async reportAsNew(opener: Page | undefined, error: Error | undefined = undefined, contextEvent: string = BrowserContext.Events.Page) {
+  async reportAsNew(opener: Page | undefined, error?: Error) {
     if (opener) {
       const openerPageOrError = await opener.waitForInitializedOrError();
       if (openerPageOrError instanceof Page && !openerPageOrError.isClosed())
         this._opener = openerPageOrError;
     }
-    this._markInitialized(error, contextEvent);
+    this._markInitialized(error);
   }
 
-  private _markInitialized(error: Error | undefined = undefined, contextEvent: string = BrowserContext.Events.Page) {
+  private _markInitialized(error: Error | undefined = undefined) {
     if (error) {
       // Initialization error could have happened because of
       // context/browser closure. Just ignore the page.
@@ -207,11 +209,12 @@ export class Page extends SdkObject {
       this.frameManager.createDummyMainFrameIfNeeded();
     }
     this._initialized = error || this;
-    this.emitOnContext(contextEvent, this);
+    this.emitOnContext(BrowserContext.Events.Page, this);
 
-    for (const { event, args } of this._eventsToEmitAfterInitialized)
-      this.browserContext.emit(event, ...args);
-    this._eventsToEmitAfterInitialized = [];
+    for (const pageError of this._pageErrors)
+      this.emitOnContext(BrowserContext.Events.PageError, pageError, this);
+    for (const message of this._consoleMessages)
+      this.emitOnContext(BrowserContext.Events.Console, message);
 
     // It may happen that page initialization finishes after Close event has already been sent,
     // in that case we fire another Close event to ensure that each reported Page will have
@@ -238,19 +241,6 @@ export class Page extends SdkObject {
     if (this.isStorageStatePage)
       return;
     this.browserContext.emit(event, ...args);
-  }
-
-  emitOnContextOnceInitialized(event: string | symbol, ...args: any[]) {
-    if (this.isStorageStatePage)
-      return;
-    // Some events, like console messages, may come before page is ready.
-    // In this case, postpone the event until page is initialized,
-    // and dispatch it to the client later, either on the live Page,
-    // or on the "errored" Page.
-    if (this._initialized)
-      this.browserContext.emit(event, ...args);
-    else
-      this._eventsToEmitAfterInitialized.push({ event, args });
   }
 
   async resetForReuse(progress: Progress) {
@@ -361,6 +351,15 @@ export class Page extends SdkObject {
     return this._extraHTTPHeaders;
   }
 
+  addNetworkRequest(request: network.Request) {
+    this._networkRequests.push(request);
+    ensureArrayLimit(this._networkRequests, 100);
+  }
+
+  networkRequests() {
+    return this._networkRequests;
+  }
+
   async onBindingCalled(payload: string, context: dom.FrameExecutionContext) {
     if (this._closedState === 'closed')
       return;
@@ -374,7 +373,34 @@ export class Page extends SdkObject {
       args.forEach(arg => arg.dispose());
       return;
     }
-    this.emitOnContextOnceInitialized(BrowserContext.Events.Console, message);
+
+    this._consoleMessages.push(message);
+    ensureArrayLimit(this._consoleMessages, 200); // Avoid unbounded memory growth.
+
+    // Console messages may come before the page is ready. In this case,
+    // we'll dispatch them to the client later, either on the live Page,
+    // or on the "errored" Page.
+    if (this._initialized)
+      this.emitOnContext(BrowserContext.Events.Console, message);
+  }
+
+  consoleMessages() {
+    return this._consoleMessages;
+  }
+
+  addPageError(pageError: Error) {
+    this._pageErrors.push(pageError);
+    ensureArrayLimit(this._pageErrors, 200); // Avoid unbounded memory growth.
+
+    // Page errors may come before the page is ready. In this case,
+    // we'll dispatch them to the client later, either on the live Page,
+    // or on the "errored" Page.
+    if (this._initialized)
+      this.emitOnContext(BrowserContext.Events.PageError, pageError, this);
+  }
+
+  pageErrors() {
+    return this._pageErrors;
   }
 
   async reload(progress: Progress, options: types.NavigateOptions): Promise<network.Response | null> {
@@ -1059,4 +1085,10 @@ async function snapshotFrameForAI(progress: Progress, frame: frames.Frame, frame
     }
   }
   return result;
+}
+
+function ensureArrayLimit<T>(array: T[], limit: number): T[] {
+  if (array.length > limit)
+    return array.splice(0, limit / 10);
+  return [];
 }

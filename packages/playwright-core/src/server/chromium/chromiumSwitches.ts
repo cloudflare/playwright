@@ -40,6 +40,8 @@ const disabledFeatures = (assistantMode?: boolean) => [
   'Translate',
   // See https://issues.chromium.org/u/1/issues/435410220
   'AutoDeElevate',
+  // See https://github.com/microsoft/playwright/issues/37714
+  'RenderDocument',
   assistantMode ? 'AutomationControlled' : '',
 ].filter(Boolean);
 
@@ -58,7 +60,7 @@ export const chromiumSwitches = (assistantMode?: boolean, channel?: string) => [
   '--disable-dev-shm-usage',
   '--disable-extensions',
   '--disable-features=' + disabledFeatures(assistantMode).join(','),
-  channel === 'chromium-tip-of-tree' ? '--enable-features=CDPScreenshotNewSurface' : '',
+  process.env.PLAYWRIGHT_LEGACY_SCREENSHOT ? '' : '--enable-features=CDPScreenshotNewSurface',
   '--allow-pre-commit-input',
   '--disable-hang-monitor',
   '--disable-ipc-flooding-protection',

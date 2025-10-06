@@ -116,6 +116,9 @@ it('should restore state from userDataDir', async ({ browserType, server, create
   const page = await browserContext.newPage();
   await page.goto(server.EMPTY_PAGE);
   await page.evaluate(() => localStorage.hey = 'hello');
+  // Browsers do not persist local storage immediately, they do it asynchronously in another process.
+  // Navigate away to give it a chance to save (best-effort).
+  await page.goto(server.EMPTY_PAGE);
   await browserContext.close();
 
   const browserContext2 = await browserType.launchPersistentContext(userDataDir);
@@ -157,7 +160,7 @@ it('should have passed URL when launching with ignoreDefaultArgs: true', async (
   it.skip(mode !== 'default');
 
   const userDataDir = await createUserDataDir();
-  const args = toImpl(browserType).defaultArgs((browserType as any)._playwright._defaultLaunchOptions, 'persistent', userDataDir, 0).filter(a => a !== 'about:blank');
+  const args = (await toImpl(browserType).defaultArgs((browserType as any)._playwright._defaultLaunchOptions, 'persistent', userDataDir, 0)).filter(a => a !== 'about:blank');
   const options = {
     args: browserName === 'firefox' ? [...args, '-new-tab', server.EMPTY_PAGE] : [...args, server.EMPTY_PAGE],
     ignoreDefaultArgs: true,

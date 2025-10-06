@@ -187,15 +187,15 @@ it('emit generic roles for nodes w/o roles', async ({ page }) => {
       - generic [ref=e3]:
         - generic [ref=e4]:
           - radio "Apple" [checked]
-        - generic [ref=e5]: Apple
-      - generic [ref=e6]:
-        - generic [ref=e7]:
+        - text: Apple
+      - generic [ref=e5]:
+        - generic [ref=e6]:
           - radio "Pear"
-        - generic [ref=e8]: Pear
-      - generic [ref=e9]:
-        - generic [ref=e10]:
+        - text: Pear
+      - generic [ref=e7]:
+        - generic [ref=e8]:
           - radio "Orange"
-        - generic [ref=e11]: Orange
+        - text: Orange
   `);
 });
 
@@ -224,6 +224,23 @@ it('should include cursor pointer hint', async ({ page }) => {
   const snapshot = await snapshotForAI(page);
   expect(snapshot).toContainYaml(`
     - button \"Button\" [ref=e2] [cursor=pointer]
+  `);
+});
+
+it('should not nest cursor pointer hints', async ({ page }) => {
+  await page.setContent(`
+    <a style="cursor: pointer" href="about:blank">
+      Link with a button
+      <button style="cursor: pointer">Button</button>
+    </a>
+  `);
+
+  const snapshot = await snapshotForAI(page);
+  expect(snapshot).toContainYaml(`
+    - link \"Link with a button Button\" [ref=e2] [cursor=pointer]:
+      - /url: about:blank
+      - text: Link with a button
+      - button "Button" [ref=e3]
   `);
 });
 
@@ -390,5 +407,44 @@ it('should support many properties on iframes', async ({ page }) => {
       - textbox "Regular input" [ref=e2]
       - iframe [active] [ref=e3] [cursor=pointer]:
         - textbox "Input in iframe" [active] [ref=f1e2]
+  `);
+});
+
+it('should collapse inline generic nodes', async ({ page }) => {
+  await page.setContent(`
+    <ul>
+      <li><b>3</b> <abbr>bds</abbr></li>
+      <li><b>2</b> <abbr>ba</abbr></li>
+      <li><b>1,200</b> <abbr>sqft</abbr></li>
+    </ul>
+    <ul>
+      <li><div>3</div></li>
+      <li><div>2</div></li>
+      <li><div>1,200</div></li>
+    </ul>`);
+
+  const snapshot1 = await snapshotForAI(page);
+  expect(snapshot1).toContainYaml(`
+    - generic [active] [ref=e1]:
+      - list [ref=e2]:
+        - listitem [ref=e3]: 3 bds
+        - listitem [ref=e4]: 2 ba
+        - listitem [ref=e5]: 1,200 sqft
+      - list [ref=e6]:
+        - listitem [ref=e7]:
+          - generic [ref=e8]: "3"
+        - listitem [ref=e9]:
+          - generic [ref=e10]: "2"
+        - listitem [ref=e11]:
+          - generic [ref=e12]: 1,200
+  `);
+});
+
+it('should not remove generic nodes with title', async ({ page }) => {
+  await page.setContent(`<div title="Element title">Element content</div>`);
+
+  const snapshot = await snapshotForAI(page);
+  expect(snapshot).toContainYaml(`
+    - generic "Element title" [ref=e2]
   `);
 });

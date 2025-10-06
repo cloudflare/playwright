@@ -57,11 +57,11 @@ const queryParams = {
   projects: searchParams.getAll('project'),
   workers: searchParams.get('workers') || undefined,
   headed: searchParams.has('headed'),
-  updateSnapshots: (searchParams.get('updateSnapshots') as 'all' | 'none' | 'missing' | undefined) || undefined,
+  updateSnapshots: (searchParams.get('updateSnapshots') as reporterTypes.FullConfig['updateSnapshots'] | undefined) || undefined,
   reporters: searchParams.has('reporter') ? searchParams.getAll('reporter') : undefined,
   pathSeparator: searchParams.get('pathSeparator') || '/',
 };
-if (queryParams.updateSnapshots && !['all', 'none', 'missing'].includes(queryParams.updateSnapshots))
+if (queryParams.updateSnapshots && !['all', 'changed', 'none', 'missing'].includes(queryParams.updateSnapshots))
   queryParams.updateSnapshots = undefined;
 
 const isMac = navigator.platform === 'MacIntel';
@@ -100,10 +100,9 @@ export const UIModeView: React.FC<{}> = ({
   const [revealSource, setRevealSource] = React.useState(false);
   const onRevealSource = React.useCallback(() => setRevealSource(true), [setRevealSource]);
 
-  const showTestingOptions = false;
-  const [singleWorker, setSingleWorker] = React.useState(false);
-  const [showBrowser, setShowBrowser] = React.useState(false);
-  const [updateSnapshots, setUpdateSnapshots] = React.useState(false);
+  const [singleWorker, setSingleWorker] = useSetting<boolean>('single-worker', false);
+  const [updateSnapshots, setUpdateSnapshots] = useSetting<reporterTypes.FullConfig['updateSnapshots']>('updateSnapshots', 'missing');
+  const [mergeFiles] = useSetting('mergeFiles', false);
 
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -242,15 +241,15 @@ export const UIModeView: React.FC<{}> = ({
   // Test tree is built from the model and filters.
   const { testTree } = React.useMemo(() => {
     if (!testModel)
-      return { testTree: new TestTree('', new TeleSuite('', 'root'), [], projectFilters, queryParams.pathSeparator) };
-    const testTree = new TestTree('', testModel.rootSuite, testModel.loadErrors, projectFilters, queryParams.pathSeparator);
+      return { testTree: new TestTree('', new TeleSuite('', 'root'), [], projectFilters, queryParams.pathSeparator, mergeFiles) };
+    const testTree = new TestTree('', testModel.rootSuite, testModel.loadErrors, projectFilters, queryParams.pathSeparator, mergeFiles);
     testTree.filterTree(filterText, statusFilters, isRunningTest ? runningState?.testIds : undefined);
     testTree.sortAndPropagateStatus();
     testTree.shortenRoot();
     testTree.flattenForSingleProject();
     setVisibleTestIds(testTree.testIds());
     return { testTree };
-  }, [filterText, testModel, statusFilters, projectFilters, setVisibleTestIds, runningState, isRunningTest]);
+  }, [filterText, testModel, statusFilters, projectFilters, setVisibleTestIds, runningState, isRunningTest, mergeFiles]);
 
   const runTests = React.useCallback((mode: 'queue-if-busy' | 'bounce-if-busy', testIds: Set<string>) => {
     if (!testServerConnection || !testModel)
@@ -288,10 +287,9 @@ export const UIModeView: React.FC<{}> = ({
         grepInvert: queryParams.grepInvert,
         testIds: [...testIds],
         projects: [...projectFilters].filter(([_, v]) => v).map(([p]) => p),
-        ...(singleWorker ? { workers: '1' } : {}),
-        ...(showBrowser ? { headed: true } : {}),
-        ...(updateSnapshots ? { updateSnapshots: 'all' } : {}),
+        updateSnapshots,
         reporters: queryParams.reporters,
+        workers: singleWorker ? 1 : undefined,
         trace: 'on',
       });
       // Clear pending tests in case of interrupt.
@@ -302,7 +300,7 @@ export const UIModeView: React.FC<{}> = ({
       setTestModel({ ...testModel });
       setRunningState(oldState => oldState ? ({ ...oldState, completed: true }) : undefined);
     });
-  }, [projectFilters, isRunningTest, testModel, testServerConnection, singleWorker, showBrowser, updateSnapshots]);
+  }, [projectFilters, isRunningTest, testModel, testServerConnection, updateSnapshots, singleWorker]);
 
   React.useEffect(() => {
     if (!testServerConnection || !teleSuiteUpdater)
@@ -328,7 +326,7 @@ export const UIModeView: React.FC<{}> = ({
 
       // run affected watched tests
       const testModel = teleSuiteUpdater.asModel();
-      const testTree = new TestTree('', testModel.rootSuite, testModel.loadErrors, projectFilters, queryParams.pathSeparator);
+      const testTree = new TestTree('', testModel.rootSuite, testModel.loadErrors, projectFilters, queryParams.pathSeparator, mergeFiles);
 
       const testIds: string[] = [];
       const set = new Set(params.testFiles);
@@ -352,7 +350,7 @@ export const UIModeView: React.FC<{}> = ({
       runTests('queue-if-busy', new Set(testIds));
     });
     return () => disposable.dispose();
-  }, [runTests, testServerConnection, watchAll, watchedTreeIds, teleSuiteUpdater, projectFilters]);
+  }, [runTests, testServerConnection, watchAll, watchedTreeIds, teleSuiteUpdater, projectFilters, mergeFiles]);
 
   // Shortcuts.
   React.useEffect(() => {
@@ -459,7 +457,7 @@ export const UIModeView: React.FC<{}> = ({
           setProjectFilters={setProjectFilters}
           testModel={testModel}
           runTests={() => runTests('bounce-if-busy', visibleTestIds)} />
-        <Toolbar noMinHeight={true}>
+        <Toolbar className='section-toolbar' noMinHeight={true}>
           {!isRunningTest && !progress && <div className='section-title'>Tests</div>}
           {!isRunningTest && progress && <div data-testid='status-line' className='status-line'>
             <div>{progress.passed}/{progress.total} passed ({(progress.passed / progress.total) * 100 | 0}%)</div>
@@ -497,21 +495,23 @@ export const UIModeView: React.FC<{}> = ({
           setFilterText={setFilterText}
           onRevealSource={onRevealSource}
         />
-        {showTestingOptions && <>
-          <Toolbar noShadow={true} noMinHeight={true} className='settings-toolbar' onClick={() => setTestingOptionsVisible(!testingOptionsVisible)}>
-            <span
-              className={`codicon codicon-${testingOptionsVisible ? 'chevron-down' : 'chevron-right'}`}
-              style={{ marginLeft: 5 }}
-              title={testingOptionsVisible ? 'Hide Testing Options' : 'Show Testing Options'}
-            />
-            <div className='section-title'>Testing Options</div>
-          </Toolbar>
-          {testingOptionsVisible && <SettingsView settings={[
-            { value: singleWorker, set: setSingleWorker, name: 'Single worker' },
-            { value: showBrowser, set: setShowBrowser, name: 'Show browser' },
-            { value: updateSnapshots, set: setUpdateSnapshots, name: 'Update snapshots' },
-          ]} />}
-        </>}
+        <Toolbar noShadow={true} noMinHeight={true} className='settings-toolbar' onClick={() => setTestingOptionsVisible(!testingOptionsVisible)}>
+          <span
+            className={`codicon codicon-${testingOptionsVisible ? 'chevron-down' : 'chevron-right'}`}
+            style={{ marginLeft: 5 }}
+            title={testingOptionsVisible ? 'Hide Testing Options' : 'Show Testing Options'}
+          />
+          <div className='section-title'>Testing Options</div>
+        </Toolbar>
+        {testingOptionsVisible && <SettingsView settings={[
+          { type: 'check', value: singleWorker, set: setSingleWorker, name: 'Single worker' },
+          { type: 'select', options: [
+            { label: 'All', value: 'all' },
+            { label: 'Changed', value: 'changed' },
+            { label: 'Missing', value: 'missing' },
+            { label: 'None', value: 'none' },
+          ], value: updateSnapshots, set: setUpdateSnapshots as (value: string) => void, name: 'Update snapshots' },
+        ]} />}
         <Toolbar noShadow={true} noMinHeight={true} className='settings-toolbar' onClick={() => setSettingsVisible(!settingsVisible)}>
           <span
             className={`codicon codicon-${settingsVisible ? 'chevron-down' : 'chevron-right'}`}
