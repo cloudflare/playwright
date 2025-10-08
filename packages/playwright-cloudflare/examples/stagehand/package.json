@@ -26,6 +26,8 @@
     "@browserbasehq/stagehand": "^2.5.0",
     "@cloudflare/playwright": "^1.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.24.6"
   }
 }
