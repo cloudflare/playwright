@@ -56,7 +56,7 @@ it('should have browser', async ({ browserName, browser, contextFactory, server 
   await page.goto(server.EMPTY_PAGE);
   const log = await getLog();
 
-  expect(log.browser!.name.toLowerCase()).toBe(browserName);
+  expect(log.browser!.name).toBe(browserName);
   expect(log.browser!.version).toBe(browser.version());
 });
 
@@ -660,8 +660,8 @@ it('should return server address directly from response', async ({ page, server,
   }
 });
 
-it('should return security details directly from response', async ({ contextFactory, httpsServer, browserName, platform }) => {
-  it.fail(browserName === 'webkit' && platform === 'linux', 'https://github.com/microsoft/playwright/issues/6759');
+it('should return security details directly from response', async ({ contextFactory, httpsServer, browserName, platform, channel }) => {
+  it.fail(browserName === 'webkit' && (platform === 'linux' || channel === 'webkit-wsl'), 'https://github.com/microsoft/playwright/issues/6759');
 
   const context = await contextFactory({ ignoreHTTPSErrors: true });
   const page = await context.newPage();
@@ -698,9 +698,9 @@ it('should contain http2 for http2 requests', async ({ contextFactory }, testInf
   server.close();
 });
 
-it('should filter favicon and favicon redirects', async ({ server, browserName, channel, headless, asset, contextFactory }, testInfo) => {
-  it.skip(headless && browserName !== 'firefox', 'headless browsers, except firefox, do not request favicons');
-  it.skip(!headless && browserName === 'webkit' && !channel, 'headed webkit does not have a favicon feature');
+it('should filter favicon and favicon redirects', async ({ server, browserName, headless, asset, contextFactory }, testInfo) => {
+  it.skip(headless && browserName !== 'firefox' && browserName as any !== '_bidiFirefox', 'headless browsers, except firefox, do not request favicons');
+  it.skip(!headless && browserName === 'webkit', 'headed webkit does not have a favicon feature');
 
   const { page, getLog } = await pageWithHar(contextFactory, testInfo);
 
@@ -913,6 +913,6 @@ it('should not hang on slow chunked response', async ({ browserName, browser, co
   await page.evaluate(() => (window as any).receivedFirstData);
   const log = await getLog();
 
-  expect(log.browser!.name.toLowerCase()).toBe(browserName);
+  expect(log.browser!.name).toBe(browserName);
   expect(log.browser!.version).toBe(browser.version());
 });

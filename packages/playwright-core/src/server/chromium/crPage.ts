@@ -39,7 +39,6 @@ import { CRPDF } from './crPdf';
 import { exceptionToError, releaseObject, toConsoleMessageLocation } from './crProtocolHelper';
 import { platformToFontFamilies } from './defaultFontFamilies';
 import { VideoRecorder } from './videoRecorder';
-import { BrowserContext } from '../browserContext';
 import { TargetClosedError } from '../errors';
 import { isSessionClosedError } from '../protocolError';
 
@@ -68,7 +67,6 @@ export class CRPage implements PageDelegate {
   private readonly _pdf: CRPDF;
   private readonly _coverage: CRCoverage;
   readonly _browserContext: CRBrowserContext;
-  private _isBackgroundPage: boolean;
 
   // Holds window features for the next popup being opened via window.open,
   // until the popup target arrives. This could be racy if two oopifs
@@ -82,10 +80,9 @@ export class CRPage implements PageDelegate {
     return crPage._mainFrameSession;
   }
 
-  constructor(client: CRSession, targetId: string, browserContext: CRBrowserContext, opener: CRPage | null, bits: { hasUIWindow: boolean, isBackgroundPage: boolean }) {
+  constructor(client: CRSession, targetId: string, browserContext: CRBrowserContext, opener: CRPage | null, bits: { hasUIWindow: boolean }) {
     this._targetId = targetId;
     this._opener = opener;
-    this._isBackgroundPage = bits.isBackgroundPage;
     const dragManager = new DragManager(this);
     this.rawKeyboard = new RawKeyboardImpl(client, browserContext._browser._platform() === 'mac', dragManager);
     this.rawMouse = new RawMouseImpl(this, client, dragManager);
@@ -113,10 +110,9 @@ export class CRPage implements PageDelegate {
         this._page.setEmulatedSizeFromWindowOpen({ viewport: viewportSize, screen: viewportSize });
     }
 
-    const createdEvent = this._isBackgroundPage ? CRBrowserContext.CREvents.BackgroundPage : BrowserContext.Events.Page;
     this._mainFrameSession._initialize(bits.hasUIWindow).then(
-        () => this._page.reportAsNew(this._opener?._page, undefined, createdEvent),
-        error => this._page.reportAsNew(this._opener?._page, error, createdEvent));
+        () => this._page.reportAsNew(this._opener?._page, undefined),
+        error => this._page.reportAsNew(this._opener?._page, error));
   }
 
   private async _forAllFrameSessions(cb: (frame: FrameSession) => Promise<any>) {
@@ -394,6 +390,7 @@ class FrameSession {
   private _metricsOverride: Protocol.Emulation.setDeviceMetricsOverrideParameters | undefined;
   private _workerSessions = new Map<string, CRSession>();
   private _initScriptIds = new Map<InitScript, string>();
+  private _bufferedAttachedToTargetEvents: Protocol.Target.attachedToTargetPayload[] | undefined;
 
   constructor(crPage: CRPage, client: CRSession, targetId: string, parentSession: FrameSession | null) {
     this._client = client;
@@ -432,13 +429,13 @@ class FrameSession {
       eventsHelper.addEventListener(this._client, 'Runtime.executionContextCreated', event => this._onExecutionContextCreated(event.context)),
       eventsHelper.addEventListener(this._client, 'Runtime.executionContextDestroyed', event => this._onExecutionContextDestroyed(event.executionContextId)),
       eventsHelper.addEventListener(this._client, 'Runtime.executionContextsCleared', event => this._onExecutionContextsCleared()),
-      eventsHelper.addEventListener(this._client, 'Target.attachedToTarget', event => this._onAttachedToTarget(event)),
-      eventsHelper.addEventListener(this._client, 'Target.detachedFromTarget', event => this._onDetachedFromTarget(event)),
     ]);
   }
 
   private _addBrowserListeners() {
     this._eventListeners.push(...[
+      eventsHelper.addEventListener(this._client, 'Target.attachedToTarget', event => this._onAttachedToTarget(event)),
+      eventsHelper.addEventListener(this._client, 'Target.detachedFromTarget', event => this._onDetachedFromTarget(event)),
       eventsHelper.addEventListener(this._client, 'Inspector.targetCrashed', event => this._onTargetCrashed()),
       eventsHelper.addEventListener(this._client, 'Page.screencastFrame', event => this._onScreencastFrame(event)),
       eventsHelper.addEventListener(this._client, 'Page.windowOpen', event => this._onWindowOpen(event)),
@@ -476,6 +473,13 @@ class FrameSession {
     if (!this._isMainFrame())
       this._addRendererListeners();
     this._addBrowserListeners();
+
+    // Buffer attachedToTarget events until we receive the frame tree.
+    // This way we'll know where to insert oopif targets in the frame hierarchy.
+    // Note that we cannot send Target.setAutoAttach after Runtime.runIfWaitingForDebugger,
+    // so we have to buffer events instead.
+    this._bufferedAttachedToTargetEvents = [];
+
     const promises: Promise<any>[] = [
       this._client.send('Page.enable'),
       this._client.send('Page.getFrameTree').then(({ frameTree }) => {
@@ -483,6 +487,12 @@ class FrameSession {
           this._handleFrameTree(frameTree);
           this._addRendererListeners();
         }
+
+        // Now that we have the frame tree, it is possible to insert oopif targets at the right place.
+        const attachedToTargetEvents = this._bufferedAttachedToTargetEvents || [];
+        this._bufferedAttachedToTargetEvents = undefined;
+        for (const event of attachedToTargetEvents)
+          this._onAttachedToTarget(event);
 
         const localFrames = this._isMainFrame() ? this._page.frames() : [this._page.frameManager.frame(this._targetId)!];
         for (const frame of localFrames) {
@@ -515,16 +525,7 @@ class FrameSession {
         worldName: this._crPage.utilityWorldName,
       }),
       this._crPage._networkManager.addSession(this._client, undefined, this._isMainFrame()),
-      this._client.send('Target.setAutoAttach', {
-        autoAttach: true,
-        waitForDebuggerOnStart: true,
-        flatten: true,
-        filter: [
-          { type: 'iframe' },
-          { type: 'worker' },
-          { type: 'service_worker', exclude: !process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS }
-        ]
-      }),
+      this._client.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }),
     ];
     if (!this._page.isStorageStatePage) {
       if (this._crPage._browserContext.needsPlaywrightBinding())
@@ -708,12 +709,22 @@ class FrameSession {
   }
 
   _onAttachedToTarget(event: Protocol.Target.attachedToTargetPayload) {
+    if (this._bufferedAttachedToTargetEvents) {
+      this._bufferedAttachedToTargetEvents.push(event);
+      return;
+    }
+
     const session = this._client.createChildSession(event.sessionId);
 
     if (event.targetInfo.type === 'iframe') {
       // Frame id equals target id.
       const targetId = event.targetInfo.targetId;
-      const frame = this._page.frameManager.frame(targetId);
+      let frame = this._page.frameManager.frame(targetId);
+      if (!frame && event.targetInfo.parentFrameId) {
+        // When connecting to an existing page with an iframe, there is an "iframe" target,
+        // but no local frame is reported in getFrameTree. We can create a remote frame here.
+        frame = this._page.frameManager.frameAttached(targetId, event.targetInfo.parentFrameId);
+      }
       if (!frame)
         return; // Subtree may be already gone due to renderer/browser race.
       this._page.frameManager.removeChildFramesRecursively(frame);
@@ -744,22 +755,14 @@ class FrameSession {
     // TODO: attribute workers to the right frame.
     this._crPage._networkManager.addSession(session, this._page.frameManager.frame(this._targetId) ?? undefined).catch(() => {});
     session._sendMayFail('Runtime.runIfWaitingForDebugger');
-    session._sendMayFail('Target.setAutoAttach', {
-      autoAttach: true,
-      waitForDebuggerOnStart: true,
-      flatten: true,
-      filter: [
-        { type: 'worker' },
-        { type: 'service_worker', exclude: !process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS }
-      ]
-    });
+    session._sendMayFail('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
     session.on('Target.attachedToTarget', event => this._onAttachedToTarget(event));
     session.on('Target.detachedFromTarget', event => this._onDetachedFromTarget(event));
     session.on('Runtime.consoleAPICalled', event => {
       const args = event.args.map(o => createHandle(worker.existingExecutionContext!, o));
       this._page.addConsoleMessage(event.type, args, toConsoleMessageLocation(event.stackTrace));
     });
-    session.on('Runtime.exceptionThrown', exception => this._page.emitOnContextOnceInitialized(BrowserContext.Events.PageError, exceptionToError(exception.exceptionDetails), this._page));
+    session.on('Runtime.exceptionThrown', exception => this._page.addPageError(exceptionToError(exception.exceptionDetails)));
   }
 
   _onDetachedFromTarget(event: Protocol.Target.detachedFromTargetPayload) {
@@ -849,7 +852,7 @@ class FrameSession {
   }
 
   _handleException(exceptionDetails: Protocol.Runtime.ExceptionDetails) {
-    this._page.emitOnContextOnceInitialized(BrowserContext.Events.PageError, exceptionToError(exceptionDetails), this._page);
+    this._page.addPageError(exceptionToError(exceptionDetails));
   }
 
   async _onTargetCrashed() {

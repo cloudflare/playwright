@@ -22,14 +22,14 @@ import { evaluationScript } from './clientHelper';
 import { Coverage } from './coverage';
 import { Download } from './download';
 import { ElementHandle, determineScreenshotType } from './elementHandle';
-import { TargetClosedError, isTargetClosedError, serializeError } from './errors';
+import { TargetClosedError, isTargetClosedError, parseError, serializeError } from './errors';
 import { Events } from './events';
 import { FileChooser } from './fileChooser';
 import { Frame, verifyLoadState } from './frame';
 import { HarRouter } from './harRouter';
 import { Keyboard, Mouse, Touchscreen } from './input';
 import { JSHandle, assertMaxArguments, parseResult, serializeArgument } from './jsHandle';
-import { Response, Route, RouteHandler, WebSocket,  WebSocketRoute, WebSocketRouteHandler, validateHeaders } from './network';
+import { Request, Response, Route, RouteHandler, WebSocket,  WebSocketRoute, WebSocketRouteHandler, validateHeaders } from './network';
 import { Video } from './video';
 import { Waiter } from './waiter';
 import { Worker } from './worker';
@@ -41,13 +41,14 @@ import { trimStringWithEllipsis  } from '../utils/isomorphic/stringUtils';
 import { urlMatches, urlMatchesEqual } from '../utils/isomorphic/urlMatch';
 import { LongStandingScope } from '../utils/isomorphic/manualPromise';
 import { isObject, isRegExp, isString } from '../utils/isomorphic/rtti';
+import { ConsoleMessage } from './consoleMessage';
 
 import type { BrowserContext } from './browserContext';
 import type { Clock } from './clock';
 import type { APIRequestContext } from './fetch';
 import type { WaitForNavigationOptions } from './frame';
 import type { FrameLocator, Locator, LocatorOptions } from './locator';
-import type { Request, RouteHandlerCallback, WebSocketRouteHandlerCallback } from './network';
+import type { RouteHandlerCallback, WebSocketRouteHandlerCallback } from './network';
 import type { FilePayload, Headers, LifecycleEvent, SelectOption, SelectOptionOptions, Size, TimeoutOptions, WaitForEventOptions, WaitForFunctionOptions } from './types';
 import type * as structs from '../../types/structs';
 import type * as api from '../../types/types';
@@ -237,7 +238,6 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   _onClose() {
     this._closed = true;
     this._browserContext._pages.delete(this);
-    this._browserContext._backgroundPages.delete(this);
     this._disposeHarRouters();
     this.emit(Events.Page.Close, this);
   }
@@ -669,6 +669,16 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
     return await this._mainFrame.fill(selector, value, options);
   }
 
+  async consoleMessages(): Promise<ConsoleMessage[]> {
+    const { messages } = await this._channel.consoleMessages();
+    return messages.map(message => new ConsoleMessage(this._platform, message, this));
+  }
+
+  async pageErrors(): Promise<Error[]> {
+    const { errors } = await this._channel.pageErrors();
+    return errors.map(error => parseError(error));
+  }
+
   locator(selector: string, options?: LocatorOptions): Locator {
     return this.mainFrame().locator(selector, options);
   }
@@ -791,6 +801,11 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
 
   async waitForFunction<R, Arg>(pageFunction: structs.PageFunction<Arg, R>, arg?: Arg, options?: WaitForFunctionOptions): Promise<structs.SmartHandle<R>> {
     return await this._mainFrame.waitForFunction(pageFunction, arg, options);
+  }
+
+  async requests() {
+    const { requests } = await this._channel.requests();
+    return requests.map(request => Request.from(request));
   }
 
   workers(): Worker[] {

@@ -480,6 +480,66 @@ test('should expand all', {
   `);
 });
 
+test('should allow expanding entire subtrees', async ({ runUITest }) => {
+  const { page } = await runUITest(basicTestTree);
+
+  await page.getByTestId('test-tree').getByText('suite').click();
+  await page.getByTitle('Collapse all').click();
+  await expect.poll(dumpTestTree(page)).toContain(`
+    ► ◯ a.test.ts
+    ► ◯ b.test.ts
+  `);
+
+  const firstTestClosedLocator = page.getByTitle('a.test.ts').locator('.codicon-chevron-right').first();
+  const firstTestOpenLocator = page.getByTitle('a.test.ts').locator('.codicon-chevron-down').first();
+
+  await firstTestClosedLocator.click();
+  await expect.poll(dumpTestTree(page)).toContain(`
+    ▼ ◯ a.test.ts
+        ◯ passes
+        ◯ fails
+      ► ◯ suite
+    ► ◯ b.test.ts
+  `);
+
+  await firstTestOpenLocator.click();
+  await firstTestClosedLocator.click({ modifiers: ['Alt'] });
+
+  await expect.poll(dumpTestTree(page)).toContain(`
+    ▼ ◯ a.test.ts
+        ◯ passes
+        ◯ fails
+      ▼ ◯ suite
+          ◯ inner passes
+          ◯ inner fails
+    ► ◯ b.test.ts
+  `);
+
+  await firstTestOpenLocator.click();
+  await firstTestClosedLocator.click();
+
+  await expect.poll(dumpTestTree(page)).toContain(`
+    ▼ ◯ a.test.ts
+        ◯ passes
+        ◯ fails
+      ▼ ◯ suite
+          ◯ inner passes
+          ◯ inner fails
+    ► ◯ b.test.ts
+  `);
+
+  await firstTestOpenLocator.click({ modifiers: ['Alt'] });
+  await firstTestClosedLocator.click();
+
+  await expect.poll(dumpTestTree(page)).toContain(`
+    ▼ ◯ a.test.ts
+        ◯ passes
+        ◯ fails
+      ► ◯ suite
+    ► ◯ b.test.ts
+  `);
+});
+
 test('should resolve title conflicts', async ({ runUITest }) => {
   const { page } = await runUITest({
     'a.test.ts': `
@@ -515,5 +575,59 @@ test('should resolve title conflicts', async ({ runUITest }) => {
             - group:
               - treeitem "[icon-circle-outline] bar"
               - treeitem "[icon-circle-outline] bar 2"
+  `);
+});
+
+test('should merge files', async ({ runUITest }) => {
+  const { page } = await runUITest({
+    'a.test.ts': `
+      import { test } from '@playwright/test';
+
+      test("first", () => {});
+
+      test.describe("group", () => {
+        test("second", () => {});
+      });
+
+      test("third", () => {});
+    `,
+    'b.test.ts': `
+      import { test } from '@playwright/test';
+
+      test("fourth", () => {});
+
+      test.describe("group", () => {
+        test("fifth", () => {});
+      });
+
+      test("sixth", () => {});
+    `
+  });
+
+  await page.getByText('Settings', { exact: true }).click();
+  await page.getByLabel('Merge files').click();
+
+  await expect.poll(dumpTestTree(page)).toContain(`
+    ▼ ◯ <anonymous>
+        ◯ first
+        ◯ third
+        ◯ fourth
+        ◯ sixth
+    ▼ ◯ group
+        ◯ second
+        ◯ fifth
+  `);
+  await expect(page.getByTestId('test-tree')).toMatchAriaSnapshot(`
+    - tree:
+      - treeitem "[icon-circle-outline] <anonymous>" [expanded]:
+        - group:
+          - treeitem "[icon-circle-outline] first"
+          - treeitem "[icon-circle-outline] third"
+          - treeitem "[icon-circle-outline] fourth"
+          - treeitem "[icon-circle-outline] sixth"
+      - treeitem "[icon-circle-outline] group" [expanded]:
+        - group:
+          - treeitem "[icon-circle-outline] second"
+          - treeitem "[icon-circle-outline] fifth"
   `);
 });

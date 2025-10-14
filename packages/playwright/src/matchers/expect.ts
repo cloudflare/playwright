@@ -68,7 +68,7 @@ import { TestInfoImpl } from '../worker/testInfo';
 
 import type { ExpectMatcherStateInternal } from './matchers';
 import type { Expect } from '../../types/test';
-import type { TestStepCategory, TestStepInfoImpl } from '../worker/testInfo';
+import type { TestStepInfoImpl } from '../worker/testInfo';
 
 
 // #region
@@ -351,12 +351,11 @@ class ExpectMetaInfoProxyHandler implements ProxyHandler<any> {
       // This looks like it is unnecessary, but it isn't - we need to filter
       // out all the frames that belong to the test runner from caught runtime errors.
       const stackFrames = filteredStackTrace(captureRawStack());
-      const category = matcherName === 'toPass' || this._info.poll ? 'test.step' : 'expect' as TestStepCategory;
 
       // toPass and poll matchers can contain other steps, expects and API calls,
       // so they behave like a retriable step.
       const stepInfo = {
-        category,
+        category: 'expect' as const,
         apiName,
         title,
         params: args[0] ? { expected: args[0] } : undefined,
@@ -365,7 +364,7 @@ class ExpectMetaInfoProxyHandler implements ProxyHandler<any> {
 
       const step = testInfo._addStep(stepInfo);
 
-      const reportStepError = (isAsync: boolean, e: Error | unknown) => {
+      const reportStepError = (e: Error | unknown) => {
         const jestError = isJestError(e) ? e : null;
         const expectError = jestError ? new ExpectError(jestError, customMessage, stackFrames) : undefined;
         if (jestError?.matcherResult.suggestedRebaseline) {
@@ -378,24 +377,10 @@ class ExpectMetaInfoProxyHandler implements ProxyHandler<any> {
         const error = expectError ?? e;
         step.complete({ error });
 
-        if (!isAsync || !expectError) {
-          if (this._info.isSoft)
-            testInfo._failWithError(error);
-          else
-            throw error;
-          return;
-        }
-
-        // Recoverable async failure.
-        return (async () => {
-          const recoveryResult = await step.recoverFromStepError(expectError);
-          if (recoveryResult.status === 'recovered')
-            return recoveryResult.value as any;
-          if (this._info.isSoft)
-            testInfo._failWithError(expectError);
-          else
-            throw expectError;
-        })();
+        if (this._info.isSoft)
+          testInfo._failWithError(error);
+        else
+          throw error;
       };
 
       const finalizer = () => {
@@ -407,11 +392,11 @@ class ExpectMetaInfoProxyHandler implements ProxyHandler<any> {
         const callback = () => matcher.call(target, ...args);
         const result = currentZone().with('stepZone', step).run(callback);
         if (result instanceof Promise)
-          return result.then(finalizer).catch(reportStepError.bind(null, true));
+          return result.then(finalizer).catch(reportStepError);
         finalizer();
         return result;
       } catch (e) {
-        void reportStepError(false, e);
+        void reportStepError(e);
       }
     };
   }

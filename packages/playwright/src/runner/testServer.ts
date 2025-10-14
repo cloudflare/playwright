@@ -24,14 +24,14 @@ import { loadConfig, resolveConfigLocation } from '../common/configLoader';
 import ListReporter from '../reporters/list';
 import { createReporterForTestServer } from './reporters';
 import { SigIntWatcher } from './sigIntWatcher';
-import { TestRunner } from './testRunner';
+import { TestRunner, TestRunnerEvent } from './testRunner';
 
 import type { TraceViewerRedirectOptions, TraceViewerServerOptions } from 'playwright-core/lib/server/trace/viewer/traceViewer';
 import type { HttpServer, Transport } from 'playwright-core/lib/utils';
 import type * as reporterTypes from '../../types/testReporter';
 import type { ConfigLocation } from '../common/config';
 import type { ConfigCLIOverrides } from '../common/ipc';
-import type { RecoverFromStepErrorResult, ReportEntry, TestServerInterface, TestServerInterfaceEventEmitters } from '../isomorphic/testServerInterface';
+import type { ReportEntry, TestServerInterface, TestServerInterfaceEventEmitters } from '../isomorphic/testServerInterface';
 import type { ReporterV2 } from '../reporters/reporterV2';
 
 const originalDebugLog = debug.log;
@@ -56,20 +56,9 @@ class TestServer {
   }
 
   async stop() {
-    await this._dispatcher?._setInterceptStdio(false);
-    await this._dispatcher?.runGlobalTeardown();
+    await this._dispatcher?.stop();
   }
 }
-
-export const TestRunnerEvent = {
-  TestFilesChanged: 'testFilesChanged',
-  RecoverFromStepError: 'recoverFromStepError',
-} as const;
-
-export type TestRunnerEventMap = {
-  [TestRunnerEvent.TestFilesChanged]: [testFiles: string[]];
-  [TestRunnerEvent.RecoverFromStepError]: [stepId: string, message: string, location: reporterTypes.Location];
-};
 
 export type ListTestsParams = {
   projects?: string[];
@@ -117,7 +106,6 @@ export class TestServerDispatcher implements TestServerInterface {
 
     this._dispatchEvent = (method, params) => this.transport.sendEvent?.(method, params);
     this._testRunner.on(TestRunnerEvent.TestFilesChanged, testFiles => this._dispatchEvent('testFilesChanged', { testFiles }));
-    this._testRunner.on(TestRunnerEvent.RecoverFromStepError, (stepId, message, location) => this._dispatchEvent('recoverFromStepError', { stepId, message, location }));
   }
 
   private async _wireReporter(messageSink: (message: any) => void) {
@@ -136,12 +124,10 @@ export class TestServerDispatcher implements TestServerInterface {
     // Note: this method can be called multiple times, for example from a new connection after UI mode reload.
     this._serializer = params.serializer || require.resolve('./uiModeReporter');
     this._closeOnDisconnect = !!params.closeOnDisconnect;
-    await this._setInterceptStdio(!!params.interceptStdio);
     await this._testRunner.initialize({
-      watchTestDirs: !!params.watchTestDirs,
-      populateDependenciesOnList: !!params.populateDependenciesOnList,
-      recoverFromStepErrors: !!params.recoverFromStepErrors,
+      ...params,
     });
+    this._setInterceptStdio(!!params.interceptStdio);
   }
 
   async ping() {}
@@ -214,12 +200,11 @@ export class TestServerDispatcher implements TestServerInterface {
 
   async runTests(params: Parameters<TestServerInterface['runTests']>[0]): ReturnType<TestServerInterface['runTests']> {
     const wireReporter = await this._wireReporter(e => this._dispatchEvent('report', e));
-    const { status } = await this._testRunner.runTests(wireReporter, params);
+    const { status } = await this._testRunner.runTests(wireReporter, {
+      ...params,
+      doNotRunDepsOutsideProjectFilter: true,
+    });
     return { status };
-  }
-
-  async resumeAfterStepError(params: RecoverFromStepErrorResult): Promise<void> {
-    await this._testRunner.resumeAfterStepError(params);
   }
 
   async watch(params: { fileNames: string[]; }) {
@@ -234,11 +219,20 @@ export class TestServerDispatcher implements TestServerInterface {
     await this._testRunner.stopTests();
   }
 
-  async _setInterceptStdio(intercept: boolean) {
+  async stop() {
+    this._setInterceptStdio(false);
+    await this._testRunner.stop();
+  }
+
+  async closeGracefully() {
+    await this._testRunner.closeGracefully();
+  }
+
+  private _setInterceptStdio(interceptStdio: boolean) {
     /* eslint-disable no-restricted-properties */
     if (process.env.PWTEST_DEBUG)
       return;
-    if (intercept) {
+    if (interceptStdio) {
       if (debug.log === originalDebugLog) {
         // Only if debug.log hasn't already been tampered with, don't intercept any DEBUG=* logging
         debug.log = (...args) => {
@@ -262,10 +256,6 @@ export class TestServerDispatcher implements TestServerInterface {
       process.stderr.write = originalStderrWrite;
     }
     /* eslint-enable no-restricted-properties */
-  }
-
-  async closeGracefully() {
-    await this._testRunner.closeGracefully();
   }
 }
 

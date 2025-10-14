@@ -115,6 +115,11 @@ export class Request extends SdkObject {
   _responseEndTiming = -1;
   private _overrides: NormalizedContinueOverrides | undefined;
   private _bodySize: number | undefined;
+  _responseBodyOverride: { body: string; isBase64: boolean; } | undefined;
+
+  static Events = {
+    Response: 'response',
+  };
 
   constructor(context: contexts.BrowserContext, frame: frames.Frame | null, serviceWorker: pages.Worker | null, redirectedFrom: Request | null, documentId: string | undefined,
     url: string, resourceType: string, method: string, postData: Buffer | null, headers: HeadersArray) {
@@ -201,6 +206,7 @@ export class Request extends SdkObject {
   _setResponse(response: Response) {
     this._response = response;
     this._waitForResponsePromise.resolve(response);
+    this.emit(Request.Events.Response, response);
   }
 
   _finalRequest(): Request {
@@ -311,6 +317,8 @@ export class Route extends SdkObject {
         body = '';
         isBase64 = false;
       }
+    } else if (!overrides.status || overrides.status < 200 || overrides.status >= 400) {
+      this._request._responseBodyOverride = { body, isBase64 };
     }
     const headers = [...(overrides.headers || [])];
     this._maybeAddCorsHeaders(headers);
@@ -535,6 +543,10 @@ export class Response extends SdkObject {
       this._contentPromise = this._finishedPromise.then(async () => {
         if (this._status >= 300 && this._status <= 399)
           throw new Error('Response body is unavailable for redirect responses');
+        if (this._request._responseBodyOverride) {
+          const { body, isBase64 } = this._request._responseBodyOverride;
+          return Buffer.from(body, isBase64 ? 'base64' : 'utf-8');
+        }
         return this._getResponseBodyCallback();
       });
     }

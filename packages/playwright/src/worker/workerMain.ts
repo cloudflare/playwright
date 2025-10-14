@@ -33,7 +33,7 @@ import { loadTestFile } from '../common/testLoader';
 import type { TimeSlot } from './timeoutManager';
 import type { Location } from '../../types/testReporter';
 import type { FullConfigInternal, FullProjectInternal } from '../common/config';
-import type { DonePayload, ResumeAfterStepErrorPayload, RunPayload, TeardownErrorsPayload, TestBeginPayload, TestEndPayload, TestInfoErrorImpl, WorkerInitParams } from '../common/ipc';
+import type { DonePayload, RunPayload, TeardownErrorsPayload, TestBeginPayload, TestEndPayload, TestInfoErrorImpl, WorkerInitParams } from '../common/ipc';
 import type { Suite, TestCase } from '../common/test';
 import type { TestAnnotation } from '../../types/test';
 
@@ -51,6 +51,9 @@ export class WorkerMain extends ProcessRunner {
   private _skipRemainingTestsInSuite: Suite | undefined;
   // The stage of the full cleanup. Once "finished", we can safely stop running anything.
   private _didRunFullCleanup = false;
+  // Whether the worker was stopped due to an unhandled error in a test marked with test.fail().
+  // This should force dispatcher to use a new worker instead.
+  private _stoppedDueToUnhandledErrorInTestFail = false;
   // Whether the worker was requested to stop.
   private _isStopped = false;
   // This promise resolves once the single "run test group" call finishes.
@@ -115,7 +118,7 @@ export class WorkerMain extends ProcessRunner {
         return;
       }
       // Ignore top-level errors, they are already inside TestInfo.errors.
-      const fakeTestInfo = new TestInfoImpl(this._config, this._project, this._params, undefined, 0, () => {}, () => {}, () => {}, () => {});
+      const fakeTestInfo = new TestInfoImpl(this._config, this._project, this._params, undefined, 0, () => {}, () => {}, () => {});
       const runnable = { type: 'teardown' } as const;
       // We have to load the project to get the right deadline below.
       await fakeTestInfo._runWithTimeout(runnable, () => this._loadIfNeeded()).catch(() => {});
@@ -191,8 +194,10 @@ export class WorkerMain extends ProcessRunner {
     // an expect() error which we know does not mess things up.
     const isExpectError = (error instanceof Error) && !!(error as any).matcherResult;
     const shouldContinueInThisWorker = this._currentTest.expectedStatus === 'failed' && isExpectError;
-    if (!shouldContinueInThisWorker)
+    if (!shouldContinueInThisWorker) {
+      this._stoppedDueToUnhandledErrorInTestFail = true;
       void this._stop();
+    }
   }
 
   private async _loadIfNeeded() {
@@ -248,7 +253,8 @@ export class WorkerMain extends ProcessRunner {
       const donePayload: DonePayload = {
         fatalErrors: this._fatalErrors,
         skipTestsDueToSetupFailure: [],
-        fatalUnknownTestIds
+        fatalUnknownTestIds,
+        stoppedDueToUnhandledErrorInTestFail: this._stoppedDueToUnhandledErrorInTestFail,
       };
       for (const test of this._skipRemainingTestsInSuite?.allTests() || []) {
         if (entries.has(test.id))
@@ -261,14 +267,9 @@ export class WorkerMain extends ProcessRunner {
     }
   }
 
-  resumeAfterStepError(params: ResumeAfterStepErrorPayload): void {
-    this._currentTest?.resumeAfterStepError(params);
-  }
-
   private async _runTest(test: TestCase, retry: number, nextTest: TestCase | undefined) {
     const testInfo = new TestInfoImpl(this._config, this._project, this._params, test, retry,
         stepBeginPayload => this.dispatchEvent('stepBegin', stepBeginPayload),
-        stepRecoverFromErrorPayload => this.dispatchEvent('stepRecoverFromError', stepRecoverFromErrorPayload),
         stepEndPayload => this.dispatchEvent('stepEnd', stepEndPayload),
         attachment => this.dispatchEvent('attach', attachment));
 
@@ -395,7 +396,10 @@ export class WorkerMain extends ProcessRunner {
 
       try {
         // Run "immediately upon test function finish" callback.
-        await testInfo._runWithTimeout({ type: 'test', slot: afterHooksSlot }, async () => testInfo._onDidFinishTestFunction?.());
+        await testInfo._runWithTimeout({ type: 'test', slot: afterHooksSlot }, async () => {
+          for (const fn of testInfo._onDidFinishTestFunctions)
+            await fn();
+        });
       } catch (error) {
         firstAfterHooksError = firstAfterHooksError ?? error;
       }

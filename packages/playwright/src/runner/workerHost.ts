@@ -25,10 +25,18 @@ import { artifactsFolderName } from '../isomorphic/folders';
 
 import type { TestGroup } from './testGroups';
 import type { RunPayload, SerializedConfig, WorkerInitParams } from '../common/ipc';
-import type { RecoverFromStepErrorResult } from '@testIsomorphic/testServerInterface';
 
 
 let lastWorkerIndex = 0;
+
+type WorkerHostOptions = {
+  parallelIndex: number;
+  config: SerializedConfig;
+  extraEnv: Record<string, string | undefined>;
+  outputDir: string;
+  pauseOnError: boolean;
+  pauseAtEnd: boolean;
+};
 
 export class WorkerHost extends ProcessHost {
   readonly parallelIndex: number;
@@ -37,25 +45,26 @@ export class WorkerHost extends ProcessHost {
   private _params: WorkerInitParams;
   private _didFail = false;
 
-  constructor(testGroup: TestGroup, parallelIndex: number, config: SerializedConfig, recoverFromStepErrors: boolean, extraEnv: Record<string, string | undefined>, outputDir: string) {
+  constructor(testGroup: TestGroup, options: WorkerHostOptions) {
     const workerIndex = lastWorkerIndex++;
     super(require.resolve('../worker/workerMain.js'), `worker-${workerIndex}`, {
-      ...extraEnv,
+      ...options.extraEnv,
       FORCE_COLOR: '1',
       DEBUG_COLORS: process.env.DEBUG_COLORS === undefined ? '1' : process.env.DEBUG_COLORS,
     });
     this.workerIndex = workerIndex;
-    this.parallelIndex = parallelIndex;
+    this.parallelIndex = options.parallelIndex;
     this._hash = testGroup.workerHash;
 
     this._params = {
       workerIndex: this.workerIndex,
-      parallelIndex,
+      parallelIndex: options.parallelIndex,
       repeatEachIndex: testGroup.repeatEachIndex,
       projectId: testGroup.projectId,
-      config,
-      artifactsDir: path.join(outputDir, artifactsFolderName(workerIndex)),
-      recoverFromStepErrors,
+      config: options.config,
+      artifactsDir: path.join(options.outputDir, artifactsFolderName(workerIndex)),
+      pauseOnError: options.pauseOnError,
+      pauseAtEnd: options.pauseAtEnd,
     };
   }
 
@@ -79,10 +88,6 @@ export class WorkerHost extends ProcessHost {
 
   runTestGroup(runPayload: RunPayload) {
     this.sendMessageNoReply({ method: 'runTestGroup', params: runPayload });
-  }
-
-  resumeAfterStepError(result: RecoverFromStepErrorResult) {
-    this.sendMessageNoReply({ method: 'resumeAfterStepError', params: result });
   }
 
   hash() {

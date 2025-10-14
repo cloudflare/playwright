@@ -23,8 +23,6 @@ import { registry } from '../../packages/playwright-core/lib/server';
 import { expect, browserTest as it } from '../config/browserTest';
 import { parseTraceRaw } from '../config/utils';
 
-const ffmpeg = registry.findExecutable('ffmpeg')!.executablePath('javascript');
-
 export class VideoPlayer {
   fileName: string;
   output: string;
@@ -36,6 +34,7 @@ export class VideoPlayer {
 
   constructor(fileName: string) {
     this.fileName = fileName;
+    const ffmpeg = registry.findExecutable('ffmpeg')!.executablePathOrDie('javascript');
     // Force output frame rate to 25 fps as otherwise it would produce one image per timebase unit
     // which is 1 / (25 * 1000).
     this.output = spawnSync(ffmpeg, ['-i', this.fileName, '-r', '25', `${this.fileName}-%03d.png`]).stderr.toString();
@@ -756,11 +755,11 @@ it.describe('screencast', () => {
     expectAll(pixels, isAlmostRed);
   });
 
-  it('should capture full viewport on hidpi', async ({ browserType, browserName, headless, isWindows, isLinux, isHeadlessShell }, testInfo) => {
+  it('should capture full viewport on hidpi', async ({ browserType, browserName, headless, isWindows, isLinux, isHeadlessShell, channel }, testInfo) => {
     it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/22411' });
     it.fixme(browserName === 'chromium' && !isHeadlessShell, 'The square is not on the video');
     it.fixme(browserName === 'firefox' && isWindows, 'https://github.com/microsoft/playwright/issues/14405');
-    it.fixme(browserName === 'webkit' && isLinux && !headless, 'https://github.com/microsoft/playwright/issues/22617');
+    it.fixme(browserName === 'webkit' && !headless && (isLinux || (isWindows && channel === 'webkit-wsl')), 'https://github.com/microsoft/playwright/issues/22617');
     const size = { width: 600, height: 400 };
     const browser = await browserType.launch();
 

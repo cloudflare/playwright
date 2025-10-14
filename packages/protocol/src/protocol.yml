@@ -934,25 +934,6 @@ DebugController:
     stateChanged:
       parameters:
         pageCount: int
-        browsers:
-          type: array
-          items:
-            type: object
-            properties:
-              id: string
-              name: string
-              channel: string?
-              contexts:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    pages:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          url: string
 
     sourceChanged:
       parameters:
@@ -1536,10 +1517,6 @@ BrowserContext:
       parameters:
         artifact: Artifact
 
-    backgroundPage:
-      parameters:
-        page: Page
-
     serviceWorker:
       parameters:
         worker: Worker
@@ -1610,6 +1587,17 @@ Page:
         reason: string?
       flags:
         pausesBeforeAction: true
+
+    consoleMessages:
+      title: Get console messages
+      group: getter
+      returns:
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              $mixin: ConsoleMessage
 
     emulateMedia:
       title: Emulate media
@@ -1946,6 +1934,14 @@ Page:
       returns:
         rootAXNode: AXNode?
 
+    pageErrors:
+      title: Get page errors
+      group: getter
+      returns:
+        errors:
+          type: array
+          items: SerializedError
+
     pdf:
       title: PDF
       parameters:
@@ -1971,6 +1967,14 @@ Page:
         outline: boolean?
       returns:
         pdf: binary
+
+    requests:
+      title: Get network requests
+      group: getter
+      returns:
+        requests:
+          type: array
+          items: Request
 
     snapshotForAI:
       internal: true
@@ -2796,6 +2800,7 @@ Frame:
         matches: boolean
         received: SerializedValue?
         timedOut: boolean?
+        errorMessage: string?
         log:
           type: array?
           items: string
@@ -3416,6 +3421,7 @@ Request:
       items: NameValue
     isNavigationRequest: boolean
     redirectedFrom: Request?
+    hasResponse: boolean
 
   commands:
 
@@ -3431,6 +3437,8 @@ Request:
           type: array
           items: NameValue
 
+  events:
+    response:
 
 Route:
   type: interface

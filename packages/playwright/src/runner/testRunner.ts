@@ -19,7 +19,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { registry } from 'playwright-core/lib/server';
-import { ManualPromise, gracefullyProcessExitDoNotHang } from 'playwright-core/lib/utils';
+import { ManualPromise, gracefullyProcessExitDoNotHang, setPlaywrightTestProcessEnv } from 'playwright-core/lib/utils';
 
 import { loadConfig } from '../common/configLoader';
 import { Watcher } from '../fsWatcher';
@@ -40,20 +40,12 @@ import type { ConfigCLIOverrides } from '../common/ipc';
 import type { TestRunnerPluginRegistration } from '../plugins';
 import type { AnyReporter } from '../reporters/reporterV2';
 
-export type RecoverFromStepErrorResult = {
-  stepId: string;
-  status: 'recovered' | 'failed';
-  value?: string | number | boolean | undefined;
-};
-
 export const TestRunnerEvent = {
   TestFilesChanged: 'testFilesChanged',
-  RecoverFromStepError: 'recoverFromStepError',
 } as const;
 
 export type TestRunnerEventMap = {
   [TestRunnerEvent.TestFilesChanged]: [testFiles: string[]];
-  [TestRunnerEvent.RecoverFromStepError]: [stepId: string, message: string, location: reporterTypes.Location];
 };
 
 export type ListTestsParams = {
@@ -64,6 +56,7 @@ export type ListTestsParams = {
 };
 
 export type RunTestsParams = {
+  timeout?: number;
   locations?: string[];
   grep?: string;
   grepInvert?: string;
@@ -78,6 +71,11 @@ export type RunTestsParams = {
   projects?: string[];
   reuseContext?: boolean;
   connectWsEndpoint?: string;
+  pauseOnError?: boolean;
+  pauseAtEnd?: boolean;
+  doNotRunDepsOutsideProjectFilter?: boolean;
+  disableConfigReporters?: boolean;
+  failOnLoadErrors?: boolean;
 };
 
 type FullResultStatus = reporterTypes.FullResult['status'];
@@ -98,8 +96,6 @@ export class TestRunner extends EventEmitter<TestRunnerEventMap> {
   private _plugins: TestRunnerPluginRegistration[] | undefined;
   private _watchTestDirs = false;
   private _populateDependenciesOnList = false;
-  private _recoverFromStepErrors = false;
-  private _resumeAfterStepErrors: Map<string, ManualPromise<RecoverFromStepErrorResult>> = new Map();
 
   constructor(configLocation: ConfigLocation, configCLIOverrides: ConfigCLIOverrides) {
     super();
@@ -115,11 +111,10 @@ export class TestRunner extends EventEmitter<TestRunnerEventMap> {
   async initialize(params: {
     watchTestDirs?: boolean;
     populateDependenciesOnList?: boolean;
-    recoverFromStepErrors?: boolean;
   }) {
+    setPlaywrightTestProcessEnv();
     this._watchTestDirs = !!params.watchTestDirs;
     this._populateDependenciesOnList = !!params.populateDependenciesOnList;
-    this._recoverFromStepErrors = !!params.recoverFromStepErrors;
   }
 
   resizeTerminal(params: { cols: number, rows: number }) {
@@ -145,6 +140,13 @@ export class TestRunner extends EventEmitter<TestRunnerEventMap> {
   async installBrowsers() {
     const executables = registry.defaultExecutables();
     await registry.install(executables, false);
+  }
+
+  async loadConfig() {
+    const { config, error } = await this._loadConfig(this._configCLIOverrides);
+    if (config)
+      return config;
+    throw new Error('Failed to load config: ' + (error ? error.message : 'Unknown error'));
   }
 
   async runGlobalSetup(userReporters: AnyReporter[]): Promise<{ status: FullResultStatus }> {
@@ -301,6 +303,7 @@ export class TestRunner extends EventEmitter<TestRunnerEventMap> {
       ...this._configCLIOverrides,
       repeatEach: 1,
       retries: 0,
+      timeout: params.timeout,
       preserveOutputDir: true,
       reporter: params.reporters ? params.reporters.map(r => [r]) : undefined,
       use: {
@@ -337,42 +340,21 @@ export class TestRunner extends EventEmitter<TestRunnerEventMap> {
       config.preOnlyTestFilters.push(test => testIdSet.has(test.id));
     }
 
-    const configReporters = await createReporters(config, 'test', true);
+    const configReporters = params.disableConfigReporters ? [] : await createReporters(config, 'test', true);
     const reporter = new InternalReporter([...configReporters, userReporter]);
     const stop = new ManualPromise();
     const tasks = [
       createApplyRebaselinesTask(),
-      createLoadTask('out-of-process', { filterOnly: true, failOnLoadErrors: false, doNotRunDepsOutsideProjectFilter: true }),
+      createLoadTask('out-of-process', { filterOnly: true, failOnLoadErrors: !!params.failOnLoadErrors, doNotRunDepsOutsideProjectFilter: params.doNotRunDepsOutsideProjectFilter }),
       ...createRunTestsTasks(config),
     ];
-    const testRun = new TestRun(config, reporter);
-    testRun.failureTracker.setRecoverFromStepErrorHandler(this._recoverFromStepError.bind(this));
+    const testRun = new TestRun(config, reporter, { pauseOnError: params.pauseOnError, pauseAtEnd: params.pauseAtEnd });
     const run = runTasks(testRun, tasks, 0, stop).then(async status => {
       this._testRun = undefined;
       return status;
     });
     this._testRun = { run, stop };
     return { status: await run };
-  }
-
-  private async _recoverFromStepError(stepId: string, error: reporterTypes.TestError): Promise<RecoverFromStepErrorResult> {
-    if (!this._recoverFromStepErrors)
-      return { stepId, status: 'failed' };
-    const recoveryPromise = new ManualPromise<RecoverFromStepErrorResult>();
-    this._resumeAfterStepErrors.set(stepId, recoveryPromise);
-    if (!error?.message || !error?.location)
-      return { stepId, status: 'failed' };
-    this.emit(TestRunnerEvent.RecoverFromStepError, stepId, error.message, error.location);
-    const recoveredResult = await recoveryPromise;
-    if (recoveredResult.stepId !== stepId)
-      return { stepId, status: 'failed' };
-    return recoveredResult;
-  }
-
-  async resumeAfterStepError(params: RecoverFromStepErrorResult): Promise<void> {
-    const recoveryPromise = this._resumeAfterStepErrors.get(params.stepId);
-    if (recoveryPromise)
-      recoveryPromise.resolve(params);
   }
 
   async watch(fileNames: string[]) {
@@ -402,11 +384,14 @@ export class TestRunner extends EventEmitter<TestRunnerEventMap> {
   async stopTests() {
     this._testRun?.stop?.resolve();
     await this._testRun?.run;
-    this._resumeAfterStepErrors.clear();
   }
 
   async closeGracefully() {
     gracefullyProcessExitDoNotHang(0);
+  }
+
+  async stop() {
+    await this.runGlobalTeardown();
   }
 
   private async _loadConfig(overrides?: ConfigCLIOverrides): Promise<{ config: FullConfigInternal | null, error?: reporterTypes.TestError }> {
@@ -459,6 +444,8 @@ async function resolveCtDirs(config: FullConfigInternal) {
 }
 
 export async function runAllTestsWithConfig(config: FullConfigInternal): Promise<FullResultStatus> {
+  setPlaywrightTestProcessEnv();
+
   const listOnly = config.cliListOnly;
 
   addGitCommitInfoPlugin(config);

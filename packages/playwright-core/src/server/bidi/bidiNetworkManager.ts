@@ -34,6 +34,7 @@ export class BidiNetworkManager {
   private _userRequestInterceptionEnabled: boolean = false;
   private _protocolRequestInterceptionEnabled: boolean = false;
   private _credentials: types.Credentials | undefined;
+  private _attemptedAuthentications = new Set<string>();
   private _intercepId: bidi.Network.Intercept | undefined;
 
   constructor(bidiSession: BidiSession, page: Page) {
@@ -61,7 +62,7 @@ export class BidiNetworkManager {
     if (!frame)
       return;
     if (redirectedFrom)
-      this._requests.delete(redirectedFrom._id);
+      this._deleteRequest(redirectedFrom._id);
     let route;
     if (param.intercepts) {
       // We do not support intercepting redirects.
@@ -88,7 +89,9 @@ export class BidiNetworkManager {
     if (!request)
       return;
     const getResponseBody = async () => {
-      throw new Error(`Response body is not available for requests in Bidi`);
+      const { bytes } = await this._session.send('network.getData', { request: params.request.request, dataType: bidi.Network.DataType.Response });
+      const encoding = bytes.type === 'base64' ? 'base64' : 'utf8';
+      return Buffer.from(bytes.value, encoding);
     };
     const timings = params.request.timings;
     const startTime = timings.requestTime;
@@ -131,7 +134,7 @@ export class BidiNetworkManager {
     if (isRedirected) {
       response._requestFinished(responseEndTime);
     } else {
-      this._requests.delete(request._id);
+      this._deleteRequest(request._id);
       response._requestFinished(responseEndTime);
     }
     response._setHttpVersion(params.response.protocol);
@@ -143,7 +146,7 @@ export class BidiNetworkManager {
     const request = this._requests.get(params.request.request);
     if (!request)
       return;
-    this._requests.delete(request._id);
+    this._deleteRequest(request._id);
     const response = request.request._existingResponse();
     if (response) {
       response.setTransferSize(null);
@@ -158,22 +161,35 @@ export class BidiNetworkManager {
   private _onAuthRequired(params: bidi.Network.AuthRequiredParameters) {
     const isBasic = params.response.authChallenges?.some(challenge => challenge.scheme.startsWith('Basic'));
     const credentials = this._page.browserContext._options.httpCredentials;
-    if (isBasic && credentials) {
-      this._session.sendMayFail('network.continueWithAuth', {
-        request: params.request.request,
-        action: 'provideCredentials',
-        credentials: {
-          type: 'password',
-          username: credentials.username,
-          password: credentials.password,
-        }
-      });
+    if (isBasic && credentials && (!credentials.origin || (new URL(params.request.url).origin).toLowerCase() === credentials.origin.toLowerCase())) {
+      if (this._attemptedAuthentications.has(params.request.request)) {
+        this._session.sendMayFail('network.continueWithAuth', {
+          request: params.request.request,
+          action: 'cancel',
+        });
+      } else {
+        this._attemptedAuthentications.add(params.request.request);
+        this._session.sendMayFail('network.continueWithAuth', {
+          request: params.request.request,
+          action: 'provideCredentials',
+          credentials: {
+            type: 'password',
+            username: credentials.username,
+            password: credentials.password,
+          }
+        });
+      }
     } else {
       this._session.sendMayFail('network.continueWithAuth', {
         request: params.request.request,
-        action: 'default',
+        action: 'cancel',
       });
     }
+  }
+
+  _deleteRequest(requestId: string) {
+    this._requests.delete(requestId);
+    this._attemptedAuthentications.delete(requestId);
   }
 
   async setRequestInterception(value: boolean) {
@@ -226,8 +242,8 @@ class BidiRequest {
       redirectedFrom._redirectedTo = this;
     // TODO: missing in the spec?
     const postDataBuffer = null;
-    this.request = new network.Request(frame._page.browserContext, frame, null, redirectedFrom ? redirectedFrom.request : null, payload.navigation ?? undefined,
-        payload.request.url, 'other', payload.request.method, postDataBuffer, fromBidiHeaders(payload.request.headers));
+    this.request = new network.Request(frame._page.browserContext, frame, null, redirectedFrom ? redirectedFrom.request : null, payload.navigation ?? undefined, payload.request.url,
+        resourceTypeFromBidi(payload.request.destination, payload.request.initiatorType, payload.initiator?.type), payload.request.method, postDataBuffer, fromBidiHeaders(payload.request.headers));
     // "raw" headers are the same as "provisional" headers in Bidi.
     this.request.setRawRequestHeaders(null);
     this.request._setBodySize(payload.request.bodySize || 0);
@@ -343,4 +359,34 @@ function toBidiSameSite(sameSite?: 'Strict' | 'Lax' | 'None'): bidi.Network.Same
   if (sameSite === 'Lax')
     return bidi.Network.SameSite.Lax;
   return bidi.Network.SameSite.None;
+}
+
+function resourceTypeFromBidi(requestDestination: string, requestInitiatorType: string | null, eventInitiatorType: string | undefined): string {
+  switch (requestDestination) {
+    case 'audio': return 'media';
+    case 'audioworklet': return 'script';
+    case 'document': return 'document';
+    case 'font': return 'font';
+    case 'frame': return 'document';
+    case 'iframe': return 'document';
+    case 'image': return 'image';
+    case 'object': return 'object';
+    case 'paintworklet': return 'script';
+    case 'script': return 'script';
+    case 'serviceworker': return 'script';
+    case 'sharedworker': return 'script';
+    case 'style': return 'stylesheet';
+    case 'track': return 'texttrack';
+    case 'video': return 'media';
+    case 'worker': return 'script';
+    case '':
+      switch (requestInitiatorType) {
+        case 'fetch': return 'fetch';
+        case 'font': return 'font';
+        case 'xmlhttprequest': return 'xhr';
+        case null: return eventInitiatorType === 'script' ? 'xhr' : 'document';
+        default: return 'other';
+      }
+    default: return 'other';
+  }
 }

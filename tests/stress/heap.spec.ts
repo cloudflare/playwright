@@ -66,7 +66,6 @@ test('should not leak dispatchers after closing page', async ({ context, server 
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/page').Page)).toBe(COUNT);
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/dispatchers/networkDispatchers').RequestDispatcher)).toBe(COUNT);
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/dispatchers/networkDispatchers').ResponseDispatcher)).toBe(COUNT);
-  expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/console').ConsoleMessage)).toBe(0);
 
   for (const page of pages)
     await page.close();
@@ -75,12 +74,23 @@ test('should not leak dispatchers after closing page', async ({ context, server 
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/page').Page)).toBe(0);
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/dispatchers/networkDispatchers').RequestDispatcher)).toBe(0);
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/dispatchers/networkDispatchers').ResponseDispatcher)).toBe(0);
-  expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/console').ConsoleMessage)).toBe(0);
 
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/client/page').Page)).toBeLessThan(COUNT);
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/page').Page)).toBe(0);
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/client/network').Request)).toBe(0);
   expect(await queryObjectCount(require('../../packages/playwright-core/lib/client/network').Response)).toBe(0);
+});
+
+test('should not leak requests over 100', async ({ context, server }) => {
+  const page = await context.newPage();
+  await page.goto(server.PREFIX + '/title.html');
+  for (let i = 0; i < 100; ++i)
+    await page.evaluate(url => fetch(url), server.EMPTY_PAGE);
+  await page.requests();
+  for (let i = 0; i < 200; ++i)
+    await page.evaluate(url => fetch(url), server.EMPTY_PAGE);
+  await page.requests();
+  expect(await queryObjectCount(require('../../packages/playwright-core/lib/server/dispatchers/networkDispatchers').RequestDispatcher)).toBeLessThanOrEqual(100);
 });
 
 test.describe(() => {

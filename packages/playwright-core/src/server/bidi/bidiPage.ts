@@ -17,7 +17,9 @@
 import { eventsHelper } from '../utils/eventsHelper';
 import * as dialog from '../dialog';
 import * as dom from '../dom';
-import { Page } from '../page';
+import * as js from '../javascript';
+import { BidiBrowserContext, getScreenOrientation } from './bidiBrowser';
+import { Page, Worker } from '../page';
 import { BidiExecutionContext, createHandle } from './bidiExecutionContext';
 import { RawKeyboardImpl, RawMouseImpl, RawTouchscreenImpl } from './bidiInput';
 import { BidiNetworkManager } from './bidiNetworkManager';
@@ -30,7 +32,6 @@ import type * as frames from '../frames';
 import type { InitScript, PageDelegate } from '../page';
 import type { Progress } from '../progress';
 import type * as types from '../types';
-import type { BidiBrowserContext } from './bidiBrowser';
 import type { BidiSession } from './bidiConnection';
 import type * as channels from '@protocol/channels';
 
@@ -45,6 +46,7 @@ export class BidiPage implements PageDelegate {
   readonly _session: BidiSession;
   readonly _opener: BidiPage | null;
   readonly _realmToContext: Map<string, dom.FrameExecutionContext>;
+  private _realmToWorkerContext = new Map<string, js.ExecutionContext>();
   private _sessionListeners: RegisteredListener[] = [];
   readonly _browserContext: BidiBrowserContext;
   readonly _networkManager: BidiNetworkManager;
@@ -75,6 +77,8 @@ export class BidiPage implements PageDelegate {
       eventsHelper.addEventListener(bidiSession, 'browsingContext.historyUpdated', this._onHistoryUpdated.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.domContentLoaded', this._onDomContentLoaded.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.load', this._onLoad.bind(this)),
+      eventsHelper.addEventListener(bidiSession, 'browsingContext.downloadWillBegin', this._onDownloadWillBegin.bind(this)),
+      eventsHelper.addEventListener(bidiSession, 'browsingContext.downloadEnd', this._onDownloadEnded.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'browsingContext.userPromptOpened', this._onUserPromptOpened.bind(this)),
       eventsHelper.addEventListener(bidiSession, 'log.entryAdded', this._onLogEntryAdded.bind(this)),
     ];
@@ -118,6 +122,13 @@ export class BidiPage implements PageDelegate {
   }
 
   private _onRealmCreated(realmInfo: bidi.Script.RealmInfo) {
+    if (realmInfo.type === 'dedicated-worker') {
+      const delegate = new BidiExecutionContext(this._session, realmInfo);
+      const worker = new Worker(this._page, realmInfo.origin);
+      this._realmToWorkerContext.set(realmInfo.realm, worker.createExecutionContext(delegate));
+      this._page.addWorker(realmInfo.realm, worker);
+      return;
+    }
     if (this._realmToContext.has(realmInfo.realm))
       return;
     if (realmInfo.type !== 'window')
@@ -159,11 +170,17 @@ export class BidiPage implements PageDelegate {
 
   _onRealmDestroyed(params: bidi.Script.RealmDestroyedParameters): boolean {
     const context = this._realmToContext.get(params.realm);
-    if (!context)
-      return false;
-    this._realmToContext.delete(params.realm);
-    context.frame._contextDestroyed(context);
-    return true;
+    if (context) {
+      this._realmToContext.delete(params.realm);
+      context.frame._contextDestroyed(context);
+      return true;
+    }
+    const existed = this._realmToWorkerContext.delete(params.realm);
+    if (existed) {
+      this._page.removeWorker(params.realm);
+      return true;
+    }
+    return false;
   }
 
   // TODO: route the message directly to the browser
@@ -217,13 +234,55 @@ export class BidiPage implements PageDelegate {
         event.defaultValue));
   }
 
+  private _onDownloadWillBegin(event: bidi.BrowsingContext.DownloadWillBeginParams) {
+    if (!event.navigation)
+      return;
+
+    this._page.frameManager.frameAbortedNavigation(event.context, 'Download is starting');
+
+    let originPage = this._page.initializedOrUndefined();
+    // If it's a new window download, report it on the opener page.
+    if (!originPage && this._opener)
+      originPage = this._opener._page.initializedOrUndefined();
+    if (!originPage)
+      return;
+
+    this._browserContext._browser._downloadCreated(originPage, event.navigation, event.url, event.suggestedFilename);
+  }
+
+  private _onDownloadEnded(event: bidi.BrowsingContext.DownloadEndParams) {
+    if (!event.navigation)
+      return;
+    this._browserContext._browser._downloadFinished(event.navigation, event.status === 'canceled' ? 'canceled' : undefined);
+  }
+
   private _onLogEntryAdded(params: bidi.Log.Entry) {
+    if (params.type === 'javascript' && params.level === 'error') {
+      let errorName = '';
+      let errorMessage: string | undefined;
+      if (params.text?.includes(': ')) {
+        const index = params.text.indexOf(': ');
+        errorName = params.text.substring(0, index);
+        errorMessage = params.text.substring(index + 2);
+      } else {
+        errorMessage = params.text ?? undefined;
+      }
+      const error = new Error(errorMessage);
+      error.name = errorName;
+      error.stack = `${params.text}\n${params.stackTrace?.callFrames.map(f => {
+        const location = `${f.url}:${f.lineNumber + 1}:${f.columnNumber + 1}`;
+        return f.functionName ? `    at ${f.functionName} (${location})` : `    at ${location}`;
+      }).join('\n')}`;
+      this._page.addPageError(error);
+      return;
+    }
     if (params.type !== 'console')
       return;
     const entry: bidi.Log.ConsoleLogEntry = params as bidi.Log.ConsoleLogEntry;
-    const context = this._realmToContext.get(params.source.realm);
+    const context = this._realmToContext.get(params.source.realm) ?? this._realmToWorkerContext.get(params.source.realm);
     if (!context)
       return;
+
     const callFrame = params.stackTrace?.callFrames[0];
     const location = callFrame ?? { url: '', lineNumber: 1, columnNumber: 1 };
     this._page.addConsoleMessage(entry.method, entry.args.map(arg => createHandle(context, arg)), location, params.text || undefined);
@@ -258,14 +317,20 @@ export class BidiPage implements PageDelegate {
     if (!emulatedSize)
       return;
     const viewportSize = emulatedSize.viewport;
-    await this._session.send('browsingContext.setViewport', {
-      context: this._session.sessionId,
-      viewport: {
-        width: viewportSize.width,
-        height: viewportSize.height,
-      },
-      devicePixelRatio: options.deviceScaleFactor || 1
-    });
+    await Promise.all([
+      this._session.send('browsingContext.setViewport', {
+        context: this._session.sessionId,
+        viewport: {
+          width: viewportSize.width,
+          height: viewportSize.height,
+        },
+        devicePixelRatio: options.deviceScaleFactor || 1
+      }),
+      this._session.send('emulation.setScreenOrientationOverride', {
+        contexts: [this._session.sessionId],
+        screenOrientation: getScreenOrientation(!!options.isMobile, viewportSize)
+      })
+    ]);
   }
 
   async updateRequestInterception(): Promise<void> {
@@ -344,10 +409,17 @@ export class BidiPage implements PageDelegate {
   }
 
   async closePage(runBeforeUnload: boolean): Promise<void> {
-    await this._session.send('browsingContext.close', {
-      context: this._session.sessionId,
-      promptUnload: runBeforeUnload,
-    });
+    if (runBeforeUnload) {
+      this._session.sendMayFail('browsingContext.close', {
+        context: this._session.sessionId,
+        promptUnload: runBeforeUnload,
+      });
+    } else {
+      await this._session.send('browsingContext.close', {
+        context: this._session.sessionId,
+        promptUnload: runBeforeUnload,
+      });
+    }
   }
 
   async setBackgroundColor(color?: { r: number; g: number; b: number; a: number; }): Promise<void> {

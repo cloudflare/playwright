@@ -1717,6 +1717,25 @@ for (const useIntermediateMergeReport of [true, false] as const) {
         await expect(page.locator('.label')).toHaveText('webkit');
       });
 
+      test('project label should not show if there are no explicit projects', async ({ runInlineTest, showReport, page }) => {
+        const result = await runInlineTest({
+          'a.test.js': `
+            const { expect, test } = require('@playwright/test');
+            test('pass', async ({}) => {
+              expect(1).toBe(1);
+            });
+          `,
+        }, { reporter: 'dot,html' }, { PLAYWRIGHT_HTML_OPEN: 'never' });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.passed).toBe(1);
+
+        await showReport();
+
+        await expect(page.locator('.test-file-test .label')).toHaveCount(0);
+        await expect(page.locator('.label-row')).not.toBeVisible();
+      });
+
       test('testCaseView - after click test label and go back, testCaseView should be visible', async ({ runInlineTest, showReport, page }) => {
         const result = await runInlineTest({
           'playwright.config.js': `
@@ -3184,6 +3203,42 @@ for (const useIntermediateMergeReport of [true, false] as const) {
     });
   });
 }
+
+test('should support merge files option', async ({ runInlineTest, showReport, page }) => {
+  await runInlineTest({
+    'a.test.js': `
+      import { test, expect } from '@playwright/test';
+      test.describe('describe', () => {
+        test('test 1', async ({}) => {});
+      });
+      test('test 2', async ({}) => {});
+    `,
+    'b.test.js': `
+      import { test, expect } from '@playwright/test';
+      test.describe('describe', () => {
+        test('test 3', async ({}) => {});
+      });
+    `,
+  }, { reporter: 'dot,html' }, { PLAYWRIGHT_HTML_OPEN: 'never' });
+
+  await showReport();
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('checkbox', { name: 'Merge files' }).click();
+
+  await expect(page.locator('body')).toMatchAriaSnapshot(`
+    - button "<anonymous>" [expanded]
+    - region:
+      - link "test 2"
+      - link "a.test.js:6"
+    - button "describe" [expanded]
+    - region:
+      - link "test 1"
+      - link "a.test.js:4"
+      - link "test 3"
+      - link "b.test.js:4"
+  `);
+});
 
 function readAllFromStream(stream: NodeJS.ReadableStream): Promise<Buffer> {
   return new Promise(resolve => {

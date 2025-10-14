@@ -74,8 +74,6 @@ export const Timeline: React.FunctionComponent<{
   const bars = React.useMemo(() => {
     const bars: TimelineBar[] = [];
     for (const entry of actions || []) {
-      if (entry.class === 'Test')
-        continue;
       bars.push({
         action: entry,
         leftTime: entry.startTime,
@@ -233,7 +231,7 @@ export const Timeline: React.FunctionComponent<{
     setSelectedTime(undefined);
   }, [setSelectedTime]);
 
-  return <div style={{ flex: 'none', borderBottom: '1px solid var(--vscode-panel-border)' }}>
+  return <div className='timeline-view-container'>
     {!!dragWindow && <GlassPane
       cursor={dragWindow?.type === 'resize' ? 'ew-resize' : 'grab'}
       onPaneMouseUp={onGlassPaneMouseUp}
@@ -254,22 +252,24 @@ export const Timeline: React.FunctionComponent<{
       <div style={{ height: 8 }}></div>
       <FilmStrip model={model} boundaries={boundaries} previewPoint={previewPoint} />
       <div className='timeline-bars'>{
-        bars.map((bar, index) => {
-          return <div key={index}
-            className={clsx('timeline-bar',
-                bar.action && 'action',
-                bar.resource && 'network',
-                bar.consoleMessage && 'console-message',
-                bar.active && 'active',
-                bar.error && 'error')}
-            style={{
-              left: bar.leftPosition,
-              width: Math.max(5, bar.rightPosition - bar.leftPosition),
-              top: barTop(bar),
-              bottom: 0,
-            }}
-          ></div>;
-        })
+        bars
+            .filter(bar => !bar.action || bar.action.class !== 'Test')
+            .map((bar, index) => {
+              return <div key={index}
+                className={clsx('timeline-bar',
+                    bar.action && 'action',
+                    bar.resource && 'network',
+                    bar.consoleMessage && 'console-message',
+                    bar.active && 'active',
+                    bar.error && 'error')}
+                style={{
+                  left: bar.leftPosition,
+                  width: Math.max(5, bar.rightPosition - bar.leftPosition),
+                  top: barTop(bar),
+                  bottom: 0,
+                }}
+              ></div>;
+            })
       }</div>
       <div className='timeline-marker' style={{
         display: (previewPoint !== undefined) ? 'block' : 'none',

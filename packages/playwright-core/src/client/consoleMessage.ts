@@ -28,8 +28,8 @@ export class ConsoleMessage implements api.ConsoleMessage {
   private _page: Page | null;
   private _event: channels.BrowserContextConsoleEvent | channels.ElectronApplicationConsoleEvent;
 
-  constructor(platform: Platform, event: channels.BrowserContextConsoleEvent | channels.ElectronApplicationConsoleEvent) {
-    this._page = ('page' in event && event.page) ? Page.from(event.page) : null;
+  constructor(platform: Platform, event: channels.BrowserContextConsoleEvent | channels.ElectronApplicationConsoleEvent, page: Page | null) {
+    this._page = page;
     this._event = event;
     if (platform.inspectCustom)
       (this as any)[platform.inspectCustom] = () => this._inspect();

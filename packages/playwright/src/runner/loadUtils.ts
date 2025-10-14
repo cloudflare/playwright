@@ -15,9 +15,11 @@
  */
 
 import path from 'path';
+import fs from 'fs';
+import { toPosixPath } from 'playwright-core/lib/utils';
 
 import { InProcessLoaderHost, OutOfProcessLoaderHost } from './loaderHost';
-import { createFileFiltersFromArguments, createFileMatcherFromArguments, createTitleMatcher, errorWithFile, forceRegExp } from '../util';
+import { createFileFiltersFromArguments, createFileMatcherFromArguments, createTitleMatcher, errorWithFile, forceRegExp, parseLocationArg } from '../util';
 import { buildProjectsClosure, collectFilesForProject, filterProjects } from './projectUtils';
 import {  createTestGroups, filterForShard } from './testGroups';
 import { applyRepeatEachIndex, bindFileSuiteToProject, filterByFocusedLine, filterOnly, filterTestsRemoveEmptySuites } from '../common/suiteUtils';
@@ -120,7 +122,7 @@ export async function loadFileSuites(testRun: TestRun, mode: 'out-of-process' | 
   }
 }
 
-export async function createRootSuite(testRun: TestRun, errors: TestError[], shouldFilterOnly: boolean): Promise<Suite> {
+export async function createRootSuite(testRun: TestRun, errors: TestError[], shouldFilterOnly: boolean): Promise<{ rootSuite: Suite, topLevelProjects: FullProjectInternal[] }> {
   const config = testRun.config;
   // Create root suite, where each child will be a project suite with cloned file suites inside it.
   const rootSuite = new Suite('', 'root');
@@ -200,6 +202,7 @@ export async function createRootSuite(testRun: TestRun, errors: TestError[], sho
   if (config.postShardTestFilters.length)
     filterTestsRemoveEmptySuites(rootSuite, test => config.postShardTestFilters.every(filter => filter(test)));
 
+  const topLevelProjects = [];
   // Now prepend dependency projects without filtration.
   {
     // Filtering 'only' and sharding might have reduced the number of top-level projects.
@@ -210,10 +213,12 @@ export async function createRootSuite(testRun: TestRun, errors: TestError[], sho
     for (const [project, level] of projectClosure.entries()) {
       if (level === 'dependency')
         rootSuite._prependSuite(buildProjectSuite(project, projectSuites.get(project)!));
+      else
+        topLevelProjects.push(project);
     }
   }
 
-  return rootSuite;
+  return { rootSuite, topLevelProjects };
 }
 
 function createProjectSuite(project: FullProjectInternal, fileSuites: Suite[]): Suite {
@@ -341,5 +346,36 @@ function sourceMapSources(file: string, cache: Map<string, string[]>): string[] 
   } finally {
     cache.set(file, sources);
     return sources;
+  }
+}
+
+export async function loadTestList(config: FullConfigInternal, filePath: string): Promise<TestCaseFilter> {
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf-8');
+    const lines = content.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+    const descriptions = lines.map(line => {
+      const delimiter = line.includes('›') ? '›' : '>';
+      const tokens = line.split(delimiter).map(token => token.trim());
+      let project: string | undefined;
+      if (tokens[0].startsWith('[')) {
+        if (!tokens[0].endsWith(']'))
+          throw new Error(`Malformed test description: ${line}`);
+        project = tokens[0].substring(1, tokens[0].length - 1);
+        tokens.shift();
+      }
+      return { project, file: toPosixPath(parseLocationArg(tokens[0]).file), titlePath: tokens.slice(1) };
+    });
+    return (test: TestCase) => descriptions.some(d => {
+      // Note: there is no root yet at the time of filtering.
+      const [projectName, , ...titles] = test.titlePath();
+      if (d.project !== undefined && d.project !== projectName)
+        return false;
+      const relativeFile = toPosixPath(path.relative(config.config.rootDir, test.location.file));
+      if (relativeFile !== d.file)
+        return false;
+      return d.titlePath.length === titles.length && d.titlePath.every((_, index) => titles[index] === d.titlePath[index]);
+    });
+  } catch (e) {
+    throw errorWithFile(filePath, 'Cannot read test list file: ' + e.message);
   }
 }

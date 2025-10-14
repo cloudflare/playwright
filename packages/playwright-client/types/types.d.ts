@@ -2285,6 +2285,12 @@ export interface Page {
   }): Promise<void>;
 
   /**
+   * Returns up to (currently) 200 last console messages from this page. See
+   * [page.on('console')](https://playwright.dev/docs/api/class-page#page-event-console) for more details.
+   */
+  consoleMessages(): Promise<Array<ConsoleMessage>>;
+
+  /**
    * Gets the full HTML contents of the page, including the doctype.
    */
   content(): Promise<string>;
@@ -3599,6 +3605,12 @@ export interface Page {
   opener(): Promise<null|Page>;
 
   /**
+   * Returns up to (currently) 200 last page errors from this page. See
+   * [page.on('pageerror')](https://playwright.dev/docs/api/class-page#page-event-page-error) for more details.
+   */
+  pageErrors(): Promise<Array<Error>>;
+
+  /**
    * Pauses script execution. Playwright will stop executing the script and wait for the user to either press the
    * 'Resume' button in the page overlay or to call `playwright.resume()` in the DevTools console.
    *
@@ -3913,6 +3925,21 @@ export interface Page {
    *
    */
   requestGC(): Promise<void>;
+
+  /**
+   * Returns up to (currently) 100 last network request from this page. See
+   * [page.on('request')](https://playwright.dev/docs/api/class-page#page-event-request) for more details.
+   *
+   * Returned requests should be accessed immediately, otherwise they might be collected to prevent unbounded memory
+   * growth as new requests come in. Once collected, retrieving most information about the request is impossible.
+   *
+   * Note that requests reported through the
+   * [page.on('request')](https://playwright.dev/docs/api/class-page#page-event-request) request are not collected, so
+   * there is a trade off between efficient memory usage with
+   * [page.requests()](https://playwright.dev/docs/api/class-page#page-requests) and the amount of available information
+   * reported through [page.on('request')](https://playwright.dev/docs/api/class-page#page-event-request).
+   */
+  requests(): Promise<Array<Request>>;
 
   /**
    * Routing provides the capability to modify network requests that are made by a page.
@@ -8181,14 +8208,7 @@ export interface BrowserContext {
     behavior?: 'wait'|'ignoreErrors'|'default'
   }): Promise<void>;
   /**
-   * **NOTE** Only works with Chromium browser's persistent context.
-   *
-   * Emitted when new background page is created in the context.
-   *
-   * ```js
-   * const backgroundPage = await context.waitForEvent('backgroundpage');
-   * ```
-   *
+   * This event is not emitted.
    */
   on(event: 'backgroundpage', listener: (page: Page) => any): this;
 
@@ -8380,14 +8400,7 @@ export interface BrowserContext {
   once(event: 'weberror', listener: (webError: WebError) => any): this;
 
   /**
-   * **NOTE** Only works with Chromium browser's persistent context.
-   *
-   * Emitted when new background page is created in the context.
-   *
-   * ```js
-   * const backgroundPage = await context.waitForEvent('backgroundpage');
-   * ```
-   *
+   * This event is not emitted.
    */
   addListener(event: 'backgroundpage', listener: (page: Page) => any): this;
 
@@ -8634,14 +8647,7 @@ export interface BrowserContext {
   off(event: 'weberror', listener: (webError: WebError) => any): this;
 
   /**
-   * **NOTE** Only works with Chromium browser's persistent context.
-   *
-   * Emitted when new background page is created in the context.
-   *
-   * ```js
-   * const backgroundPage = await context.waitForEvent('backgroundpage');
-   * ```
-   *
+   * This event is not emitted.
    */
   prependListener(event: 'backgroundpage', listener: (page: Page) => any): this;
 
@@ -8840,9 +8846,8 @@ export interface BrowserContext {
   }>): Promise<void>;
 
   /**
-   * **NOTE** Background pages are only supported on Chromium-based browsers.
-   *
-   * All existing background pages in the context.
+   * Returns an empty list.
+   * @deprecated Background pages have been removed from Chromium together with Manifest V2 extensions.
    */
   backgroundPages(): Array<Page>;
 
@@ -9359,14 +9364,7 @@ export interface BrowserContext {
   }): Promise<void>;
 
   /**
-   * **NOTE** Only works with Chromium browser's persistent context.
-   *
-   * Emitted when new background page is created in the context.
-   *
-   * ```js
-   * const backgroundPage = await context.waitForEvent('backgroundpage');
-   * ```
-   *
+   * This event is not emitted.
    */
   waitForEvent(event: 'backgroundpage', optionsOrPredicate?: { predicate?: (page: Page) => boolean | Promise<boolean>, timeout?: number } | ((page: Page) => boolean | Promise<boolean>)): Promise<Page>;
 
@@ -14918,10 +14916,7 @@ export interface BrowserType<Unused = {}> {
      */
     downloadsPath?: string;
 
-    /**
-     * Specify environment variables that will be visible to the browser. Defaults to `process.env`.
-     */
-    env?: { [key: string]: string|number|boolean; };
+    env?: { [key: string]: string|undefined; };
 
     /**
      * Path to a browser executable to run instead of the bundled one. If
@@ -15351,10 +15346,7 @@ export interface BrowserType<Unused = {}> {
      */
     downloadsPath?: string;
 
-    /**
-     * Specify environment variables that will be visible to the browser. Defaults to `process.env`.
-     */
-    env?: { [key: string]: string|number|boolean; };
+    env?: { [key: string]: string|undefined; };
 
     /**
      * Path to a browser executable to run instead of the bundled one. If
@@ -16235,18 +16227,16 @@ export type AndroidKey =
   'Home' |
   'Back' |
   'Call' | 'EndCall' |
-  '0' |  '1' |  '2' |  '3' |  '4' |  '5' |  '6' |  '7' |  '8' |  '9' |
-  'Star' | 'Pound' | '*' | '#' |
+  '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' |
+  'Star' | '*' | 'Pound' | '#' |
   'DialUp' | 'DialDown' | 'DialLeft' | 'DialRight' | 'DialCenter' |
   'VolumeUp' | 'VolumeDown' |
-  'ChannelUp' | 'ChannelDown' |
   'Power' |
   'Camera' |
   'Clear' |
   'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' |
   'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z' |
-  'Comma' | ',' |
-  'Period' | '.' |
+  'Comma' | ',' | 'Period' | '.' |
   'AltLeft' | 'AltRight' |
   'ShiftLeft' | 'ShiftRight' |
   'Tab' | '\t' |
@@ -16274,8 +16264,26 @@ export type AndroidKey =
   'Notification' |
   'Search' |
   'RecentApps' |
+  'MediaPlayPause' |
+  'MediaStop' |
+  'MediaNext' |
+  'MediaPrevious' |
+  'MediaRewind' |
+  'MediaFastForward' |
+  'MediaPlay' |
+  'MediaPause' |
+  'MediaClose' |
+  'MediaEject' |
+  'MediaRecord' |
+  'ChannelUp' | 'ChannelDown' |
   'AppSwitch' |
   'Assist' |
+  'MediaAudioTrack' |
+  'MediaTopMenu' |
+  'MediaSkipForward' |
+  'MediaSkipBackward' |
+  'MediaStepForward' |
+  'MediaStepBackward' |
   'Cut' |
   'Copy' |
   'Paste';
@@ -21766,10 +21774,7 @@ export interface LaunchOptions {
    */
   downloadsPath?: string;
 
-  /**
-   * Specify environment variables that will be visible to the browser. Defaults to `process.env`.
-   */
-  env?: { [key: string]: string|number|boolean; };
+  env?: { [key: string]: string|undefined; };
 
   /**
    * Path to a browser executable to run instead of the bundled one. If

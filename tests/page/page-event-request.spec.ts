@@ -376,3 +376,31 @@ it('should not expose preflight OPTIONS request with network interception', {
     `POST ${server.CROSS_PROCESS_PREFIX}/cors`,
   ]);
 });
+
+it('should return last requests', async ({ page, server }) => {
+  await page.goto(server.PREFIX + '/title.html');
+  for (let i = 0; i < 200; ++i)
+    server.setRoute('/fetch?' + i, (req, res) => res.end('url:' + server.PREFIX + req.url));
+
+  // #0 is the navigation request, so start with #1.
+  for (let i = 0; i < 99; ++i)
+    await page.evaluate(url => fetch(url), server.PREFIX + '/fetch?' + i);
+  const first99Requests = await page.requests();
+  first99Requests.shift();
+  for (let i = 99; i < 199; ++i)
+    await page.evaluate(url => fetch(url), server.PREFIX + '/fetch?' + i);
+  const last100Requests = await page.requests();
+  const allRequests = [...first99Requests, ...last100Requests];
+
+  // All 199 requests are fully functional.
+  const received = await Promise.all(allRequests.map(async request => {
+    const response = await request.response();
+    return { text: await response.text(), url: request.url() };
+  }));
+  const expected = [];
+  for (let i = 0; i < 199; ++i) {
+    const url = server.PREFIX + '/fetch?' + i;
+    expected.push({ url, text: 'url:' + url });
+  }
+  expect(received).toEqual(expected);
+});

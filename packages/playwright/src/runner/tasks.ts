@@ -23,7 +23,7 @@ import { debug } from 'playwright-core/lib/utilsBundle';
 
 import { Dispatcher  } from './dispatcher';
 import { FailureTracker } from './failureTracker';
-import { collectProjectsAndTestFiles, createRootSuite, loadFileSuites, loadGlobalHook } from './loadUtils';
+import { collectProjectsAndTestFiles, createRootSuite, loadFileSuites, loadGlobalHook, loadTestList } from './loadUtils';
 import { buildDependentProjects, buildTeardownToSetupsMap, filterProjects } from './projectUtils';
 import { applySuggestedRebaselines, clearSuggestedRebaselines } from './rebase';
 import { TaskRunner } from './taskRunner';
@@ -63,11 +63,12 @@ export class TestRun {
   readonly phases: Phase[] = [];
   projectFiles: Map<FullProjectInternal, string[]> = new Map();
   projectSuites: Map<FullProjectInternal, Suite[]> = new Map();
+  topLevelProjects: FullProjectInternal[] = [];
 
-  constructor(config: FullConfigInternal, reporter: InternalReporter) {
+  constructor(config: FullConfigInternal, reporter: InternalReporter, options?: { pauseOnError?: boolean, pauseAtEnd?: boolean }) {
     this.config = config;
     this.reporter = reporter;
-    this.failureTracker = new FailureTracker(config);
+    this.failureTracker = new FailureTracker(config, options);
   }
 }
 
@@ -232,8 +233,9 @@ export function createListFilesTask(): Task<TestRun> {
   return {
     title: 'load tests',
     setup: async (testRun, errors) => {
-      testRun.rootSuite = await createRootSuite(testRun, errors, false);
-      testRun.failureTracker.onRootSuite(testRun.rootSuite);
+      const { rootSuite, topLevelProjects } = await createRootSuite(testRun, errors, false);
+      testRun.rootSuite = rootSuite;
+      testRun.failureTracker.onRootSuite(rootSuite, topLevelProjects);
       await collectProjectsAndTestFiles(testRun, false);
       for (const [project, files] of testRun.projectFiles) {
         const projectSuite = new Suite(project.project.name, 'project');
@@ -269,10 +271,24 @@ export function createLoadTask(mode: 'out-of-process' | 'in-process', options: {
         testRun.config.preOnlyTestFilters.push(test => changedFiles.has(test.location.file));
       }
 
-      testRun.rootSuite = await createRootSuite(testRun, options.failOnLoadErrors ? errors : softErrors, !!options.filterOnly);
-      testRun.failureTracker.onRootSuite(testRun.rootSuite);
+      if (testRun.config.cliTestList) {
+        const testListFilter = await loadTestList(testRun.config, testRun.config.cliTestList);
+        testRun.config.preOnlyTestFilters.push(testListFilter);
+      }
+
+      if (testRun.config.cliTestListInvert) {
+        const testListInvertFilter = await loadTestList(testRun.config, testRun.config.cliTestListInvert);
+        testRun.config.preOnlyTestFilters.push(test => !testListInvertFilter(test));
+      }
+
+      const { rootSuite, topLevelProjects } = await createRootSuite(testRun, options.failOnLoadErrors ? errors : softErrors, !!options.filterOnly);
+      testRun.rootSuite = rootSuite;
+      testRun.failureTracker.onRootSuite(rootSuite, topLevelProjects);
       // Fail when no tests.
-      if (options.failOnLoadErrors && !testRun.rootSuite.allTests().length && !testRun.config.cliPassWithNoTests && !testRun.config.config.shard && !testRun.config.cliOnlyChanged) {
+      if (options.failOnLoadErrors && !testRun.rootSuite.allTests().length
+          && !testRun.config.cliPassWithNoTests
+          && !testRun.config.config.shard && !testRun.config.cliOnlyChanged
+          && !testRun.config.cliTestList && !testRun.config.cliTestListInvert) {
         if (testRun.config.cliArgs.length) {
           throw new Error([
             `No tests found.`,
