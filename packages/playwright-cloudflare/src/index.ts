@@ -145,16 +145,21 @@ export async function launch(endpoint: BrowserEndpoint, launchOptions?: WorkersL
 
 export async function acquire(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<AcquireResponse> {
   options = { ...extractOptions(endpoint), ...options };
-  let acquireUrl = `${HTTP_FAKE_HOST}/v1/acquire`;
-  if (options?.keep_alive)
-    acquireUrl = `${acquireUrl}?keep_alive=${options.keep_alive}`;
 
+  // add options to acquire endpoint as query parameters
+  const searchParams = new URLSearchParams();
+  if (options?.keep_alive)
+    searchParams.set("keep_alive", options.keep_alive.toString());
+  if (options?.recordingEnabled)
+    searchParams.set("recordingEnabled", options.recordingEnabled.toString());
+
+  const acquireUrl = `${HTTP_FAKE_HOST}/v1/acquire?${searchParams.toString()}`;
   const res = await getBrowserBinding(endpoint).fetch(acquireUrl);
   const status = res.status;
   const text = await res.text();
   if (status !== 200) {
     throw new Error(
-        `Unable to create new browser: code: ${status}: message: ${text}`
+      `Unable to create new browser: code: ${status}: message: ${text}`
     );
   }
   // Got a 200, so response text is actually an AcquireResponse
