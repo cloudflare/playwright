@@ -19,7 +19,7 @@
     "@vitejs/plugin-react": "^5.0.3",
     "playwright-core": "^1.55.0",
     "typescript": "^5.8.3",
-    "vite": "^7.1.7",
+    "vite": "^7.1.11",
     "wrangler": "^4.38.0"
   },
   "dependencies": {
