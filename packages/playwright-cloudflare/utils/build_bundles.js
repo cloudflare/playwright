@@ -70,7 +70,6 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
         rollupOptions: {
           external: [
             'formidable',
-            'ansi-styles',
 
             ...(name === 'pngjs' ? external
               : [...external, 'zlib', 'pngjs'])

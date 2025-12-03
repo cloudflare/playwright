@@ -20,7 +20,6 @@
 // or they were not released in this version of Playwright
 
 import {
-  Accessibility,
   Browser,
   BrowserContext,
   BrowserType,
@@ -60,7 +59,6 @@ import {
 import { apiCallZone } from './apiCallZone';
 
 type ApiTypeMap = {
-  'accessibility': Accessibility,
   // 'android': Android,
   // 'androidDevice': AndroidDevice,
   // 'androidWebView': AndroidWebView,
@@ -109,7 +107,6 @@ type KeysOfAsyncMethods<T> = {
 
 // exhaustive list of async API functions, with explicit flag if they need to be wrapped or not
 const apis: { [ApiK in keyof ApiTypeMap]: [ApiTypeMap[ApiK], { [K in KeysOfAsyncMethods<ApiTypeMap[ApiK]>]: boolean }] } = {
-  accessibility: [Accessibility.prototype, { snapshot: true }],
   // android: [Android.prototype],
   // androidDevice: [AndroidDevice.prototype],
   // androidWebView: [AndroidWebView.prototype],
@@ -372,12 +369,15 @@ const apis: { [ApiK in keyof ApiTypeMap]: [ApiTypeMap[ApiK], { [K in KeysOfAsync
     pdf: true,
     removeLocatorHandler: true,
     requestGC: true,
-    routeWebSocket: true
+    routeWebSocket: true,
+    consoleMessages: true,
+    pageErrors: true,
+    requests: true,
   }],
   selectors: [Selectors.prototype, { register: true }],
   tracing: [Tracing.prototype, { start: true, startChunk: true, stop: true, stopChunk: true, group: false, groupEnd: false }],
   video: [Video.prototype, { delete: true, path: true, saveAs: true }],
-  worker: [Worker.prototype, { evaluate: true, evaluateHandle: true }],
+  worker: [Worker.prototype, { evaluate: true, evaluateHandle: true, waitForEvent: true }],
   session: [CDPSession.prototype, { send: true, detach: true }],
   playwright: [Playwright.prototype, { devices: false }],
   webError: [WebError.prototype, {}],
