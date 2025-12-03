@@ -327,9 +327,9 @@ await context.AddCookiesAsync(new[] { cookie1, cookie2 });
 - `cookies` <[Array]<[Object]>>
   - `name` <[string]>
   - `value` <[string]>
-  - `url` ?<[string]> Either url or domain / path are required. Optional.
-  - `domain` ?<[string]> For the cookie to apply to all subdomains as well, prefix domain with a dot, like this: ".example.com". Either url or domain / path are required. Optional.
-  - `path` ?<[string]> Either url or domain / path are required Optional.
+  - `url` ?<[string]> Either `url` or both `domain` and `path` are required. Optional.
+  - `domain` ?<[string]> For the cookie to apply to all subdomains as well, prefix domain with a dot, like this: ".example.com". Either `url` or both `domain` and `path` are required. Optional.
+  - `path` ?<[string]> Either `url` or both `domain` and `path` are required. Optional.
   - `expires` ?<[float]> Unix time in seconds. Optional.
   - `httpOnly` ?<[boolean]> Optional.
   - `secure` ?<[boolean]> Optional.
@@ -948,6 +948,8 @@ Here are some permissions that may be supported by some browsers:
 * `'clipboard-write'`
 * `'geolocation'`
 * `'gyroscope'`
+* `'local-fonts'`
+* `'local-network-access'`
 * `'magnetometer'`
 * `'microphone'`
 * `'midi-sysex'` (system-exclusive midi)
@@ -955,7 +957,6 @@ Here are some permissions that may be supported by some browsers:
 * `'notifications'`
 * `'payment-handler'`
 * `'storage-access'`
-* `'local-fonts'`
 
 ### option: BrowserContext.grantPermissions.origin
 * since: v1.8

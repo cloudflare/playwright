@@ -59,6 +59,47 @@ test('should filter network requests by resource type', async ({ runUITest, serv
   await expect(networkItems.getByText('font.woff2')).toBeVisible();
 });
 
+test('should filter network requests by multiple resource types', async ({ runUITest, server }) => {
+  server.setRoute('/api/endpoint', (_, res) => res.setHeader('Content-Type', 'application/json').end());
+
+  const { page } = await runUITest({
+    'network-tab.test.ts': `
+      import { test, expect } from '@playwright/test';
+      test('network tab test', async ({ page }) => {
+        await page.goto('${server.PREFIX}/network-tab/network.html');
+        await page.evaluate(() => (window as any).donePromise);
+      });
+    `,
+  });
+
+  await page.getByText('network tab test').dblclick();
+  await page.getByText('Network', { exact: true }).click();
+
+  const networkItems = page.getByRole('list', { name: 'Network requests' }).getByRole('listitem');
+  await expect(networkItems).toHaveCount(9);
+
+  await page.getByText('JS', { exact: true }).click();
+  await expect(networkItems).toHaveCount(1);
+  await expect(networkItems.getByText('script.js')).toBeVisible();
+
+  await page.getByText('CSS', { exact: true }).click({ modifiers: ['ControlOrMeta'] });
+  await expect(networkItems.getByText('script.js')).toBeVisible();
+  await expect(networkItems.getByText('style.css')).toBeVisible();
+  await expect(networkItems).toHaveCount(2);
+
+  await page.getByText('Image', { exact: true }).click({ modifiers: ['ControlOrMeta'] });
+  await expect(networkItems.getByText('image.png')).toBeVisible();
+  await expect(networkItems).toHaveCount(3);
+
+  await page.getByText('CSS', { exact: true }).click({ modifiers: ['ControlOrMeta'] });
+  await expect(networkItems).toHaveCount(2);
+  await expect(networkItems.getByText('script.js')).toBeVisible();
+  await expect(networkItems.getByText('image.png')).toBeVisible();
+
+  await page.getByText('All', { exact: true }).click();
+  await expect(networkItems).toHaveCount(9);
+});
+
 test('should filter network requests by url', async ({ runUITest, server }) => {
   const { page } = await runUITest({
     'network-tab.test.ts': `
@@ -155,14 +196,14 @@ test('should display list of query parameters (only if present)', async ({ runUI
 
   await page.getByText('call-with-query-params').click();
 
-  await expect(page.getByText('Query String Parameters')).toBeVisible();
-  await expect(page.getByText('param1: value1')).toBeVisible();
-  await expect(page.getByText('param1: value2')).toBeVisible();
-  await expect(page.getByText('param2: value2')).toBeVisible();
+  const region = page.getByRole('region', { name: 'Query String Parameters' });
+  await expect(region.getByText('param1: value1')).toBeVisible();
+  await expect(region.getByText('param1: value2')).toBeVisible();
+  await expect(region.getByText('param2: value2')).toBeVisible();
 
   await page.getByText('endpoint').click();
 
-  await expect(page.getByText('Query String Parameters')).not.toBeVisible();
+  await expect(region).toBeHidden();
 });
 
 test('should not duplicate network entries from beforeAll', {
@@ -201,28 +242,37 @@ test('should not duplicate network entries from beforeAll', {
   await expect(page.getByRole('list', { name: 'Network requests' }).getByText('empty.html')).toHaveCount(1);
 });
 
-test('should not preserve selection across test runs', async ({ runUITest, server }) => {
-  server.setRoute('/api/endpoint', (_, res) => res.setHeader('Content-Type', 'application/json').end());
-
+test('should toggle sections inside network details', async ({ runUITest, server }) => {
   const { page } = await runUITest({
-    'a.spec.ts': `
-      import { test } from '@playwright/test';
-
-      test('some test', async ({ page }) => {
+    'network-tab.test.ts': `
+      import { test, expect } from '@playwright/test';
+      test('network tab test', async ({ page }) => {
         await page.goto('${server.PREFIX}/network-tab/network.html');
-        // await page.evaluate(() => (window as any).donePromise);
+        await page.evaluate(() => (window as any).donePromise);
       });
     `,
   });
 
-  await page.getByText('some test').dblclick();
-  await page.getByText('Network', { exact: true }).click();
+  await page.getByRole('treeitem', { name: 'network tab test' }).dblclick();
+  await page.getByRole('tab', { name: 'Network' }).click();
+  await page.getByRole('listitem').filter({ hasText: 'post-data-1' }).click();
+  const requestPanel = page.getByRole('tabpanel', { name: 'Request' });
 
-  await page.getByText('network.html', { exact: true }).click();
-  await expect(page.getByText('General')).toBeVisible();
+  await requestPanel.getByRole('button', { name: 'Request Headers' }).click();
+  await expect(requestPanel.getByRole('region', { name: 'Request Headers' })).toBeHidden();
+  await expect(requestPanel.getByRole('region', { name: 'Time' })).toHaveText(/Start: .+Duration: \d+ms/);
 
-  await page.getByText('some test').dblclick();
-  await expect(page.getByText('network.html', { exact: true })).toBeVisible();
+  await requestPanel.getByRole('button', { name: 'Time' }).click();
+  await expect(requestPanel.getByRole('region', { name: 'Request Headers' })).toBeHidden();
+  await expect(requestPanel.getByRole('region', { name: 'Time' })).toBeHidden();
 
-  await expect(page.getByText('General')).not.toBeVisible();
+  await requestPanel.getByRole('button', { name: 'Time' }).click();
+  await expect(requestPanel.getByRole('region', { name: 'Request Headers' })).toBeHidden();
+  await expect(requestPanel.getByRole('region', { name: 'Time' })).toHaveText(/Start: .+Duration: \d+ms/);
+
+  // Re-opening should preserve open state
+  await page.getByRole('tabpanel', { name: 'Network' }).getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('listitem').filter({ hasText: 'post-data-1' }).click();
+  await expect(requestPanel.getByRole('region', { name: 'Request Headers' })).toBeHidden();
+  await expect(requestPanel.getByRole('region', { name: 'Time' })).toHaveText(/Start: .+Duration: \d+ms/);
 });

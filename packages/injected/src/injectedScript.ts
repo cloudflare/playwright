@@ -92,7 +92,8 @@ export class InjectedScript {
   readonly window: Window & typeof globalThis;
   readonly document: Document;
   readonly consoleApi: ConsoleAPI;
-  private _lastAriaSnapshot: AriaSnapshot | undefined;
+  private _lastAriaSnapshotForTrack = new Map<string, AriaSnapshot>();
+  private _lastAriaSnapshotForQuery: AriaSnapshot | undefined;
 
   // Recorder must use any external dependencies through InjectedScript.
   // Otherwise it will end up with a copy of all modules it uses, and any
@@ -300,10 +301,23 @@ export class InjectedScript {
   }
 
   ariaSnapshot(node: Node, options: AriaTreeOptions): string {
+    return this.incrementalAriaSnapshot(node, options).full;
+  }
+
+  incrementalAriaSnapshot(node: Node, options: AriaTreeOptions & { track?: string }): { full: string, incremental?: string, iframeRefs: string[] } {
     if (node.nodeType !== Node.ELEMENT_NODE)
       throw this.createStacklessError('Can only capture aria snapshot of Element nodes.');
-    this._lastAriaSnapshot = generateAriaTree(node as Element, options);
-    return renderAriaTree(this._lastAriaSnapshot, options);
+    const ariaSnapshot = generateAriaTree(node as Element, options);
+    const full = renderAriaTree(ariaSnapshot, options);
+    let incremental: string | undefined;
+    if (options.track) {
+      const previousSnapshot = this._lastAriaSnapshotForTrack.get(options.track);
+      if (previousSnapshot)
+        incremental = renderAriaTree(ariaSnapshot, options, previousSnapshot);
+      this._lastAriaSnapshotForTrack.set(options.track, ariaSnapshot);
+    }
+    this._lastAriaSnapshotForQuery = ariaSnapshot;
+    return { full, incremental, iframeRefs: ariaSnapshot.iframeRefs };
   }
 
   ariaSnapshotForRecorder(): { ariaSnapshot: string, refs: Map<Element, string> } {
@@ -692,7 +706,7 @@ export class InjectedScript {
 
   _createAriaRefEngine() {
     const queryAll = (root: SelectorRoot, selector: string): Element[] => {
-      const result = this._lastAriaSnapshot?.elements?.get(selector);
+      const result = this._lastAriaSnapshotForQuery?.elements?.get(selector);
       return result && result.isConnected ? [result] : [];
     };
     return { queryAll };
@@ -989,7 +1003,9 @@ export class InjectedScript {
     const hitParents: Element[] = [];
     while (hitElement && hitElement !== targetElement) {
       hitParents.push(hitElement);
-      hitElement = parentElementOrShadowHost(hitElement);
+      // Prefer the composed tree over the light-dom tree, as browser performs hit testing on the composed tree.
+      // Note that we will still eventually climb to the light-dom parent, as any element distributed to a slot is a direct child of the shadow host that contains the slot.
+      hitElement = hitElement.assignedSlot ?? parentElementOrShadowHost(hitElement);
     }
     if (hitElement === targetElement)
       return 'done';

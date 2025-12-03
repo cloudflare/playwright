@@ -15,7 +15,6 @@
  */
 
 import { z } from '../sdk/bundle';
-import ListReporter from '../../reporters/list';
 import ListModeReporter from '../../reporters/listModeReporter';
 import { defineTestTool } from './testTool';
 
@@ -28,13 +27,11 @@ export const listTests = defineTestTool({
     type: 'readOnly',
   },
 
-  handle: async (context, _, progress) => {
-    const { screen } = context.createScreen(progress);
+  handle: async context => {
+    const { testRunner, screen, output } = await context.createTestRunner();
     const reporter = new ListModeReporter({ screen, includeTestId: true });
-    const testRunner = await context.createTestRunner();
     await testRunner.listTests(reporter, {});
-
-    return { content: [] };
+    return { content: output.map(text => ({ type: 'text', text })) };
   },
 });
 
@@ -50,18 +47,13 @@ export const runTests = defineTestTool({
     type: 'readOnly',
   },
 
-  handle: async (context, params, progress) => {
-    const { screen } = context.createScreen(progress);
-    const configDir = context.configLocation.configDir;
-    const reporter = new ListReporter({ configDir, screen, includeTestId: true, prefixStdio: 'out' });
-    const testRunner = await context.createTestRunner();
-    await testRunner.runTests(reporter, {
+  handle: async (context, params) => {
+    const { output } = await context.runTestsWithGlobalSetupAndPossiblePause({
       locations: params.locations,
       projects: params.projects,
       disableConfigReporters: true,
     });
-
-    return { content: [] };
+    return { content: [{ type: 'text', text: output }] };
   },
 });
 
@@ -79,21 +71,17 @@ export const debugTest = defineTestTool({
     type: 'readOnly',
   },
 
-  handle: async (context, params, progress) => {
-    const { screen } = context.createScreen(progress);
-    const configDir = context.configLocation.configDir;
-    const reporter = new ListReporter({ configDir, screen, includeTestId: true, prefixStdio: 'out' });
-    const testRunner = await context.createTestRunner();
-    await testRunner.runTests(reporter, {
-      headed: !context.options?.headless,
+  handle: async (context, params) => {
+    const { output, status } = await context.runTestsWithGlobalSetupAndPossiblePause({
+      headed: context.computedHeaded,
       testIds: [params.test.id],
       // For automatic recovery
       timeout: 0,
       workers: 1,
       pauseOnError: true,
       disableConfigReporters: true,
+      actionTimeout: 5000,
     });
-
-    return { content: [] };
+    return { content: [{ type: 'text', text: output }], isError: status !== 'paused' && status !== 'passed' };
   },
 });

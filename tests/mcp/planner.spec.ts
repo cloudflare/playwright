@@ -58,6 +58,7 @@ test('planner_setup_page', async ({ startClient }) => {
     arguments: {
       element: 'Submit button',
       ref: 'e2',
+      intent: 'Click on the "Submit" button',
     },
   })).toHaveResponse({
     code: `await page.getByRole('button', { name: 'Submit' }).click();`,
@@ -183,6 +184,7 @@ test('planner_setup_page (loading error)', async ({ startClient }) => {
 });
 
 test('planner_setup_page (wrong test location)', async ({ startClient }) => {
+  await writeFiles({});
   const { client } = await startClient();
   expect(await client.callTool({
     name: 'planner_setup_page',
@@ -196,6 +198,7 @@ test('planner_setup_page (wrong test location)', async ({ startClient }) => {
 });
 
 test('planner_setup_page (no test location)', async ({ startClient }) => {
+  await writeFiles({});
   const { client } = await startClient();
   expect(await client.callTool({
     name: 'planner_setup_page',

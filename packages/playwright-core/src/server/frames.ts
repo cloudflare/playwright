@@ -101,10 +101,15 @@ export class FrameManager {
   readonly _consoleMessageTags = new Map<string, ConsoleTagHandler>();
   readonly _signalBarriers = new Set<SignalBarrier>();
   private _webSockets = new Map<string, network.WebSocket>();
+  private _nextFrameSeq = 0;
 
   constructor(page: Page) {
     this._page = page;
     this._mainFrame = undefined as any as Frame;
+  }
+
+  nextFrameSeq() {
+    return this._nextFrameSeq++;
   }
 
   createDummyMainFrameIfNeeded() {
@@ -444,6 +449,7 @@ export class Frame extends SdkObject {
   };
 
   _id: string;
+  readonly seq: number;
   _firedLifecycleEvents = new Set<types.LifecycleEvent>();
   private _firedNetworkIdleSelf = false;
   _currentDocument: DocumentInfo;
@@ -465,6 +471,7 @@ export class Frame extends SdkObject {
   constructor(page: Page, id: string, parentFrame: Frame | null) {
     super(page, 'frame');
     this.attribution.frame = this;
+    this.seq = page.frameManager.nextFrameSeq();
     this._id = id;
     this._page = page;
     this._parentFrame = parentFrame;
@@ -1161,7 +1168,7 @@ export class Frame extends SdkObject {
     // Note: do not perform locator handlers checkpoint to avoid moving the mouse in the middle of a drag operation.
     dom.assertDone(await this._retryWithProgressIfNotConnected(progress, target, options.strict, false /* performActionPreChecks */, async handle => {
       return handle._retryPointerAction(progress, 'move and up', false, async point => {
-        await this._page.mouse.move(progress, point.x, point.y);
+        await this._page.mouse.move(progress, point.x, point.y, { steps: options.steps });
         await this._page.mouse.up(progress);
       }, {
         ...options,
@@ -1444,10 +1451,12 @@ export class Frame extends SdkObject {
       progress.log(log);
     // Note: missingReceived avoids `unexpected value "undefined"` when element was not found.
     if (matches === options.isNot) {
-      if (missingReceived)
+      if (missingReceived) {
         lastIntermediateResult.errorMessage = 'Error: element(s) not found';
-      else
+      } else {
+        lastIntermediateResult.errorMessage = undefined;
         lastIntermediateResult.received = received;
+      }
       lastIntermediateResult.isSet = true;
       if (!missingReceived && !Array.isArray(received))
         progress.log(`  unexpected value "${renderUnexpectedValue(options.expression, received)}"`);

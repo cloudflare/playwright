@@ -30,6 +30,7 @@ export default defineConfig({
   ],
   define: {
     'process.env': {},
+    '__APP_VERSION__': JSON.stringify(process.env.npm_package_version),
   },
   resolve: {
     alias: {
@@ -43,7 +44,7 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve(__dirname, '../playwright-core/lib/vite/traceViewer'),
-    emptyOutDir: true,
+    emptyOutDir: false,
     rollupOptions: {
       input: {
         index: path.resolve(__dirname, 'index.html'),

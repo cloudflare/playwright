@@ -946,3 +946,60 @@ test('should throw helpful error when command is empty', async ({ runInlineTest 
   expect(result.exitCode).toBe(1);
   expect(result.output).toContain('config.webServer.command cannot be empty');
 });
+
+for (const stdio of ['stdout', 'stderr']) {
+  test(`should wait for ${stdio}`, async ({ runInlineTest }) => {
+    const result = await runInlineTest({
+      'test.spec.ts': `
+        import { test, expect } from '@playwright/test';
+        test('pass', async ({}) => {});
+      `,
+      'server.js': `
+        setTimeout(() => { console.${stdio === 'stdout' ? 'log' : 'error'}('server started'); }, 1000);
+        setTimeout(() => {}, 100000);
+      `,
+      'playwright.config.ts': `
+        module.exports = {
+          webServer: [
+            {
+              command: 'node server.js',
+              stdout: 'pipe',
+              wait: { ${stdio}: /started/ },
+            }
+          ],
+        };
+      `,
+    }, undefined);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain('server started');
+  });
+
+  test(`should wait for ${stdio} w/group`, async ({ runInlineTest }) => {
+    const result = await runInlineTest({
+      'test.spec.ts': `
+        import { test, expect } from '@playwright/test';
+        test('pass', async ({}) => {
+          console.log('My server port is ' + process.env['MY_SERVER_PORT']);
+        });
+      `,
+      'server.js': `
+        setTimeout(() => { console.${stdio === 'stdout' ? 'log' : 'error'}('Listening on port 123'); }, 1000);
+        setTimeout(() => {}, 100000);
+      `,
+      'playwright.config.ts': `
+        module.exports = {
+          webServer: [
+            {
+              command: 'node server.js',
+              stdout: 'pipe',
+              wait: { ${stdio}: /Listening on port (?<my_server_port>\\d+)/ },
+            }
+          ],
+        };
+      `,
+    }, undefined);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain('Listening on port 123');
+    expect(result.output).toContain('My server port is 123');
+  });
+}

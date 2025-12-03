@@ -24,6 +24,8 @@ import { clsx, useFlash } from '@web/uiUtils';
 import { trace } from './icons';
 import { Expandable } from './expandable';
 import { Label } from './labels';
+import { filterWithQuery } from './filter';
+import { formatUrl } from './utils';
 
 export function navigate(href: string | URL) {
   window.history.pushState({}, '', href);
@@ -35,7 +37,7 @@ export const Route: React.FunctionComponent<{
   predicate: (params: URLSearchParams) => boolean,
   children: any
 }> = ({ predicate, children }) => {
-  const searchParams = React.useContext(SearchParamsContext);
+  const searchParams = useSearchParams();
   return predicate(searchParams) ? children : null;
 };
 
@@ -51,7 +53,7 @@ export const Link: React.FunctionComponent<LinkProps> = ({ click, ctrlClick, chi
   return <a {...rest} style={{ textDecoration: 'none', color: 'var(--color-fg-default)', cursor: 'pointer' }} onClick={e => {
     if (click) {
       e.preventDefault();
-      navigate(e.metaKey || e.ctrlKey ? ctrlClick || click : click);
+      navigate(formatUrl(e.metaKey || e.ctrlKey ? ctrlClick || click : click));
     }
   }}>{children}</a>;
 };
@@ -61,10 +63,12 @@ export const LinkBadge: React.FunctionComponent<LinkProps & { dim?: boolean }> =
 export const ProjectLink: React.FunctionComponent<{
   projectNames: string[],
   projectName: string,
-}> = ({ projectNames, projectName }) => {
-  const encoded = encodeURIComponent(projectName);
-  const value = projectName === encoded ? projectName : `"${encoded.replace(/%22/g, '%5C%22')}"`;
-  return <Link href={`#?q=p:${value}`}>
+}> = ({  projectNames, projectName }) => {
+  const searchParams = useSearchParams();
+  if (searchParams.has('testId'))
+    searchParams.delete('speedboard');
+  searchParams.delete('testId');
+  return <Link click={filterWithQuery(searchParams, `p:${projectName}`, false)} ctrlClick={filterWithQuery(searchParams, `p:${projectName}`, true)}>
     <Label label={projectName} colorIndex={projectNames.indexOf(projectName) % 6} />
   </Link>;
 };
@@ -84,8 +88,8 @@ export const AttachmentLink: React.FunctionComponent<{
       {attachment.contentType === kMissingContentType ? icons.warning() : icons.attachment()}
       {attachment.path && (
         openInNewTab
-          ? <a href={href || attachment.path} target='_blank' rel='noreferrer'>{linkName || attachment.name}</a>
-          : <a href={href || attachment.path} download={downloadFileNameForAttachment(attachment)}>{linkName || attachment.name}</a>
+          ? <a href={formatUrl(href || attachment.path)} target='_blank' rel='noreferrer'>{linkName || attachment.name}</a>
+          : <a href={formatUrl(href || attachment.path)} download={downloadFileNameForAttachment(attachment)}>{linkName || attachment.name}</a>
       )}
       {!attachment.path && (
         openInNewTab
@@ -137,7 +141,7 @@ export const TraceLink: React.FC<{ test: TestCaseSummary, trailingSeparator?: bo
   return (
     <>
       <LinkBadge
-        href={generateTraceUrl(firstTraces)}
+        href={formatUrl(generateTraceUrl(firstTraces))}
         title='View Trace'
         className='button trace-link'
         dim={dim}>
@@ -149,7 +153,11 @@ export const TraceLink: React.FC<{ test: TestCaseSummary, trailingSeparator?: bo
   );
 };
 
-export const SearchParamsContext = React.createContext<URLSearchParams>(new URLSearchParams(window.location.hash.slice(1)));
+const SearchParamsContext = React.createContext<URLSearchParams>(new URLSearchParams(window.location.hash.slice(1)));
+
+export function useSearchParams() {
+  return new URLSearchParams(React.useContext(SearchParamsContext));
+}
 
 export const SearchParamsProvider: React.FunctionComponent<React.PropsWithChildren> = ({ children }) => {
   const [searchParams, setSearchParams] = React.useState<URLSearchParams>(new URLSearchParams(window.location.hash.slice(1)));
@@ -181,7 +189,7 @@ const kMissingContentType = 'x-playwright/missing';
 export type AnchorID = string | string[] | ((id: string) => boolean) | undefined;
 
 export function useAnchor(id: AnchorID, onReveal: React.EffectCallback) {
-  const searchParams = React.useContext(SearchParamsContext);
+  const searchParams = useSearchParams();
   const isAnchored = useIsAnchored(id);
   React.useEffect(() => {
     if (isAnchored)
@@ -190,7 +198,7 @@ export function useAnchor(id: AnchorID, onReveal: React.EffectCallback) {
 }
 
 export function useIsAnchored(id: AnchorID) {
-  const searchParams = React.useContext(SearchParamsContext);
+  const searchParams = useSearchParams();
   const anchor = searchParams.get('anchor');
   if (anchor === null)
     return false;
@@ -213,8 +221,8 @@ export function Anchor({ id, children }: React.PropsWithChildren<{ id: AnchorID 
   return <div ref={ref}>{children}</div>;
 }
 
-export function testResultHref({ test, result, anchor }: { test?: TestCase | TestCaseSummary, result?: TestResult | TestResultSummary, anchor?: string }) {
-  const params = new URLSearchParams();
+export function testResultHref({ test, result, anchor }: { test?: TestCase | TestCaseSummary, result?: TestResult | TestResultSummary, anchor?: string }, searchParams: URLSearchParams) {
+  const params = new URLSearchParams(searchParams);
   if (test)
     params.set('testId', test.testId);
   if (test && result)

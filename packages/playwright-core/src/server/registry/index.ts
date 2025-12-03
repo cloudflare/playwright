@@ -26,7 +26,7 @@ import { installDependenciesLinux, installDependenciesWindows, validateDependenc
 import { calculateSha1, getAsBooleanFromENV, getFromENV, getPackageManagerExecCommand } from '../../utils';
 import { wrapInASCIIBox } from '../utils/ascii';
 import { debugLogger } from '../utils/debugLogger';
-import {  hostPlatform, isOfficiallySupportedPlatform } from '../utils/hostPlatform';
+import { shortPlatform, hostPlatform, isOfficiallySupportedPlatform } from '../utils/hostPlatform';
 import { fetchData, NET_DEFAULT_TIMEOUT } from '../utils/network';
 import { spawnAsync } from '../utils/spawnAsync';
 import { getEmbedderName } from '../utils/userAgent';
@@ -60,34 +60,68 @@ if (process.env.PW_TEST_CDN_THAT_SHOULD_WORK) {
 
 const EXECUTABLE_PATHS = {
   'chromium': {
-    'linux': ['chrome-linux', 'chrome'],
-    'mac': ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
-    'win': ['chrome-win', 'chrome.exe'],
+    '<unknown>': undefined,
+    'linux-x64': ['chrome-linux64', 'chrome'],
+    'linux-arm64': ['chrome-linux', 'chrome'],  // non-cft build
+    'mac-x64': ['chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+    'mac-arm64': ['chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+    'win-x64': ['chrome-win64', 'chrome.exe'],
   },
   'chromium-headless-shell': {
-    'linux': ['chrome-linux', 'headless_shell'],
-    'mac': ['chrome-mac', 'headless_shell'],
-    'win': ['chrome-win', 'headless_shell.exe'],
+    '<unknown>': undefined,
+    'linux-x64': ['chrome-headless-shell-linux64', 'chrome-headless-shell'],
+    'linux-arm64': ['chrome-linux', 'headless_shell'],  // non-cft build
+    'mac-x64': ['chrome-headless-shell-mac-x64', 'chrome-headless-shell'],
+    'mac-arm64': ['chrome-headless-shell-mac-arm64', 'chrome-headless-shell'],
+    'win-x64': ['chrome-headless-shell-win64', 'chrome-headless-shell.exe'],
+  },
+  'chromium-tip-of-tree': {
+    '<unknown>': undefined,
+    'linux-x64': ['chrome-linux64', 'chrome'],
+    'linux-arm64': ['chrome-linux', 'chrome'],  // non-cft build
+    'mac-x64': ['chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+    'mac-arm64': ['chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+    'win-x64': ['chrome-win64', 'chrome.exe'],
+  },
+  'chromium-tip-of-tree-headless-shell': {
+    '<unknown>': undefined,
+    'linux-x64': ['chrome-headless-shell-linux64', 'chrome-headless-shell'],
+    'linux-arm64': ['chrome-linux', 'headless_shell'],  // non-cft build
+    'mac-x64': ['chrome-headless-shell-mac-x64', 'chrome-headless-shell'],
+    'mac-arm64': ['chrome-headless-shell-mac-arm64', 'chrome-headless-shell'],
+    'win-x64': ['chrome-headless-shell-win64', 'chrome-headless-shell.exe'],
   },
   'firefox': {
-    'linux': ['firefox', 'firefox'],
-    'mac': ['firefox', 'Nightly.app', 'Contents', 'MacOS', 'firefox'],
-    'win': ['firefox', 'firefox.exe'],
+    '<unknown>': undefined,
+    'linux-x64': ['firefox', 'firefox'],
+    'linux-arm64': ['firefox', 'firefox'],
+    'mac-x64': ['firefox', 'Nightly.app', 'Contents', 'MacOS', 'firefox'],
+    'mac-arm64': ['firefox', 'Nightly.app', 'Contents', 'MacOS', 'firefox'],
+    'win-x64': ['firefox', 'firefox.exe'],
   },
   'webkit': {
-    'linux': ['pw_run.sh'],
-    'mac': ['pw_run.sh'],
-    'win': ['Playwright.exe'],
+    '<unknown>': undefined,
+    'linux-x64': ['pw_run.sh'],
+    'linux-arm64': ['pw_run.sh'],
+    'mac-x64': ['pw_run.sh'],
+    'mac-arm64': ['pw_run.sh'],
+    'win-x64': ['Playwright.exe'],
   },
   'ffmpeg': {
-    'linux': ['ffmpeg-linux'],
-    'mac': ['ffmpeg-mac'],
-    'win': ['ffmpeg-win64.exe'],
+    '<unknown>': undefined,
+    'linux-x64': ['ffmpeg-linux'],
+    'linux-arm64': ['ffmpeg-linux'],
+    'mac-x64': ['ffmpeg-mac'],
+    'mac-arm64': ['ffmpeg-mac'],
+    'win-x64': ['ffmpeg-win64.exe'],
   },
   'winldd': {
-    'linux': undefined,
-    'mac': undefined,
-    'win': ['PrintDeps.exe'],
+    '<unknown>': undefined,
+    'linux-x64': undefined,
+    'linux-arm64': undefined,
+    'mac-x64': undefined,
+    'mac-arm64': undefined,
+    'win-x64': ['PrintDeps.exe'],
   },
 };
 
@@ -403,11 +437,6 @@ const DOWNLOAD_PATHS: Record<BrowserName | InternalTool, DownloadPaths> = {
     'mac15-arm64': 'builds/android/%s/android.zip',
     'win64': 'builds/android/%s/android.zip',
   },
-  // TODO(bidi): implement downloads.
-  '_bidiFirefox': {
-  } as DownloadPaths,
-  '_bidiChromium': {
-  } as DownloadPaths,
 };
 
 export const registryDirectory = (() => {
@@ -502,7 +531,7 @@ function readDescriptors(browsersJSON: BrowsersJSON): BrowsersJSONDescriptor[] {
   });
 }
 
-export type BrowserName = 'chromium' | 'firefox' | 'webkit' | '_bidiFirefox' | '_bidiChromium';
+export type BrowserName = 'chromium' | 'firefox' | 'webkit';
 type InternalTool = 'ffmpeg' | 'winldd' | 'firefox-beta' | 'chromium-tip-of-tree' | 'chromium-headless-shell' | 'chromium-tip-of-tree-headless-shell' | 'android';
 type BidiChannel = 'moz-firefox' | 'moz-firefox-beta' | 'moz-firefox-nightly' | 'bidi-chrome-canary' | 'bidi-chrome-stable' | 'bidi-chromium';
 type ChromiumChannel = 'chrome' | 'chrome-beta' | 'chrome-dev' | 'chrome-canary' | 'msedge' | 'msedge-beta' | 'msedge-dev' | 'msedge-canary';
@@ -534,13 +563,7 @@ export class Registry {
   constructor(browsersJSON: BrowsersJSON) {
     const descriptors = readDescriptors(browsersJSON);
     const findExecutablePath = (dir: string, name: keyof typeof EXECUTABLE_PATHS) => {
-      let tokens = undefined;
-      if (process.platform === 'linux')
-        tokens = EXECUTABLE_PATHS[name]['linux'];
-      else if (process.platform === 'darwin')
-        tokens = EXECUTABLE_PATHS[name]['mac'];
-      else if (process.platform === 'win32')
-        tokens = EXECUTABLE_PATHS[name]['win'];
+      const tokens = EXECUTABLE_PATHS[name][shortPlatform];
       return tokens ? path.join(dir, ...tokens) : undefined;
     };
     const executablePathOrDie = (name: string, e: string | undefined, installByDefault: boolean, sdkLanguage: string) => {
@@ -609,7 +632,7 @@ export class Registry {
     });
 
     const chromiumTipOfTreeHeadlessShell = descriptors.find(d => d.name === 'chromium-tip-of-tree-headless-shell')!;
-    const chromiumTipOfTreeHeadlessShellExecutable = findExecutablePath(chromiumTipOfTreeHeadlessShell.dir, 'chromium-headless-shell');
+    const chromiumTipOfTreeHeadlessShellExecutable = findExecutablePath(chromiumTipOfTreeHeadlessShell.dir, 'chromium-tip-of-tree-headless-shell');
     this._executables.push({
       type: 'channel',
       name: 'chromium-tip-of-tree-headless-shell',
@@ -627,7 +650,7 @@ export class Registry {
     });
 
     const chromiumTipOfTree = descriptors.find(d => d.name === 'chromium-tip-of-tree')!;
-    const chromiumTipOfTreeExecutable = findExecutablePath(chromiumTipOfTree.dir, 'chromium');
+    const chromiumTipOfTreeExecutable = findExecutablePath(chromiumTipOfTree.dir, 'chromium-tip-of-tree');
     this._executables.push({
       type: 'tool',
       name: 'chromium-tip-of-tree',
@@ -739,9 +762,9 @@ export class Registry {
       'win32': `\\Google\\Chrome SxS\\Application\\chrome.exe`,
     }));
     this._executables.push({
-      type: 'browser',
-      name: '_bidiChromium',
-      browserName: '_bidiChromium',
+      type: 'channel',
+      name: 'bidi-chromium',
+      browserName: 'chromium',
       directory: chromium.dir,
       executablePath: () => chromiumExecutable,
       executablePathOrDie: (sdkLanguage: string) => executablePathOrDie('chromium', chromiumExecutable, chromium.installByDefault, sdkLanguage),
@@ -822,9 +845,8 @@ export class Registry {
       name: 'webkit-wsl',
       browserName: 'webkit',
       directory: webkit.dir,
-      executablePath: () => process.execPath,
-      executablePathOrDie: () => process.execPath,
-      wslExecutablePath: `/home/pwuser/.cache/ms-playwright/webkit-${webkit.revision}/pw_run.sh`,
+      executablePath: () => webkitExecutable,
+      executablePathOrDie: (sdkLanguage: string) => executablePathOrDie('webkit', webkitExecutable, webkit.installByDefault, sdkLanguage),
       installType: 'download-on-demand',
       _validateHostRequirements: (sdkLanguage: string) => Promise.resolve(),
       _isHermeticInstallation: true,
@@ -958,13 +980,13 @@ export class Registry {
           return executablePath;
       }
       if (shouldThrow)
-        throw new Error(`Cannot find Firefox installation for channel '${name}' at the standard system paths.`);
+        throw new Error(`Cannot find Firefox installation for channel '${name}' at the standard system paths. ${`Tried paths:\n  ${prefixes.map(p => path.join(p, suffix)).join('\n  ')}`}`);
       return undefined;
     };
     return {
       type: 'channel',
       name,
-      browserName: '_bidiFirefox',
+      browserName: 'firefox',
       directory: undefined,
       executablePath: (sdkLanguage: string) => executablePath(sdkLanguage, false),
       executablePathOrDie: (sdkLanguage: string) => executablePath(sdkLanguage, true)!,
@@ -1007,7 +1029,7 @@ export class Registry {
     return {
       type: 'channel',
       name,
-      browserName: '_bidiChromium',
+      browserName: 'chromium',
       directory: undefined,
       executablePath: (sdkLanguage: string) => executablePath(sdkLanguage, false),
       executablePathOrDie: (sdkLanguage: string) => executablePath(sdkLanguage, true)!,
@@ -1057,7 +1079,7 @@ export class Registry {
       return await installDependenciesLinux(targets, dryRun);
   }
 
-  async install(executablesToInstall: Executable[], forceReinstall: boolean) {
+  async install(executablesToInstall: Executable[], options?: { force?: boolean }) {
     const executables = this._dedupe(executablesToInstall);
     await fs.promises.mkdir(registryDirectory, { recursive: true });
     const lockfilePath = path.join(registryDirectory, '__dirlock');
@@ -1092,7 +1114,7 @@ export class Registry {
           throw new Error(`ERROR: Playwright does not support installing ${executable.name}`);
 
         const { embedderName } = getEmbedderName();
-        if (!getAsBooleanFromENV('CI') && !executable._isHermeticInstallation && !forceReinstall && executable.executablePath(embedderName)) {
+        if (!getAsBooleanFromENV('CI') && !executable._isHermeticInstallation && !options?.force && executable.executablePath(embedderName)) {
           const command = buildPlaywrightCLICommand(embedderName, 'install --force ' + executable.name);
           // eslint-disable-next-line no-restricted-properties
           process.stderr.write('\n' + wrapInASCIIBox([
@@ -1371,6 +1393,54 @@ export class Registry {
     for (const linkPath of brokenLinks)
       await fs.promises.unlink(linkPath).catch(e => {});
   }
+
+  private _defaultBrowsersToInstall(options: { shell?: 'no' | 'only' }): Executable[] {
+    let executables = this.defaultExecutables();
+    if (options.shell === 'no')
+      executables = executables.filter(e => e.name !== 'chromium-headless-shell');
+    if (options.shell === 'only')
+      executables = executables.filter(e => e.name !== 'chromium');
+    return executables;
+  }
+
+  suggestedBrowsersToInstall(): string {
+    return this.executables().filter(e => e.installType !== 'none' && e.type !== 'tool').map(e => e.name).join(', ');
+  }
+
+  resolveBrowsers(aliases: string[], options: { shell?: 'no' | 'only' }): Executable[] {
+    if (aliases.length === 0)
+      return this._defaultBrowsersToInstall(options);
+
+    const faultyArguments: string[] = [];
+    const executables: Executable[] = [];
+    const handleArgument = (arg: string) => {
+      const executable = this.findExecutable(arg);
+      if (!executable || executable.installType === 'none')
+        faultyArguments.push(arg);
+      else
+        executables.push(executable);
+      if (executable?.browserName === 'chromium')
+        executables.push(this.findExecutable('ffmpeg')!);
+    };
+
+    for (const alias of aliases) {
+      if (alias === 'chromium') {
+        if (options.shell !== 'only')
+          handleArgument('chromium');
+        if (options.shell !== 'no')
+          handleArgument('chromium-headless-shell');
+      } else {
+        handleArgument(alias);
+      }
+    }
+
+    if (process.platform === 'win32')
+      executables.push(this.findExecutable('winldd')!);
+
+    if (faultyArguments.length)
+      throw new Error(`Invalid installation targets: ${faultyArguments.map(name => `'${name}'`).join(', ')}. Expecting one of: ${this.suggestedBrowsersToInstall()}`);
+    return executables;
+  }
 }
 
 export function browserDirectoryToMarkerFilePath(browserDirectory: string): string {
@@ -1408,7 +1478,7 @@ export async function installBrowsersForNpmInstall(browsers: string[]) {
     executables.push(executable);
   }
 
-  await registry.install(executables, false /* forceReinstall */);
+  await registry.install(executables);
 }
 
 // for launchApp -> UI Mode / Trace Viewer

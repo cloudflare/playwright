@@ -23,21 +23,34 @@ export const Expandable: React.FunctionComponent<React.PropsWithChildren<{
   setExpanded: (expanded: boolean) => void,
   expanded: boolean,
   expandOnTitleClick?: boolean,
-}>> = ({ title, children, setExpanded, expanded, expandOnTitleClick }) => {
-  const id = React.useId();
-  return <div className={clsx('expandable', expanded && 'expanded')}>
-    <div
-      role='button'
-      aria-expanded={expanded}
-      aria-controls={id}
-      className='expandable-title'
-      onClick={() => expandOnTitleClick && setExpanded(!expanded)}>
+  className?: string;
+}>> = ({ title, children, setExpanded, expanded, expandOnTitleClick, className }) => {
+  const titleId = React.useId();
+  const regionId = React.useId();
+
+  const onClick = React.useCallback(() => setExpanded(!expanded), [expanded, setExpanded]);
+
+  const chevron = <div
+    className={clsx('codicon', expanded ? 'codicon-chevron-down' : 'codicon-chevron-right')}
+    style={{ cursor: 'pointer', color: 'var(--vscode-foreground)', marginLeft: '5px' }}
+    onClick={!expandOnTitleClick ? onClick : undefined} />;
+
+  return <div className={clsx('expandable', expanded && 'expanded', className)}>
+    {expandOnTitleClick ?
       <div
-        className={clsx('codicon', expanded ? 'codicon-chevron-down' : 'codicon-chevron-right')}
-        style={{ cursor: 'pointer', color: 'var(--vscode-foreground)', marginLeft: '5px' }}
-        onClick={() => !expandOnTitleClick && setExpanded(!expanded)} />
-      {title}
-    </div>
-    { expanded && <div id={id} role='region' style={{ marginLeft: 25 }}>{children}</div> }
+        id={titleId}
+        role='button'
+        aria-expanded={expanded}
+        aria-controls={regionId}
+        className='expandable-title'
+        onClick={onClick}>
+        {chevron}
+        {title}
+      </div> :
+      <div className='expandable-title'>
+        {chevron}
+        {title}
+      </div>}
+    {expanded && <div id={regionId} aria-labelledby={titleId} role='region' className='expandable-content'>{children}</div>}
   </div>;
 };

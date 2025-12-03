@@ -6690,50 +6690,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
       frameId: Network.FrameId;
     }
     /**
-     * Fired when frame has started loading.
-     */
-    export type frameStartedLoadingPayload = {
-      /**
-       * Id of the frame that has started loading.
-       */
-      frameId: Network.FrameId;
-    }
-    /**
-     * Fired when frame has stopped loading.
-     */
-    export type frameStoppedLoadingPayload = {
-      /**
-       * Id of the frame that has stopped loading.
-       */
-      frameId: Network.FrameId;
-    }
-    /**
-     * Fired when frame schedules a potential navigation.
-     */
-    export type frameScheduledNavigationPayload = {
-      /**
-       * Id of the frame that has scheduled a navigation.
-       */
-      frameId: Network.FrameId;
-      /**
-       * Delay (in seconds) until the navigation is scheduled to begin. The navigation is not guaranteed to start.
-       */
-      delay: number;
-      /**
-       * Whether the naviation will happen in the same frame.
-       */
-      targetIsCurrentFrame: boolean;
-    }
-    /**
-     * Fired when frame no longer has a scheduled navigation.
-     */
-    export type frameClearedScheduledNavigationPayload = {
-      /**
-       * Id of the frame that has cleared its scheduled navigation.
-       */
-      frameId: Network.FrameId;
-    }
-    /**
      * Fired when same-document navigation happens, e.g. due to history API usage or anchor navigation.
      */
     export type navigatedWithinDocumentPayload = {
@@ -8945,7 +8901,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     /**
      * Timeline record type.
      */
-    export type EventType = "EventDispatch"|"ScheduleStyleRecalculation"|"RecalculateStyles"|"InvalidateLayout"|"Layout"|"Paint"|"Composite"|"RenderingFrame"|"TimerInstall"|"TimerRemove"|"TimerFire"|"EvaluateScript"|"TimeStamp"|"Time"|"TimeEnd"|"FunctionCall"|"ProbeSample"|"ConsoleProfile"|"RequestAnimationFrame"|"CancelAnimationFrame"|"FireAnimationFrame"|"ObserverCallback"|"Screenshot";
+    export type EventType = "EventDispatch"|"ScheduleStyleRecalculation"|"RecalculateStyles"|"InvalidateLayout"|"Layout"|"Paint"|"Composite"|"RenderingFrame"|"TimerInstall"|"TimerRemove"|"TimerFire"|"EvaluateScript"|"TimeStamp"|"Time"|"TimeEnd"|"FunctionCall"|"ProbeSample"|"ConsoleProfile"|"RequestAnimationFrame"|"CancelAnimationFrame"|"FireAnimationFrame"|"ObserverCallback"|"FirstContentfulPaint"|"LargestContentfulPaint"|"Screenshot";
     /**
      * Instrument types.
      */
@@ -9207,10 +9163,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Page.frameNavigated": Page.frameNavigatedPayload;
     "Page.frameAttached": Page.frameAttachedPayload;
     "Page.frameDetached": Page.frameDetachedPayload;
-    "Page.frameStartedLoading": Page.frameStartedLoadingPayload;
-    "Page.frameStoppedLoading": Page.frameStoppedLoadingPayload;
-    "Page.frameScheduledNavigation": Page.frameScheduledNavigationPayload;
-    "Page.frameClearedScheduledNavigation": Page.frameClearedScheduledNavigationPayload;
     "Page.navigatedWithinDocument": Page.navigatedWithinDocumentPayload;
     "Page.defaultUserPreferencesDidChange": Page.defaultUserPreferencesDidChangePayload;
     "Page.willCheckNavigationPolicy": Page.willCheckNavigationPolicyPayload;

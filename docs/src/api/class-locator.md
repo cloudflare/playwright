@@ -497,6 +497,9 @@ await page.Locator("canvas").ClickAsync(new() {
 ### option: Locator.click.trial = %%-input-trial-with-modifiers-%%
 * since: v1.14
 
+### option: Locator.click.steps = %%-input-mousemove-steps-%%
+* since: v1.57
+
 ## async method: Locator.count
 * since: v1.14
 - returns: <[int]>
@@ -580,6 +583,9 @@ When all steps combined have not finished during the specified [`option: timeout
 ### option: Locator.dblclick.trial = %%-input-trial-with-modifiers-%%
 * since: v1.14
 
+### option: Locator.dblclick.steps = %%-input-mousemove-steps-%%
+* since: v1.57
+
 ## method: Locator.describe
 * since: v1.53
 - returns: <[Locator]>
@@ -619,6 +625,54 @@ await button.ClickAsync();
 - `description` <[string]>
 
 Locator description.
+
+## method: Locator.description
+* since: v1.57
+- returns: <[null]|[string]>
+
+Returns locator description previously set with [`method: Locator.describe`]. Returns `null` if no custom description has been set. Prefer `Locator.toString()` for a human-readable representation, as it uses the description when available.
+
+**Usage**
+
+```js
+const button = page.getByRole('button').describe('Subscribe button');
+console.log(button.description()); // "Subscribe button"
+
+const input = page.getByRole('textbox');
+console.log(input.description()); // null
+```
+
+```python async
+button = page.get_by_role("button").describe("Subscribe button")
+print(button.description())  # "Subscribe button"
+
+input = page.get_by_role("textbox")
+print(input.description())  # None
+```
+
+```python sync
+button = page.get_by_role("button").describe("Subscribe button")
+print(button.description())  # "Subscribe button"
+
+input = page.get_by_role("textbox")
+print(input.description())  # None
+```
+
+```java
+Locator button = page.getByRole(AriaRole.BUTTON).describe("Subscribe button");
+System.out.println(button.description()); // "Subscribe button"
+
+Locator input = page.getByRole(AriaRole.TEXTBOX);
+System.out.println(input.description()); // null
+```
+
+```csharp
+var button = Page.GetByRole(AriaRole.Button).Describe("Subscribe button");
+Console.WriteLine(button.Description()); // "Subscribe button"
+
+var input = Page.GetByRole(AriaRole.Textbox);
+Console.WriteLine(input.Description()); // null
+```
 
 ## async method: Locator.dispatchEvent
 * since: v1.14
@@ -820,6 +874,9 @@ Locator of the element to drag to.
 
 ### option: Locator.dragTo.targetPosition = %%-input-target-position-%%
 * since: v1.18
+
+### option: Locator.dragTo.steps = %%-input-drag-steps-%%
+* since: v1.57
 
 ## async method: Locator.elementHandle
 * since: v1.14

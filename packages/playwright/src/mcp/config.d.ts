@@ -70,6 +70,11 @@ export type Config = {
     remoteEndpoint?: string;
 
     /**
+     * Paths to TypeScript files to add as initialization scripts for Playwright page.
+     */
+    initPage?: string[];
+
+    /**
      * Paths to JavaScript files to add as initialization scripts.
      * The scripts will be evaluated in every page before any of the page's scripts.
      */
@@ -137,17 +142,10 @@ export type Config = {
    */
   outputDir?: string;
 
-  network?: {
-    /**
-     * List of origins to allow the browser to request. Default is to allow all. Origins matching both `allowedOrigins` and `blockedOrigins` will be blocked.
-     */
-    allowedOrigins?: string[];
-
-    /**
-     * List of origins to block the browser to request. Origins matching both `allowedOrigins` and `blockedOrigins` will be blocked.
-     */
-    blockedOrigins?: string[];
-  };
+  /**
+   * Specify the attribute to use for test ids, defaults to "data-testid".
+   */
+  testIdAttribute?: string;
 
   timeouts?: {
     /*

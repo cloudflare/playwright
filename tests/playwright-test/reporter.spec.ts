@@ -674,6 +674,32 @@ test('should report annotations from test declaration', async ({ runInlineTest }
   ]);
 });
 
+test('attachments.push should not be enumerable to allow toEqual comparisons', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'a.spec.js': `
+      import { test, expect } from '@playwright/test';
+      test('test.info().attachments.push should not be enumerable', async ({}) => {
+
+        const attachments = test.info().attachments;
+
+        const descriptor = Object.getOwnPropertyDescriptor(attachments, 'push');
+        expect(descriptor).toBeTruthy();
+        expect(descriptor.enumerable).toBe(false);
+
+        expect(Object.keys(attachments)).not.toContain('push');
+
+        await test.info().attach('file1', { body: 'content1', contentType: 'text/plain' });
+        await test.info().attach('file2', { body: 'content2', contentType: 'text/plain' });
+
+        const keys = Object.keys(attachments);
+        expect(keys.every(k => !isNaN(Number(k)))).toBe(true);
+      });
+    `,
+  });
+  expect(result.exitCode).toBe(0);
+  expect(result.passed).toBe(1);
+});
+
 test('tests skipped in serial mode receive onTestBegin/onTestEnd', async ({ runInlineTest }) => {
   test.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/28321' });
 
@@ -803,5 +829,60 @@ test('attachments are reported in onStepEnd', { annotation: { type: 'issue', des
     '[test.step] step: 1 attachments in result',
     '[test.attach] Attach "4": 2 attachments in result',
     '[hook] After Hooks: 2 attachments in result',
+  ]);
+});
+
+test('should have static annotations on result when all tests are skipped', async ({ runInlineTest }) => {
+  class TestReporter implements Reporter {
+    onTestEnd(test: TestCase, result: TestResult): void {
+      for (const annotation of result.annotations)
+        console.log(`%%annotation: ${annotation.type} ${annotation.description || ''}`);
+    }
+  }
+
+  const result = await runInlineTest({
+    'reporter.ts': `module.exports = ${TestReporter.toString()}`,
+    'playwright.config.ts': `module.exports = { reporter: './reporter' };`,
+    'a.spec.ts': `
+      import { test } from '@playwright/test';
+      test.skip('test', {
+        annotation: [{ type: 'foo', description: 'desc' }, { type: 'bar' }],
+      }, async () => {});
+    `,
+  }, { 'reporter': '', 'workers': 1 });
+
+  expect(result.outputLines).toEqual([
+    'annotation: foo desc',
+    'annotation: bar',
+    'annotation: skip',
+  ]);
+
+  const resultMany = await runInlineTest({
+    'reporter.ts': `module.exports = ${TestReporter.toString()}`,
+    'playwright.config.ts': `module.exports = { reporter: './reporter' };`,
+    'a.spec.ts': `
+      import { test } from '@playwright/test';
+      test.skip('test', {
+        annotation: [{ type: 'foo', description: 'desc' }, { type: 'bar' }],
+      }, async () => {});
+
+      test.skip('test2', {
+        annotation: [{ type: 'foobar', description: 'another' }],
+      }, async () => {});
+
+      test.skip('test3', {
+        annotation: [{ type: 'warning', description: 'one more' }],
+      }, async () => {});
+    `,
+  }, { 'reporter': '', 'workers': 1 });
+
+  expect(resultMany.outputLines).toEqual([
+    'annotation: foo desc',
+    'annotation: bar',
+    'annotation: skip',
+    'annotation: foobar another',
+    'annotation: skip',
+    'annotation: warning one more',
+    'annotation: skip',
   ]);
 });

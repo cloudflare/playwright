@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import { debug } from 'playwright-core/lib/utilsBundle';
 
 import * as mcpBundle from './bundle';
-import { httpAddressToString, installHttpTransport, startHttpServer } from './http';
+import { installHttpTransport, startHttpServer } from './http';
 import { InProcessTransport } from './inProcessTransport';
 
 import type { Tool, CallToolResult, CallToolRequest, Root } from '@modelcontextprotocol/sdk/types.js';
@@ -29,6 +29,7 @@ export type { Tool, CallToolResult, CallToolRequest, Root } from '@modelcontextp
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 const serverDebug = debug('pw:mcp:server');
+const serverDebugResponse = debug('pw:mcp:server:response');
 
 export type ClientInfo = {
   name: string;
@@ -41,9 +42,8 @@ export type ProgressParams = { message?: string, progress?: number, total?: numb
 export type ProgressCallback = (params: ProgressParams) => void;
 
 export interface ServerBackend {
-  initialize?(server: Server, clientInfo: ClientInfo): Promise<void>;
+  initialize?(clientInfo: ClientInfo): Promise<void>;
   listTools(): Promise<Tool[]>;
-  afterCallTool?(name: string, args: CallToolRequest['params']['arguments'], result: CallToolResult): Promise<void>;
   callTool(name: string, args: CallToolRequest['params']['arguments'], progress: ProgressCallback): Promise<CallToolResult>;
   serverClosed?(server: Server): void;
 }
@@ -101,7 +101,10 @@ export function createServer(name: string, version: string, backend: ServerBacke
       if (!initializePromise)
         initializePromise = initializeServer(server, backend, runHeartbeat);
       await initializePromise;
-      return mergeTextParts(await backend.callTool(request.params.name, request.params.arguments || {}, progress));
+      const toolResult = await backend.callTool(request.params.name, request.params.arguments || {}, progress);
+      const mergedResult = mergeTextParts(toolResult);
+      serverDebugResponse('callResult', mergedResult);
+      return mergedResult;
     } catch (error) {
       return {
         content: [{ type: 'text', text: '### Result\n' + String(error) }],
@@ -131,7 +134,7 @@ const initializeServer = async (server: Server, backend: ServerBackend, runHeart
     timestamp: Date.now(),
   };
 
-  await backend.initialize?.(server, clientInfo);
+  await backend.initialize?.(clientInfo);
   if (runHeartbeat)
     startHeartbeat(server);
 };
@@ -166,8 +169,7 @@ export async function start(serverBackendFactory: ServerBackendFactory, options:
   }
 
   const httpServer = await startHttpServer(options);
-  const url = httpAddressToString(httpServer.address());
-  await installHttpTransport(httpServer, serverBackendFactory, options.allowedHosts);
+  const url = await installHttpTransport(httpServer, serverBackendFactory, false, options.allowedHosts);
 
   const mcpConfig: any = { mcpServers: { } };
   mcpConfig.mcpServers[serverBackendFactory.nameInConfig] = {
@@ -188,7 +190,12 @@ export function firstRootPath(clientInfo: ClientInfo): string | undefined {
     return undefined;
   const firstRootUri = clientInfo.roots[0]?.uri;
   const url = firstRootUri ? new URL(firstRootUri) : undefined;
-  return url ? fileURLToPath(url) : undefined;
+  try {
+    return url ? fileURLToPath(url) : undefined;
+  } catch (error) {
+    serverDebug(error);
+    return undefined;
+  }
 }
 
 function mergeTextParts(result: CallToolResult): CallToolResult {

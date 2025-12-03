@@ -213,13 +213,17 @@ function cacheSearchValues(test: TestCaseSummary & { [searchValuesSymbol]?: Sear
 // Extract quoted groups of search params, or tokens separated by whitespace
 const SEARCH_PARAM_GROUP_REGEX = /("[^"]*"|"[^"]*$|\S+)/g;
 
-export function filterWithQuery(existingQuery: string, token: string, append: boolean): string {
+export function filterWithQuery(searchParams: URLSearchParams, token: string, append: boolean): string {
+  const result = new URLSearchParams(searchParams);
+  const existingQuery = searchParams.get('q') ?? '';
   const tokens = [...existingQuery.matchAll(SEARCH_PARAM_GROUP_REGEX)].map(m => {
     const rawValue = m[0];
     return rawValue.startsWith('"') && rawValue.endsWith('"') && rawValue.length > 1 ? rawValue.slice(1, rawValue.length - 1) : rawValue;
   });
-  if (append)
-    return '#?q=' + joinTokens(!tokens.includes(token) ? [...tokens, token] : tokens.filter(t => t !== token));
+  if (append) {
+    result.set('q', joinTokens(!tokens.includes(token) ? [...tokens, token] : tokens.filter(t => t !== token)));
+    return '#?' + result;
+  }
 
   // if metaKey or ctrlKey is not pressed, replace existing token with new token
   let prefix: 's:' | 'p:' | '@';
@@ -232,7 +236,9 @@ export function filterWithQuery(existingQuery: string, token: string, append: bo
 
   const newTokens = tokens.filter(t => !t.startsWith(prefix));
   newTokens.push(token);
-  return '#?q=' + joinTokens(newTokens);
+
+  result.set('q', joinTokens(newTokens));
+  return '#?' + result;
 }
 
 function joinTokens(tokens: string[]): string {

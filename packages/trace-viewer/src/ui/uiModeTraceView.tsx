@@ -75,7 +75,7 @@ export const TraceView: React.FC<{
         const model = await loadSingleTraceFile(traceLocation);
         setModel({ model, isLive: true });
       } catch {
-        const model = new MultiTraceModel([]);
+        const model = new MultiTraceModel('', []);
         model.errorDescriptors.push(...result.errors.flatMap(error => !!error.message ? [{ message: error.message }] : []));
         setModel({ model, isLive: false });
       } finally {
@@ -89,8 +89,8 @@ export const TraceView: React.FC<{
   }, [outputDir, item, setModel, counter, setCounter, pathSeparator]);
 
   return <Workbench
-    key='workbench'
     model={model?.model}
+    key='workbench'
     showSourcesFirst={true}
     rootDir={rootDir}
     fallbackLocation={item.testFile}
@@ -113,8 +113,7 @@ const outputDirForTestCase = (testCase: reporterTypes.TestCase): string | undefi
 async function loadSingleTraceFile(url: string): Promise<MultiTraceModel> {
   const params = new URLSearchParams();
   params.set('trace', url);
-  params.set('limit', '1');
   const response = await fetch(`contexts?${params.toString()}`);
   const contextEntries = await response.json() as ContextEntry[];
-  return new MultiTraceModel(contextEntries);
+  return new MultiTraceModel(url, contextEntries);
 }
