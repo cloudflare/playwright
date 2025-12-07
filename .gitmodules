@@ -1,0 +1,3 @@
+[submodule "packages/playwright-cloudflare/submodules/jest"]
+	path = packages/playwright-cloudflare/submodules/jest
+	url = https://github.com/jestjs/jest.git
