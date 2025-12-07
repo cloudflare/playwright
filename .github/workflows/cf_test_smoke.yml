@@ -22,6 +22,7 @@ jobs:
 
       - run: |
           npm ci
+          git submodule update --init
           cd packages/playwright-cloudflare
           npm run build
           npm run test:deploy

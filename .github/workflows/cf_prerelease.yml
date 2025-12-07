@@ -19,6 +19,7 @@ jobs:
       - name: Generate Pre-Release
         run: |
           npm ci
+          git submodule update --init
           cd packages/playwright-cloudflare
           npm run build
           npx pkg-pr-new publish

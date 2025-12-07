@@ -38,6 +38,7 @@
     "test:smoke": "npm run test:generate:proxy && cd tests && npx playwright test --grep \"@smoke\""
   },
   "devDependencies": {
+    "@tsconfig/node18": "^18.2.6",
     "pkg-pr-new": "^0.0.59",
     "vite": "^6.1.0"
   }

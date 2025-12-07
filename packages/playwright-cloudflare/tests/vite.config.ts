@@ -10,8 +10,8 @@ function setTestFilePlugin() {
   return {
     name: 'transform-file',
     transform(src, id) {
-      let testPath = [sourceTestsDir, cloudflareSourceTestsDir].map(dir => path.relative(dir, id).replace(/\\/g, '/'))
-        .find(p => !p.startsWith('..'));
+      const testPath = [sourceTestsDir, cloudflareSourceTestsDir].map(dir => path.relative(dir, id).replace(/\\/g, '/'))
+          .find(p => !p.startsWith('..'));
       if (/\.(spec|test)\.ts$/.test(id)) {
         return {
           code: [
@@ -20,7 +20,7 @@ function setTestFilePlugin() {
             'setCurrentTestFile(undefined);',
           ].join('\n'),
           map: null, // provide source map if available
-        }
+        };
       }
     },
   } satisfies Plugin;
@@ -80,6 +80,7 @@ export default defineConfig({
       '../../packages/playwright-core/lib': path.resolve(basedir, '../../playwright-core/src'),
       '../../../packages/playwright-core/lib': path.resolve(basedir, '../../playwright-core/src'),
       'packages/playwright-core/lib': path.resolve(basedir, '../../playwright-core/src'),
+      'playwright': '@cloudflare/playwright',
       'playwright-core': '@cloudflare/playwright',
       '@playwright/test': path.resolve(basedir, './src/server/workerFixtures'),
       '@isomorphic': path.resolve(basedir, '../../playwright-core/src/utils/isomorphic'),

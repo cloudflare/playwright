@@ -146,6 +146,7 @@ To build Playwright for Cloudflare:
 
 ```sh
 npm ci
+git submodule update --init
 cd packages/playwright-cloudflare
 npm run build
 ```
