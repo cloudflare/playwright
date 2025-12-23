@@ -11,6 +11,7 @@ export class WebSocketTransport implements ConnectionTransport {
   private _ws: WebSocket;
   private _pingInterval: NodeJS.Timer;
   private _chunks: Uint8Array[] = [];
+  private closeResolver: PromiseWithResolvers<void>;
   onmessage?: (message: ProtocolResponse) => void;
   onclose?: () => void;
   readonly sessionId: string;
@@ -36,15 +37,20 @@ export class WebSocketTransport implements ConnectionTransport {
         this.onmessage!(JSON.parse(message) as ProtocolResponse);
     });
     this._ws.addEventListener('close', () => {
+      // https://github.com/cloudflare/workerd/issues/4327#issuecomment-3670433485
+      if (this._ws.readyState !== WebSocket.CLOSED)
+        this._ws.close();
       clearInterval(this._pingInterval as NodeJS.Timeout);
       if (this.onclose)
         this.onclose();
+      this.closeResolver.resolve();
     });
     this._ws.addEventListener('error', e => {
       // eslint-disable-next-line no-console
       console.error(`Websocket error: SessionID: ${sessionId}`, e);
       clearInterval(this._pingInterval as NodeJS.Timeout);
     });
+    this.closeResolver = Promise.withResolvers();
   }
 
   send(message: ProtocolRequest): void {
@@ -62,7 +68,7 @@ export class WebSocketTransport implements ConnectionTransport {
     if (this._ws.readyState === WebSocket.CLOSED)
       return;
     this.close();
-    // TODO wait for close event
+    await this.closeResolver.promise;
   }
 
   toString(): string {
