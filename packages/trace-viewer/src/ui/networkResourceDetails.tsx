@@ -24,8 +24,10 @@ import { generateCurlCommand, generateFetchCall } from '../third_party/devtools'
 import { CopyToClipboardTextButton } from './copyToClipboard';
 import { getAPIRequestCodeGen } from './codegen';
 import type { Language } from '@isomorphic/locatorGenerators';
-import { msToString, useAsyncMemo } from '@web/uiUtils';
+import { msToString, useAsyncMemo, useSetting } from '@web/uiUtils';
 import type { Entry } from '@trace/har';
+import { useTraceModel } from './traceModelContext';
+import { Expandable } from '@web/components/expandable';
 
 type RequestBody = { text: string, mimeType?: string } | null;
 
@@ -37,13 +39,14 @@ export const NetworkResourceDetails: React.FunctionComponent<{
   onClose: () => void;
 }> = ({ resource, sdkLanguage, startTimeOffset, onClose }) => {
   const [selectedTab, setSelectedTab] = React.useState('request');
+  const model = useTraceModel();
 
   const requestBody = useAsyncMemo<RequestBody>(async () => {
-    if (resource.request.postData) {
+    if (model && resource.request.postData) {
       const requestContentTypeHeader = resource.request.headers.find(q => q.name.toLowerCase() === 'content-type');
       const requestContentType = requestContentTypeHeader ? requestContentTypeHeader.value : '';
       if (resource.request.postData._sha1) {
-        const response = await fetch(`sha1/${resource.request.postData._sha1}`);
+        const response = await fetch(model.createRelativeUrl(`sha1/${resource.request.postData._sha1}`));
         return { text: formatBody(await response.text(), requestContentType), mimeType: requestContentType };
       } else {
         return { text: formatBody(resource.request.postData.text, requestContentType), mimeType: requestContentType };
@@ -103,56 +106,83 @@ const CopyDropdown: React.FC<{
   );
 };
 
+const ExpandableSection: React.FC<{
+  title: string;
+  children?: React.ReactNode
+  className?: string;
+}> = ({ title, children, className }) => {
+  const [expanded, setExpanded] = useSetting(`trace-viewer-network-details-${title.replaceAll(' ', '-')}`, true);
+  return <Expandable
+    expanded={expanded}
+    setExpanded={setExpanded}
+    expandOnTitleClick
+    title={<span className='network-request-details-header'>{title}</span>}
+    className={className}
+  >
+    {children}
+  </Expandable>;
+};
+
 const RequestTab: React.FunctionComponent<{
   resource: ResourceSnapshot;
   startTimeOffset: number;
   requestBody: RequestBody,
 }> = ({ resource, startTimeOffset, requestBody }) => {
-  return <div className='network-request-details-tab'>
-    <div className='network-request-details-header'>General</div>
-    <div className='network-request-details-url'>{`URL: ${resource.request.url}`}</div>
-    <div className='network-request-details-general'>{`Method: ${resource.request.method}`}</div>
-    {resource.response.status !== -1 && <div className='network-request-details-general' style={{ display: 'flex' }}>
-      Status Code: <span className={statusClass(resource.response.status)} style={{ display: 'inline-flex' }}>
-        {`${resource.response.status} ${resource.response.statusText}`}
-      </span></div>}
-    {resource.request.queryString.length ? <>
-      <div className='network-request-details-header'>Query String Parameters</div>
-      <div className='network-request-details-headers'>
-        {resource.request.queryString.map(param => `${param.name}: ${param.value}`).join('\n')}
-      </div>
-    </> : null}
-    <div className='network-request-details-header'>Request Headers</div>
-    <div className='network-request-details-headers'>{resource.request.headers.map(pair => `${pair.name}: ${pair.value}`).join('\n')}</div>
-    <div className='network-request-details-header'>Time</div>
-    <div className='network-request-details-general'>{`Start: ${msToString(startTimeOffset)}`}</div>
-    <div className='network-request-details-general'>{`Duration: ${msToString(resource.time)}`}</div>
+  return <div className='vbox network-request-details-tab'>
+    <ExpandableSection title='General'>
+      <div className='network-request-details-url'>{`URL: ${resource.request.url}`}</div>
+      <div className='network-request-details-general'>{`Method: ${resource.request.method}`}</div>
+      {resource.response.status !== -1 && <div className='network-request-details-general' style={{ display: 'flex' }}>
+        Status Code: <span className={statusClass(resource.response.status)} style={{ display: 'inline-flex' }}>
+          {`${resource.response.status} ${resource.response.statusText}`}
+        </span></div>}
+    </ExpandableSection>
 
-    {requestBody && <div className='network-request-details-header'>Request Body</div>}
-    {requestBody && <CodeMirrorWrapper text={requestBody.text} mimeType={requestBody.mimeType} readOnly lineNumbers={true}/>}
+    {resource.request.queryString.length ?
+      <ExpandableSection title='Query String Parameters'>
+        <div className='network-request-details-headers'>
+          {resource.request.queryString.map(param => `${param.name}: ${param.value}`).join('\n')}
+        </div>
+      </ExpandableSection>
+      : null}
+
+    <ExpandableSection title='Request Headers'>
+      <div className='network-request-details-headers'>{resource.request.headers.map(pair => `${pair.name}: ${pair.value}`).join('\n')}</div>
+    </ExpandableSection>
+
+    <ExpandableSection title='Time'>
+      <div className='network-request-details-general'>{`Start: ${msToString(startTimeOffset)}`}</div>
+      <div className='network-request-details-general'>{`Duration: ${msToString(resource.time)}`}</div>
+    </ExpandableSection>
+
+    {requestBody && <ExpandableSection title='Request Body' className='network-request-request-body'>
+      <CodeMirrorWrapper text={requestBody.text} mimeType={requestBody.mimeType} readOnly lineNumbers={true}/>
+    </ExpandableSection>}
   </div>;
 };
 
 const ResponseTab: React.FunctionComponent<{
   resource: ResourceSnapshot;
 }> = ({ resource }) => {
-  return <div className='network-request-details-tab'>
-    <div className='network-request-details-header'>Response Headers</div>
-    <div className='network-request-details-headers'>{resource.response.headers.map(pair => `${pair.name}: ${pair.value}`).join('\n')}</div>
+  return <div className='vbox network-request-details-tab'>
+    <ExpandableSection title='Response Headers'>
+      <div className='network-request-details-headers'>{resource.response.headers.map(pair => `${pair.name}: ${pair.value}`).join('\n')}</div>
+    </ExpandableSection>
   </div>;
 };
 
 const BodyTab: React.FunctionComponent<{
   resource: ResourceSnapshot;
 }> = ({ resource }) => {
+  const model = useTraceModel();
   const [responseBody, setResponseBody] = React.useState<{ dataUrl?: string, text?: string, mimeType?: string, font?: BufferSource } | null>(null);
 
   React.useEffect(() => {
     const readResources = async  () => {
-      if (resource.response.content._sha1) {
+      if (model && resource.response.content._sha1) {
         const useBase64 = resource.response.content.mimeType.includes('image');
         const isFont = resource.response.content.mimeType.includes('font');
-        const response = await fetch(`sha1/${resource.response.content._sha1}`);
+        const response = await fetch(model.createRelativeUrl(`sha1/${resource.response.content._sha1}`));
         if (useBase64) {
           const blob = await response.blob();
           const reader = new FileReader();
@@ -172,12 +202,12 @@ const BodyTab: React.FunctionComponent<{
     };
 
     readResources();
-  }, [resource]);
+  }, [resource, model]);
 
-  return <div className='network-request-details-tab'>
+  return <div className='vbox network-request-details-tab'>
     {!resource.response.content._sha1 && <div>Response body is not available for this request.</div>}
     {responseBody && responseBody.font && <FontPreview font={responseBody.font} />}
-    {responseBody && responseBody.dataUrl && <img draggable='false' src={responseBody.dataUrl} />}
+    {responseBody && responseBody.dataUrl && <div><img draggable='false' src={responseBody.dataUrl} /></div>}
     {responseBody && responseBody.text && <CodeMirrorWrapper text={responseBody.text} mimeType={responseBody.mimeType} readOnly lineNumbers={true}/>}
   </div>;
 };

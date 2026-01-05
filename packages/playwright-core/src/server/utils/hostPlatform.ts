@@ -111,7 +111,7 @@ function calculatePlatform(): { hostPlatform: HostPlatform, isOfficiallySupporte
       if (distroInfo?.version === '')
         return { hostPlatform: ('debian13' + archSuffix) as HostPlatform, isOfficiallySupportedPlatform };
     }
-    return { hostPlatform: ('ubuntu20.04' + archSuffix) as HostPlatform, isOfficiallySupportedPlatform: false };
+    return { hostPlatform: ('ubuntu24.04' + archSuffix) as HostPlatform, isOfficiallySupportedPlatform: false };
   }
   if (platform === 'win32')
     return { hostPlatform: 'win64', isOfficiallySupportedPlatform: true };
@@ -119,3 +119,17 @@ function calculatePlatform(): { hostPlatform: HostPlatform, isOfficiallySupporte
 }
 
 export const { hostPlatform, isOfficiallySupportedPlatform } = calculatePlatform();
+
+export type ShortPlatform = 'mac-x64' | 'mac-arm64' | 'linux-x64' | 'linux-arm64' | 'win-x64' | '<unknown>';
+
+function toShortPlatform(hostPlatform: HostPlatform): ShortPlatform {
+  if (hostPlatform === '<unknown>')
+    return '<unknown>';
+  if (hostPlatform === 'win64')
+    return 'win-x64';
+  if (hostPlatform.startsWith('mac'))
+    return hostPlatform.endsWith('arm64') ? 'mac-arm64' : 'mac-x64';
+  return hostPlatform.endsWith('arm64') ? 'linux-arm64' : 'linux-x64';
+}
+
+export const shortPlatform = toShortPlatform(hostPlatform);

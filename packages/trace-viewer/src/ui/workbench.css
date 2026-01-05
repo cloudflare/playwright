@@ -16,7 +16,7 @@
 
 .workbench-run-status {
   height: 30px;
-  padding: 4px;
+  padding: 4px 4px 4px 5px;
   flex: none;
   display: flex;
   flex-direction: row;
@@ -37,15 +37,6 @@
   flex: none;
   align-items: center;
   color: var(--vscode-editorCodeLens-foreground);
-}
-
-.workbench-actions-status-bar {
-  padding: 2px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  border-top: 1px solid var(--vscode-panel-border);
 }
 
 .workbench-actions-hidden-count {

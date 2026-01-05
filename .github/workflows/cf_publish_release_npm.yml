@@ -28,8 +28,10 @@ jobs:
           # Set the output for later steps
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Run npm ci
-        run: npm ci
+      - name: Run npm ci and submodule update
+        run: |
+          npm ci
+          git submodule update --init
 
       - name: Run playwright-cloudflare build
         run: |

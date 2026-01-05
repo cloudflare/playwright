@@ -16,19 +16,18 @@
 
 import { EventEmitter } from 'events';
 import * as playwright from 'playwright-core';
-import { ManualPromise } from 'playwright-core/lib/utils';
+import { asLocator, ManualPromise } from 'playwright-core/lib/utils';
 
 import { callOnPageNoTrace, waitForCompletion } from './tools/utils';
 import { logUnhandledError } from '../log';
 import { ModalState } from './tools/tool';
 import { handleDialog } from './tools/dialogs';
 import { uploadFile } from './tools/files';
+import { requireOrImport } from '../../transform/transform';
 
 import type { Context } from './context';
-
-type PageEx = playwright.Page & {
-  _snapshotForAI: () => Promise<string>;
-};
+import type { Page } from '../../../../playwright-core/src/client/page';
+import type { Locator } from '../../../../playwright-core/src/client/locator';
 
 export const TabEvents = {
   modalState: 'modalState'
@@ -42,6 +41,7 @@ export type TabSnapshot = {
   url: string;
   title: string;
   ariaSnapshot: string;
+  ariaSnapshotDiff?: string;
   modalStates: ModalState[];
   consoleMessages: ConsoleMessage[];
   downloads: { download: playwright.Download, finished: boolean, outputFile: string }[];
@@ -49,7 +49,7 @@ export type TabSnapshot = {
 
 export class Tab extends EventEmitter<TabEventsInterface> {
   readonly context: Context;
-  readonly page: playwright.Page;
+  readonly page: Page;
   private _lastTitle = 'about:blank';
   private _consoleMessages: ConsoleMessage[] = [];
   private _recentConsoleMessages: ConsoleMessage[] = [];
@@ -57,12 +57,13 @@ export class Tab extends EventEmitter<TabEventsInterface> {
   private _onPageClose: (tab: Tab) => void;
   private _modalStates: ModalState[] = [];
   private _downloads: { download: playwright.Download, finished: boolean, outputFile: string }[] = [];
-  private _initializedPromise: Promise<void>;
+  readonly initializedPromise: Promise<void>;
+  private _needsFullSnapshot = false;
 
   constructor(context: Context, page: playwright.Page, onPageClose: (tab: Tab) => void) {
     super();
     this.context = context;
-    this.page = page;
+    this.page = page as Page;
     this._onPageClose = onPageClose;
     page.on('console', event => this._handleConsoleMessage(messageToConsoleMessage(event)));
     page.on('pageerror', error => this._handleConsoleMessage(pageErrorToConsoleMessage(error)));
@@ -83,7 +84,7 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     page.setDefaultNavigationTimeout(this.context.config.timeouts.navigation);
     page.setDefaultTimeout(this.context.config.timeouts.action);
     (page as any)[tabSymbol] = this;
-    this._initializedPromise = this._initialize();
+    this.initializedPromise = this._initialize();
   }
 
   static forPage(page: playwright.Page): Tab | undefined {
@@ -107,6 +108,14 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     const requests = await this.page.requests().catch(() => []);
     for (const request of requests)
       this._requests.add(request);
+    for (const initPage of this.context.config.browser.initPage || []) {
+      try {
+        const { default: func } = await requireOrImport(initPage);
+        await func({ page: this.page });
+      } catch (e) {
+        logUnhandledError(e);
+      }
+    }
   }
 
   modalStates(): ModalState[] {
@@ -210,23 +219,24 @@ export class Tab extends EventEmitter<TabEventsInterface> {
   }
 
   async consoleMessages(type?: 'error'): Promise<ConsoleMessage[]> {
-    await this._initializedPromise;
+    await this.initializedPromise;
     return this._consoleMessages.filter(message => type ? message.type === type : true);
   }
 
   async requests(): Promise<Set<playwright.Request>> {
-    await this._initializedPromise;
+    await this.initializedPromise;
     return this._requests;
   }
 
   async captureSnapshot(): Promise<TabSnapshot> {
     let tabSnapshot: TabSnapshot | undefined;
     const modalStates = await this._raceAgainstModalStates(async () => {
-      const snapshot = await (this.page as PageEx)._snapshotForAI();
+      const snapshot = await this.page._snapshotForAI({ track: 'response' });
       tabSnapshot = {
         url: this.page.url(),
         title: await this.page.title(),
-        ariaSnapshot: snapshot,
+        ariaSnapshot: snapshot.full,
+        ariaSnapshotDiff: this._needsFullSnapshot ? undefined : snapshot.incremental,
         modalStates: [],
         consoleMessages: [],
         downloads: this._downloads,
@@ -237,6 +247,9 @@ export class Tab extends EventEmitter<TabEventsInterface> {
       tabSnapshot.consoleMessages = this._recentConsoleMessages;
       this._recentConsoleMessages = [];
     }
+    // If we failed to capture a snapshot this time, make sure we do a full one next time,
+    // to avoid reporting deltas against un-reported snapshot.
+    this._needsFullSnapshot = !tabSnapshot;
     return tabSnapshot ?? {
       url: this.page.url(),
       title: '',
@@ -272,17 +285,20 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     await this._raceAgainstModalStates(() => waitForCompletion(this, callback));
   }
 
-  async refLocator(params: { element: string, ref: string }): Promise<playwright.Locator> {
+  async refLocator(params: { element: string, ref: string }): Promise<{ locator: Locator, resolved: string }> {
     return (await this.refLocators([params]))[0];
   }
 
-  async refLocators(params: { element: string, ref: string }[]): Promise<playwright.Locator[]> {
-    const snapshot = await (this.page as PageEx)._snapshotForAI();
-    return params.map(param => {
-      if (!snapshot.includes(`[ref=${param.ref}]`))
+  async refLocators(params: { element: string, ref: string }[]): Promise<{ locator: Locator, resolved: string }[]> {
+    return Promise.all(params.map(async param => {
+      try {
+        const locator = this.page.locator(`aria-ref=${param.ref}`).describe(param.element) as Locator;
+        const { resolvedSelector } = await locator._resolveSelector();
+        return { locator, resolved: asLocator('javascript', resolvedSelector) };
+      } catch (e) {
         throw new Error(`Ref ${param.ref} not found in the current page snapshot. Try capturing new snapshot.`);
-      return this.page.locator(`aria-ref=${param.ref}`).describe(param.element);
-    });
+      }
+    }));
   }
 
   async waitForTimeout(time: number) {

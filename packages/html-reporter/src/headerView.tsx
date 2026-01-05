@@ -20,7 +20,7 @@ import './colors.css';
 import './common.css';
 import './headerView.css';
 import * as icons from './icons';
-import { Link, navigate, SearchParamsContext } from './links';
+import { Link, navigate, useSearchParams } from './links';
 import { statusIcon } from './statusIcon';
 import { filterWithQuery } from './filter';
 import { linkifyText } from '@web/renderUtils';
@@ -48,12 +48,12 @@ export const GlobalFilterView: React.FC<{
   filterText: string,
   setFilterText: (filterText: string) => void,
 }> = ({ stats, filterText, setFilterText }) => {
-  const searchParams = React.useContext(SearchParamsContext);
+  const searchParams = useSearchParams();
+  const query = searchParams.get('q');
   React.useEffect(() => {
     // Add an extra space such that users can easily add to query
-    const query = searchParams.get('q');
     setFilterText(query ? `${query.trim()} ` : '');
-  }, [searchParams, setFilterText]);
+  }, [query, setFilterText]);
 
   return (<>
     <div className='pt-3'>
@@ -64,10 +64,15 @@ export const GlobalFilterView: React.FC<{
         event => {
           event.preventDefault();
           const url = new URL(window.location.href);
+          const currentParams = new URLSearchParams(url.hash.slice(1));
           // If <form/> onSubmit happens immediately after <input/> onChange, the filterText state is not updated yet.
           // Using FormData here is a workaround to get the latest value.
           const q = new FormData(event.target as HTMLFormElement).get('q') as string;
-          url.hash = q ? '?' + new URLSearchParams({ q }) : '';
+          const params = new URLSearchParams({ q });
+          if (currentParams.has('speedboard'))
+            params.set('speedboard', '');
+          if (!!params.toString())
+            url.hash = '?' + params.toString();
           navigate(url);
         }
       }>
@@ -84,6 +89,8 @@ export const GlobalFilterView: React.FC<{
 const StatsNavView: React.FC<{
   stats: Stats
 }> = ({ stats }) => {
+  const searchParams = useSearchParams();
+
   return <nav>
     <Link className='subnav-item' href='#?'>
       <span className='subnav-item-label'>All</span>
@@ -93,6 +100,9 @@ const StatsNavView: React.FC<{
     <NavLink token='failed' count={stats.unexpected} />
     <NavLink token='flaky' count={stats.flaky} />
     <NavLink token='skipped' count={stats.skipped} />
+    <Link className='subnav-item' href='#?speedboard' title='Speedboard' aria-selected={searchParams.has('speedboard')}>
+      {icons.clock()}
+    </Link>
     <SettingsButton />
   </nav>;
 };
@@ -101,12 +111,14 @@ const NavLink: React.FC<{
   token: string,
   count: number,
 }> = ({ token, count }) => {
-  const searchParams = React.useContext(SearchParamsContext);
-  const q = searchParams.get('q')?.toString() || '';
+  const searchParams = useSearchParams();
+  searchParams.delete('speedboard');
+  searchParams.delete('testId');
+
   const queryToken = `s:${token}`;
 
-  const clickUrl = filterWithQuery(q, queryToken, false);
-  const ctrlClickUrl = filterWithQuery(q, queryToken, true);
+  const clickUrl = filterWithQuery(searchParams, queryToken, false);
+  const ctrlClickUrl = filterWithQuery(searchParams, queryToken, true);
 
   const label = token.charAt(0).toUpperCase() + token.slice(1);
 
@@ -136,24 +148,24 @@ const SettingsButton: React.FC = () => {
       }}
       onMouseDown={preventDefault}>
       {icons.settings()}
+      <Dialog
+        open={settingsOpen}
+        minWidth={150}
+        verticalOffset={4}
+        requestClose={() => setSettingsOpen(false)}
+        anchor={settingsRef}
+        dataTestId='settings-dialog'
+      >
+        <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} onClick={stopPropagation}>
+          <input type='checkbox' checked={darkMode} onChange={() => setDarkMode(!darkMode)}></input>
+          Dark mode
+        </label>
+        <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} onClick={stopPropagation}>
+          <input type='checkbox' checked={mergeFiles} onChange={() => setMergeFiles(!mergeFiles)}></input>
+          Merge files
+        </label>
+      </Dialog>
     </div>
-    <Dialog
-      open={settingsOpen}
-      minWidth={150}
-      verticalOffset={4}
-      requestClose={() => setSettingsOpen(false)}
-      anchor={settingsRef}
-      dataTestId='settings-dialog'
-    >
-      <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} onClick={stopPropagation}>
-        <input type='checkbox' checked={darkMode} onChange={() => setDarkMode(!darkMode)}></input>
-        Dark mode
-      </label>
-      <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} onClick={stopPropagation}>
-        <input type='checkbox' checked={mergeFiles} onChange={() => setMergeFiles(!mergeFiles)}></input>
-        Merge files
-      </label>
-    </Dialog>
   </>;
 };
 

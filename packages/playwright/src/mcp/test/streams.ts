@@ -16,20 +16,24 @@
 
 import { Writable } from 'stream';
 
-import type { ProgressCallback } from '../sdk/server';
+import { stripAnsiEscapes } from '../../util';
 
 export class StringWriteStream extends Writable {
-  private _progress: ProgressCallback;
+  private _output: string[];
+  private _prefix: string;
 
-  constructor(progress: ProgressCallback) {
+  constructor(output: string[], stdio: 'stdout' | 'stderr') {
     super();
-    this._progress = progress;
+    this._output = output;
+    this._prefix = stdio === 'stdout' ? '' : '[err] ';
   }
 
   override _write(chunk: any, encoding: any, callback: any) {
-    const text = chunk.toString();
-    // Progress wraps these as individual messages.
-    this._progress({ message: text.endsWith('\n') ? text.slice(0, -1) : text });
+    let text = stripAnsiEscapes(chunk.toString());
+    if (text.endsWith('\n'))
+      text = text.slice(0, -1);
+    if (text)
+      this._output.push(this._prefix + text);
     callback();
   }
 }

@@ -1124,7 +1124,8 @@ class BrowserContext {
 
   setCookies(cookies) {
     const protocolToSameSite = {
-      [undefined]: Ci.nsICookie.SAMESITE_NONE,
+      [undefined]: Ci.nsICookie.SAMESITE_UNSET,
+      'None': Ci.nsICookie.SAMESITE_UNSET,
       'Lax': Ci.nsICookie.SAMESITE_LAX,
       'Strict': Ci.nsICookie.SAMESITE_STRICT,
     };
@@ -1152,7 +1153,7 @@ class BrowserContext {
         secure,
         cookie.httpOnly || false,
         cookie.expires === undefined || cookie.expires === -1 /* isSession */,
-        cookie.expires === undefined ? Date.now() + HUNDRED_YEARS : cookie.expires,
+        cookie.expires === undefined ? Date.now() + HUNDRED_YEARS : cookie.expires * 1000,
         { userContextId: this.userContextId || undefined } /* originAttributes */,
         protocolToSameSite[cookie.sameSite],
         Ci.nsICookie.SCHEME_UNSET
@@ -1182,7 +1183,7 @@ class BrowserContext {
         value: cookie.value,
         domain: cookie.host,
         path: cookie.path,
-        expires: cookie.isSession ? -1 : cookie.expiry,
+        expires: cookie.isSession ? -1 : cookie.expiry / 1000,
         size: cookie.name.length + cookie.value.length,
         httpOnly: cookie.isHttpOnly,
         secure: cookie.isSecure,

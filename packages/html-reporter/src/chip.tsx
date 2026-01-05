@@ -24,12 +24,13 @@ import { type AnchorID, useAnchor } from './links';
 
 export const Chip: React.FC<{
   header: React.JSX.Element | string,
+  footer?: React.JSX.Element | string,
   expanded?: boolean,
   noInsets?: boolean,
   setExpanded?: (expanded: boolean) => void,
   children?: any,
   dataTestId?: string,
-}> = ({ header, expanded, setExpanded, children, noInsets, dataTestId }) => {
+}> = ({ header, footer, expanded, setExpanded, children, noInsets, dataTestId }) => {
   const id = React.useId();
   return <div className='chip' data-testid={dataTestId}>
     <div
@@ -39,11 +40,13 @@ export const Chip: React.FC<{
       className={clsx('chip-header', setExpanded && ' expanded-' + expanded)}
       onClick={() => setExpanded?.(!expanded)}
       title={typeof header === 'string' ? header : undefined}>
-      {setExpanded && !!expanded && icons.downArrow()}
-      {setExpanded && !expanded && icons.rightArrow()}
+      {setExpanded ? (expanded ? <icons.downArrow /> : <icons.rightArrow />) : <icons.spacer />}
       {header}
     </div>
-    {(!setExpanded || expanded) && <div id={id} role='region' className={clsx('chip-body', noInsets && 'chip-body-no-insets')}>{children}</div>}
+    {(!setExpanded || expanded) && <div id={id} role='region' className={clsx('chip-body', noInsets && 'chip-body-no-insets')}>
+      {children}
+      {footer && <div className='chip-footer'>{footer}</div>}
+    </div>}
   </div>;
 };
 

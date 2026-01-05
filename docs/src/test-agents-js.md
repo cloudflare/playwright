@@ -3,9 +3,13 @@ id: test-agents
 title: "Agents"
 ---
 
-# Playwright Agents
+import LiteYouTube from '@site/src/components/LiteYouTube';
 
-Playwright comes with three Playwright Agents out of the box: **🎭 planner**, **🎭 generator** and **🎭 healer**.
+# Playwright Test Agents
+
+## Introduction
+
+Playwright comes with three Playwright Test Agents out of the box: **🎭 planner**, **🎭 generator** and **🎭 healer**.
 
 These agents can be used independently, sequentially, or as the chained calls in the agentic loop.
 Using them sequentially will produce test coverage for your product.
@@ -16,9 +20,14 @@ Using them sequentially will produce test coverage for your product.
 
 * **🎭 healer** executes the test suite and automatically repairs failing tests
 
+<LiteYouTube
+  id="_AifxZGxwuk"
+  title="Playwright 1.56 - Introducing Playwright Test Agents"
+/>
+
 ### Getting Started
 
-Start with adding Playwright Agent definitions to your project using
+Start with adding Playwright Test Agent definitions to your project using
 the `init-agents` command. These definitions should be regenerated whenever Playwright
 is updated to pick up new tools and instructions.
 
@@ -33,6 +42,10 @@ npx playwright init-agents --loop=claude
 ```bash tab=bash-opencode
 npx playwright init-agents --loop=opencode
 ```
+
+:::note
+VS Code v1.105 (released October 9, 2025) is needed for the agentic experience to function properly in VS Code.
+:::
 
 Once the agents have been generated, you can use your AI tool of choice to command these agents to build Playwright Tests. 
 

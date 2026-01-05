@@ -30,8 +30,8 @@ export interface TabbedPaneTabModel {
 
 export const TabbedPane: React.FunctionComponent<{
   tabs: TabbedPaneTabModel[],
-  leftToolbar?: React.ReactElement[],
-  rightToolbar?: React.ReactElement[],
+  leftToolbar?: React.ReactNode[],
+  rightToolbar?: React.ReactNode[],
   selectedTab?: string,
   setSelectedTab?: (tab: string) => void,
   dataTestId?: string,
@@ -106,7 +106,8 @@ export const TabbedPaneTab: React.FunctionComponent<{
     onClick={() => onSelect?.(id)}
     role='tab'
     title={title}
-    aria-controls={ariaControls}>
+    aria-controls={ariaControls}
+    aria-selected={selected}>
     <div className='tabbed-pane-tab-label'>{title}</div>
     {!!count && <div className='tabbed-pane-tab-counter'>{count}</div>}
     {!!errorCount && <div className='tabbed-pane-tab-counter error'>{errorCount}</div>}

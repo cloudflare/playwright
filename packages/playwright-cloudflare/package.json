@@ -31,13 +31,13 @@
     "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:types && npx vite build",
     "test:generate:worker": "node ./utils/generate_worker_tests.js && cd tests && npx vite build",
     "test:generate:proxy": "node ./utils/generate_proxy_tests.js",
-    "test:generate:wrangler": "node ./utils/generate_test_wrangler.js",
-    "test:deploy": "npm run test:generate:wrangler && npm run test:generate:worker && npm run ci:tests && cd tests && npx wrangler deploy -c wrangler-test.toml",
+    "test:deploy": "npm run test:generate:worker && npm run ci:tests && cd tests && npx wrangler deploy",
     "test:dev": "npm run test:generate:worker && cd tests && npx wrangler dev",
     "test:full": "npm run test:generate:proxy && cd tests && npx playwright test",
     "test:smoke": "npm run test:generate:proxy && cd tests && npx playwright test --grep \"@smoke\""
   },
   "devDependencies": {
+    "@tsconfig/node18": "^18.2.6",
     "pkg-pr-new": "^0.0.59",
     "vite": "^6.1.0"
   }

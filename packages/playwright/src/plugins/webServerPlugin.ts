@@ -16,7 +16,7 @@
 import net from 'net';
 import path from 'path';
 
-import { launchProcess, isURLAvailable, monotonicTime, raceAgainstDeadline } from 'playwright-core/lib/utils';
+import { launchProcess, isURLAvailable, monotonicTime, raceAgainstDeadline, ManualPromise } from 'playwright-core/lib/utils';
 import { colors } from 'playwright-core/lib/utils';
 import { debug } from 'playwright-core/lib/utilsBundle';
 
@@ -25,10 +25,10 @@ import type { FullConfig } from '../../types/testReporter';
 import type { FullConfigInternal } from '../common/config';
 import type { ReporterV2 } from '../reporters/reporterV2';
 
-
 export type WebServerPluginOptions = {
   command: string;
   url?: string;
+  wait?: { stdout?: RegExp, stderr?: RegExp };
   ignoreHTTPSErrors?: boolean;
   timeout?: number;
   gracefulShutdown?: { signal: 'SIGINT' | 'SIGTERM', timeout?: number };
@@ -55,6 +55,8 @@ export class WebServerPlugin implements TestRunnerPlugin {
   private _options: WebServerPluginOptions;
   private _checkPortOnly: boolean;
   private _reporter?: ReporterV2;
+  private _waitForStdioPromise: ManualPromise | undefined;
+
   name = 'playwright:webserver';
 
   constructor(options: WebServerPluginOptions, checkPortOnly: boolean) {
@@ -138,28 +140,63 @@ export class WebServerPlugin implements TestRunnerPlugin {
 
     debugWebServer(`Process started`);
 
-    launchedProcess.stderr!.on('data', data => {
-      if (debugWebServer.enabled || (this._options.stderr === 'pipe' || !this._options.stderr))
-        this._reporter!.onStdErr?.(prefixOutputLines(data.toString(), this._options.name));
-    });
+    if (this._options.wait?.stdout || this._options.wait?.stderr)
+      this._waitForStdioPromise = new ManualPromise();
+    const stdioWaitCollectors = {
+      stdout: this._options.wait?.stdout ? '' : undefined,
+      stderr: this._options.wait?.stderr ? '' : undefined,
+    };
+
     launchedProcess.stdout!.on('data', data => {
       if (debugWebServer.enabled || this._options.stdout === 'pipe')
         this._reporter!.onStdOut?.(prefixOutputLines(data.toString(), this._options.name));
     });
+
+    launchedProcess.stderr!.on('data', data => {
+      if (debugWebServer.enabled || (this._options.stderr === 'pipe' || !this._options.stderr))
+        this._reporter!.onStdErr?.(prefixOutputLines(data.toString(), this._options.name));
+    });
+
+    const resolveStdioPromise = () => {
+      stdioWaitCollectors.stdout = undefined;
+      stdioWaitCollectors.stderr = undefined;
+      this._waitForStdioPromise?.resolve();
+    };
+
+    for (const stdio of ['stdout', 'stderr'] as const) {
+      launchedProcess[stdio]!.on('data', data => {
+        if (!this._options.wait?.[stdio] || stdioWaitCollectors[stdio] === undefined)
+          return;
+        stdioWaitCollectors[stdio] += data.toString();
+        this._options.wait[stdio].lastIndex = 0;
+        const result = this._options.wait[stdio].exec(stdioWaitCollectors[stdio]);
+        if (result) {
+          for (const [key, value] of Object.entries(result.groups || {}))
+            process.env[key.toUpperCase()] = value;
+          resolveStdioPromise();
+        }
+      });
+    }
   }
 
   private async _waitForProcess() {
-    if (!this._isAvailableCallback) {
+    if (!this._isAvailableCallback && !this._waitForStdioPromise) {
       this._processExitedPromise.catch(() => {});
       return;
     }
+
     debugWebServer(`Waiting for availability...`);
     const launchTimeout = this._options.timeout || 60 * 1000;
     const cancellationToken = { canceled: false };
-    const { timedOut } = (await Promise.race([
-      raceAgainstDeadline(() => waitFor(this._isAvailableCallback!, cancellationToken), monotonicTime() + launchTimeout),
-      this._processExitedPromise,
-    ]));
+    const deadline = monotonicTime() + launchTimeout;
+
+    const racingPromises = [this._processExitedPromise];
+    if (this._isAvailableCallback)
+      racingPromises.push(raceAgainstDeadline(() => waitFor(this._isAvailableCallback!, cancellationToken), deadline));
+    if (this._waitForStdioPromise)
+      racingPromises.push(raceAgainstDeadline(() => this._waitForStdioPromise!, deadline));
+
+    const { timedOut } = await Promise.race(racingPromises);
     cancellationToken.canceled = true;
     if (timedOut)
       throw new Error(`Timed out waiting ${launchTimeout}ms from config.webServer.`);

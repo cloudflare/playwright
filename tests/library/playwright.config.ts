@@ -78,6 +78,13 @@ if (mode === 'service2') {
     }
   };
 }
+if (channel === 'webkit-wsl') {
+  connectOptions = { wsEndpoint: 'ws://localhost:3777/' };
+  webServer = {
+    command: 'set PWTEST_UNDER_TEST=1 && set WSLENV=PWTEST_UNDER_TEST && wsl.exe -d playwright -u pwuser -- bash -lc \'/home/pwuser/node/bin/npx playwright run-server --port=3777\'',
+    url: 'http://localhost:3777',
+  };
+}
 
 const config: Config<PlaywrightWorkerOptions & PlaywrightTestOptions & TestModeWorkerOptions> = {
   testDir,

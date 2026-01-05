@@ -2497,6 +2497,12 @@ export interface Page {
     };
 
     /**
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between the `mousedown` and `mouseup`
+     * of the drag. When set to 1, emits a single `mousemove` event at the destination location.
+     */
+    steps?: number;
+
+    /**
      * When true, the call requires selector to resolve to a single element. If given selector resolves to more than one
      * element, the call throws an exception.
      */
@@ -5168,13 +5174,6 @@ export interface Page {
   workers(): Array<Worker>;
 
   /**
-   * @deprecated This property is discouraged. Please use other libraries such as [Axe](https://www.deque.com/axe/) if you need to
-   * test page accessibility. See our Node.js [guide](https://playwright.dev/docs/accessibility-testing) for integration
-   * with Axe.
-   */
-  accessibility: Accessibility;
-
-  /**
    * Playwright has ability to mock clock and passage of time.
    */
   clock: Clock;
@@ -6406,6 +6405,12 @@ export interface Frame {
 
       y: number;
     };
+
+    /**
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between the `mousedown` and `mouseup`
+     * of the drag. When set to 1, emits a single `mousemove` event at the destination location.
+     */
+    steps?: number;
 
     /**
      * When true, the call requires selector to resolve to a single element. If given selector resolves to more than one
@@ -8802,18 +8807,18 @@ export interface BrowserContext {
     value: string;
 
     /**
-     * Either url or domain / path are required. Optional.
+     * Either `url` or both `domain` and `path` are required. Optional.
      */
     url?: string;
 
     /**
-     * For the cookie to apply to all subdomains as well, prefix domain with a dot, like this: ".example.com". Either url
-     * or domain / path are required. Optional.
+     * For the cookie to apply to all subdomains as well, prefix domain with a dot, like this: ".example.com". Either
+     * `url` or both `domain` and `path` are required. Optional.
      */
     domain?: string;
 
     /**
-     * Either url or domain / path are required Optional.
+     * Either `url` or both `domain` and `path` are required. Optional.
      */
     path?: string;
 
@@ -8991,6 +8996,8 @@ export interface BrowserContext {
    * - `'clipboard-write'`
    * - `'geolocation'`
    * - `'gyroscope'`
+   * - `'local-fonts'`
+   * - `'local-network-access'`
    * - `'magnetometer'`
    * - `'microphone'`
    * - `'midi-sysex'` (system-exclusive midi)
@@ -8998,7 +9005,6 @@ export interface BrowserContext {
    * - `'notifications'`
    * - `'payment-handler'`
    * - `'storage-access'`
-   * - `'local-fonts'`
    * @param options
    */
   grantPermissions(permissions: ReadonlyArray<string>, options?: {
@@ -10325,15 +10331,30 @@ export interface Worker {
   on(event: 'close', listener: (worker: Worker) => any): this;
 
   /**
+   * Emitted when JavaScript within the worker calls one of console API methods, e.g. `console.log` or `console.dir`.
+   */
+  on(event: 'console', listener: (consoleMessage: ConsoleMessage) => any): this;
+
+  /**
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
    */
   once(event: 'close', listener: (worker: Worker) => any): this;
+
+  /**
+   * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
+   */
+  once(event: 'console', listener: (consoleMessage: ConsoleMessage) => any): this;
 
   /**
    * Emitted when this dedicated [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) is
    * terminated.
    */
   addListener(event: 'close', listener: (worker: Worker) => any): this;
+
+  /**
+   * Emitted when JavaScript within the worker calls one of console API methods, e.g. `console.log` or `console.dir`.
+   */
+  addListener(event: 'console', listener: (consoleMessage: ConsoleMessage) => any): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
@@ -10343,7 +10364,17 @@ export interface Worker {
   /**
    * Removes an event listener added by `on` or `addListener`.
    */
+  removeListener(event: 'console', listener: (consoleMessage: ConsoleMessage) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
   off(event: 'close', listener: (worker: Worker) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
+  off(event: 'console', listener: (consoleMessage: ConsoleMessage) => any): this;
 
   /**
    * Emitted when this dedicated [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) is
@@ -10351,7 +10382,24 @@ export interface Worker {
    */
   prependListener(event: 'close', listener: (worker: Worker) => any): this;
 
+  /**
+   * Emitted when JavaScript within the worker calls one of console API methods, e.g. `console.log` or `console.dir`.
+   */
+  prependListener(event: 'console', listener: (consoleMessage: ConsoleMessage) => any): this;
+
   url(): string;
+
+  /**
+   * Emitted when this dedicated [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) is
+   * terminated.
+   */
+  waitForEvent(event: 'close', optionsOrPredicate?: { predicate?: (worker: Worker) => boolean | Promise<boolean>, timeout?: number } | ((worker: Worker) => boolean | Promise<boolean>)): Promise<Worker>;
+
+  /**
+   * Emitted when JavaScript within the worker calls one of console API methods, e.g. `console.log` or `console.dir`.
+   */
+  waitForEvent(event: 'console', optionsOrPredicate?: { predicate?: (consoleMessage: ConsoleMessage) => boolean | Promise<boolean>, timeout?: number } | ((consoleMessage: ConsoleMessage) => boolean | Promise<boolean>)): Promise<ConsoleMessage>;
+
 }
 
 /**
@@ -11211,6 +11259,12 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
     };
 
     /**
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between Playwright's current cursor
+     * position and the provided destination. When set to 1, emits a single `mousemove` event at the destination location.
+     */
+    steps?: number;
+
+    /**
      * Maximum time in milliseconds. Defaults to `0` - no timeout. The default value can be changed via `actionTimeout`
      * option in the config, or by using the
      * [browserContext.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-browsercontext#browser-context-set-default-timeout)
@@ -11292,6 +11346,12 @@ export interface ElementHandle<T=Node> extends JSHandle<T> {
 
       y: number;
     };
+
+    /**
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between Playwright's current cursor
+     * position and the provided destination. When set to 1, emits a single `mousemove` event at the destination location.
+     */
+    steps?: number;
 
     /**
      * Maximum time in milliseconds. Defaults to `0` - no timeout. The default value can be changed via `actionTimeout`
@@ -12788,6 +12848,12 @@ export interface Locator {
     };
 
     /**
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between Playwright's current cursor
+     * position and the provided destination. When set to 1, emits a single `mousemove` event at the destination location.
+     */
+    steps?: number;
+
+    /**
      * Maximum time in milliseconds. Defaults to `0` - no timeout. The default value can be changed via `actionTimeout`
      * option in the config, or by using the
      * [browserContext.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-browsercontext#browser-context-set-default-timeout)
@@ -12905,6 +12971,12 @@ export interface Locator {
     };
 
     /**
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between Playwright's current cursor
+     * position and the provided destination. When set to 1, emits a single `mousemove` event at the destination location.
+     */
+    steps?: number;
+
+    /**
      * Maximum time in milliseconds. Defaults to `0` - no timeout. The default value can be changed via `actionTimeout`
      * option in the config, or by using the
      * [browserContext.setDefaultTimeout(timeout)](https://playwright.dev/docs/api/class-browsercontext#browser-context-set-default-timeout)
@@ -12935,6 +13007,25 @@ export interface Locator {
    * @param description Locator description.
    */
   describe(description: string): Locator;
+
+  /**
+   * Returns locator description previously set with
+   * [locator.describe(description)](https://playwright.dev/docs/api/class-locator#locator-describe). Returns `null` if
+   * no custom description has been set. Prefer `Locator.toString()` for a human-readable representation, as it uses the
+   * description when available.
+   *
+   * **Usage**
+   *
+   * ```js
+   * const button = page.getByRole('button').describe('Subscribe button');
+   * console.log(button.description()); // "Subscribe button"
+   *
+   * const input = page.getByRole('textbox');
+   * console.log(input.description()); // null
+   * ```
+   *
+   */
+  description(): null|string;
 
   /**
    * Programmatically dispatch an event on the matching element.
@@ -13037,6 +13128,12 @@ export interface Locator {
 
       y: number;
     };
+
+    /**
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between the `mousedown` and `mouseup`
+     * of the drag. When set to 1, emits a single `mousemove` event at the destination location.
+     */
+    steps?: number;
 
     /**
      * Drops on the target element at this point relative to the top-left corner of the element's padding box. If not
@@ -15730,97 +15827,6 @@ class TimeoutError extends Error {
 
 }
 
-/**
- * The Accessibility class provides methods for inspecting Chromium's accessibility tree. The accessibility tree is
- * used by assistive technology such as [screen readers](https://en.wikipedia.org/wiki/Screen_reader) or
- * [switches](https://en.wikipedia.org/wiki/Switch_access).
- *
- * Accessibility is a very platform-specific thing. On different platforms, there are different screen readers that
- * might have wildly different output.
- *
- * Rendering engines of Chromium, Firefox and WebKit have a concept of "accessibility tree", which is then translated
- * into different platform-specific APIs. Accessibility namespace gives access to this Accessibility Tree.
- *
- * Most of the accessibility tree gets filtered out when converting from internal browser AX Tree to Platform-specific
- * AX-Tree or by assistive technologies themselves. By default, Playwright tries to approximate this filtering,
- * exposing only the "interesting" nodes of the tree.
- */
-export interface Accessibility {
-  /**
-   * Captures the current state of the accessibility tree. The returned object represents the root accessible node of
-   * the page.
-   *
-   * **NOTE** The Chromium accessibility tree contains nodes that go unused on most platforms and by most screen
-   * readers. Playwright will discard them as well for an easier to process tree, unless
-   * [`interestingOnly`](https://playwright.dev/docs/api/class-accessibility#accessibility-snapshot-option-interesting-only)
-   * is set to `false`.
-   *
-   * **Usage**
-   *
-   * An example of dumping the entire accessibility tree:
-   *
-   * ```js
-   * const snapshot = await page.accessibility.snapshot();
-   * console.log(snapshot);
-   * ```
-   *
-   * An example of logging the focused node's name:
-   *
-   * ```js
-   * const snapshot = await page.accessibility.snapshot();
-   * const node = findFocusedNode(snapshot);
-   * console.log(node && node.name);
-   *
-   * function findFocusedNode(node) {
-   *   if (node.focused)
-   *     return node;
-   *   for (const child of node.children || []) {
-   *     const foundNode = findFocusedNode(child);
-   *     if (foundNode)
-   *       return foundNode;
-   *   }
-   *   return null;
-   * }
-   * ```
-   *
-   * @deprecated This method is deprecated. Please use other libraries such as [Axe](https://www.deque.com/axe/) if you need to test
-   * page accessibility. See our Node.js [guide](https://playwright.dev/docs/accessibility-testing) for integration with
-   * Axe.
-   * @param options
-   */
-  snapshot(options?: AccessibilitySnapshotOptions): Promise<null|AccessibilityNode>;
-
-}
-
-type AccessibilityNode = {
-  role: string;
-  name: string;
-  value?: string|number;
-  description?: string;
-  keyshortcuts?: string;
-  roledescription?: string;
-  valuetext?: string;
-  disabled?: boolean;
-  expanded?: boolean;
-  focused?: boolean;
-  modal?: boolean;
-  multiline?: boolean;
-  multiselectable?: boolean;
-  readonly?: boolean;
-  required?: boolean;
-  selected?: boolean;
-  checked?: boolean|"mixed";
-  pressed?: boolean|"mixed";
-  level?: number;
-  valuemin?: number;
-  valuemax?: number;
-  autocomplete?: string;
-  haspopup?: string;
-  invalid?: string;
-  orientation?: string;
-  children?: AccessibilityNode[];
-}
-
 export const devices: Devices;
 
 //@ts-ignore this will be any if electron is not installed
@@ -16290,8 +16296,6 @@ export type AndroidKey =
 
 export const _electron: Electron;
 export const _android: Android;
-export const _bidiChromium: BrowserType;
-export const _bidiFirefox: BrowserType;
 
 // This is required to not export everything by default. See https://github.com/Microsoft/TypeScript/issues/19545#issuecomment-340490459
 export {};
@@ -18878,6 +18882,13 @@ export interface ConsoleMessage {
   text(): string;
 
   type(): "log"|"debug"|"info"|"error"|"warning"|"dir"|"dirxml"|"table"|"trace"|"clear"|"startGroup"|"startGroupCollapsed"|"endGroup"|"assert"|"profile"|"profileEnd"|"count"|"timeEnd";
+
+  /**
+   * The web worker or service worker that produced this console message, if any. Note that console messages from web
+   * workers also have non-null
+   * [consoleMessage.page()](https://playwright.dev/docs/api/class-consolemessage#console-message-page).
+   */
+  worker(): null|Worker;
 }
 
 /**
@@ -19108,6 +19119,10 @@ export interface Download {
 
   /**
    * Returns a readable stream for a successful download, or throws for a failed/canceled download.
+   *
+   * **NOTE** If you don't need a readable stream, it's usually simpler to read the file from disk after the download
+   * completed. See [download.path()](https://playwright.dev/docs/api/class-download#download-path).
+   *
    */
   createReadStream(): Promise<Readable>;
 
@@ -20273,7 +20288,8 @@ export interface Mouse {
    */
   move(x: number, y: number, options?: {
     /**
-     * Defaults to 1. Sends intermediate `mousemove` events.
+     * Defaults to 1. Sends `n` interpolated `mousemove` events to represent travel between Playwright's current cursor
+     * position and the provided destination. When set to 1, emits a single `mousemove` event at the destination location.
      */
     steps?: number;
   }): Promise<void>;
@@ -21721,18 +21737,6 @@ export interface WebSocket {
    */
   waitForEvent(event: 'socketerror', optionsOrPredicate?: { predicate?: (string: string) => boolean | Promise<boolean>, timeout?: number } | ((string: string) => boolean | Promise<boolean>)): Promise<string>;
 
-}
-
-interface AccessibilitySnapshotOptions {
-  /**
-   * Prune uninteresting nodes from the tree. Defaults to `true`.
-   */
-  interestingOnly?: boolean;
-
-  /**
-   * The root DOM element for the snapshot. Defaults to the whole page.
-   */
-  root?: ElementHandle;
 }
 
 export interface LaunchOptions {
