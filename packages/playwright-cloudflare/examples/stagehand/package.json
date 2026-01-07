@@ -19,7 +19,7 @@
     "@vitejs/plugin-react": "^5.0.3",
     "typescript": "^5.8.3",
     "vite": "^7.1.7",
-    "wrangler": "^4.38.0"
+    "wrangler": "^4.57.0"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^2.5.0",
