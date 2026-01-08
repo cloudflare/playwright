@@ -15,6 +15,6 @@
     "wrangler": "^4.57.0"
   },
   "dependencies": {
-    "@cloudflare/playwright": "^1.0.0"
+    "@cloudflare/playwright": "^1.1.0"
   }
 }
