@@ -2,7 +2,9 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/playwright/tree/main/packages/playwright-cloudflare/examples/stagehand)
 
-This example demonstrates how to integrate Stagehand in a Cloudflare Worker using Vite to extract information from a movie.
+This example demonstrates how to integrate Stagehand 2.x in a Cloudflare Worker using Vite to extract information from a movie.
+
+> **Note**: This example uses Stagehand 2.5. Stagehand 3.x is not currently supported as it no longer relies on Playwright.
 
 It uses Workers AI [@cf/meta/llama-3.3-70b-instruct-fp8-fast](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/) as the model by default.
 
