@@ -16,7 +16,6 @@ export default defineConfig({
       'async_hooks': 'node:async_hooks',
       'assert': 'node:assert',
       'buffer': 'node:buffer',
-      'child_process': 'node:child_process',
       'constants': 'node:constants',
       'crypto': 'node:crypto',
       'dns': 'node:dns',
@@ -43,6 +42,9 @@ export default defineConfig({
       './zipBundleImpl': path.resolve(__dirname, './src/bundles/zipBundleImpl'),
       './expectBundleImpl': path.resolve(__dirname, './src/bundles/expectBundleImpl'),
       'pngjs': path.resolve(__dirname, './src/bundles/pngjs'),
+
+      "child_process": path.resolve(__dirname, './src/mocks/childProcess'),
+      "node:child_process": path.resolve(__dirname, './src/mocks/childProcess'),
 
       // replace playwright transport with cloudflare workers transport
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
@@ -96,7 +98,6 @@ export default defineConfig({
         'node:assert',
         'node:browser',
         'node:buffer',
-        'node:child_process',
         'node:constants',
         'node:crypto',
         'node:dns',
