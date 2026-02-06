@@ -30,7 +30,6 @@ export default defineConfig({
       'os': 'node:os',
       'path': 'node:path',
       'process': 'node:process',
-      'readline': 'node:readline',
       'stream': 'node:stream',
       'tls': 'node:tls',
       'url': 'node:url',
@@ -45,6 +44,8 @@ export default defineConfig({
 
       "child_process": path.resolve(__dirname, './src/mocks/childProcess'),
       "node:child_process": path.resolve(__dirname, './src/mocks/childProcess'),
+      "readline": path.resolve(__dirname, './src/mocks/readline'),
+      "node:readline": path.resolve(__dirname, './src/mocks/readline'),
 
       // replace playwright transport with cloudflare workers transport
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
@@ -112,7 +113,6 @@ export default defineConfig({
         'node:os',
         'node:path',
         'node:process',
-        'node:readline',
         'node:stream',
         'node:timers',
         'node:tls',
