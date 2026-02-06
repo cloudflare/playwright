@@ -24,7 +24,6 @@ export default defineConfig({
       'http': 'node:http',
       'http2': 'node:http2',
       'https': 'node:https',
-      'inspector': 'node:inspector',
       'module': 'node:module',
       'net': 'node:net',
       'os': 'node:os',
@@ -46,6 +45,8 @@ export default defineConfig({
       "node:child_process": path.resolve(__dirname, './src/mocks/childProcess'),
       "readline": path.resolve(__dirname, './src/mocks/readline'),
       "node:readline": path.resolve(__dirname, './src/mocks/readline'),
+      "inspector": path.resolve(__dirname, './src/mocks/inspector'),
+      "node:inspector": path.resolve(__dirname, './src/mocks/inspector'),
 
       // replace playwright transport with cloudflare workers transport
       './transport': path.resolve(__dirname, './src/cloudflare/webSocketTransport'),
@@ -107,7 +108,6 @@ export default defineConfig({
         'node:http',
         'node:http2',
         'node:https',
-        'node:inspector',
         'node:module',
         'node:net',
         'node:os',
