@@ -53,7 +53,7 @@ test('browser_type', async ({ startClient, server }) => {
     expect(response).toHaveResponse({
       code: `await page.getByRole('textbox').fill(process.env['X-PASSWORD']);
 await page.getByRole('textbox').press('Enter');`,
-      pageState: expect.stringMatching(/textbox (\[active\] )?\[ref=e2\]: <secret>X-PASSWORD<\/secret>/),
+      snapshot: expect.stringMatching(/textbox (\[active\] )?\[ref=e2\]: <secret>X-PASSWORD<\/secret>/),
     });
   }
 
@@ -123,6 +123,6 @@ await page.getByRole('textbox', { name: 'Password' }).fill(process.env['X-PASSWO
     name: 'browser_snapshot',
     arguments: {},
   })).toHaveResponse({
-    pageState: expect.stringContaining(`- textbox \"Password\" [active] [ref=e6]: <secret>X-PASSWORD</secret>`),
+    snapshot: expect.stringContaining(`- textbox \"Password\" [active] [ref=e6]: <secret>X-PASSWORD</secret>`),
   });
 });

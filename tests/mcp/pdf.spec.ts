@@ -28,7 +28,7 @@ test('save as pdf unavailable', async ({ startClient, server }) => {
   expect(await client.callTool({
     name: 'browser_pdf_save',
   })).toHaveResponse({
-    result: 'Error: Tool "browser_pdf_save" not found',
+    error: 'Tool "browser_pdf_save" not found',
     isError: true,
   });
 });
@@ -44,14 +44,14 @@ test('save as pdf', async ({ startClient, mcpBrowser, server }, testInfo) => {
     name: 'browser_navigate',
     arguments: { url: server.HELLO_WORLD },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`- generic [active] [ref=e1]: Hello, world!`),
+    snapshot: expect.stringContaining(`- generic [active] [ref=e1]: Hello, world!`),
   });
 
   expect(await client.callTool({
     name: 'browser_pdf_save',
   })).toHaveResponse({
     code: expect.stringContaining(`await page.pdf(`),
-    result: expect.stringMatching(/Saved page as.*page-[^:]+.pdf/),
+    result: expect.stringMatching(/\[Page as pdf\]\(.*page-[^:]+.pdf\)/),
   });
 });
 
@@ -66,7 +66,7 @@ test('save as pdf (filename: output.pdf)', async ({ startClient, mcpBrowser, ser
     name: 'browser_navigate',
     arguments: { url: server.HELLO_WORLD },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`- generic [active] [ref=e1]: Hello, world!`),
+    snapshot: expect.stringContaining(`- generic [active] [ref=e1]: Hello, world!`),
   });
 
   expect(await client.callTool({

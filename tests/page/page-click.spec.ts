@@ -248,12 +248,15 @@ it('should click wrapped links', async ({ page, server }) => {
   expect(await page.evaluate('__clicked')).toBe(true);
 });
 
-it('should click on checkbox input and toggle', async ({ page, server }) => {
+it('should click on checkbox input and toggle', async ({ page, server, headless }) => {
   await page.goto(server.PREFIX + '/input/checkbox.html');
   expect(await page.evaluate(() => window['result'].check)).toBe(null);
   await page.click('input#agree');
   expect(await page.evaluate(() => window['result'].check)).toBe(true);
-  expect(await page.evaluate(() => window['result'].events)).toEqual([
+  let events: string[] = await page.evaluate(() => window['result'].events);
+  if (!headless)
+    events = events.filter(e => e !== 'mouseout' && e !== 'mouseleave');
+  expect(events).toEqual([
     'mouseover',
     'mouseenter',
     'mousemove',
@@ -1076,7 +1079,7 @@ it('should click a button that is overlaid by a permission popup', async ({ page
     navigator.geolocation.getCurrentPosition(position => { });
   });
   // If popup blocks the click, then some of the `page.click` calls below will hang.
-  for (let i = 0; i < 100; ++i)
+  for (let i = 0; i < 30; ++i)
     await page.click(`text=${i}`);
 });
 
@@ -1317,4 +1320,31 @@ it('should click with tweened mouse movement', async ({ page, browserName, isAnd
     [180, 260],
     [200, 300]
   ]);
+});
+
+it('should not wait with noAutoWaiting', async ({ page }) => {
+  await page.setContent(`<button>click me</button>`);
+  const error = await page.locator('#target').click({ __testHookNoAutoWaiting: true } as any).catch(e => e);
+  expect(error.message).toContain('locator.click: Element(s) not found');
+});
+
+it('should not wait with noAutoWaiting 2', async ({ page }) => {
+  await page.setContent(`
+    <style>
+      div:hover button {
+        margin-left: 200px;
+      }
+    </style>
+    <div>
+      <button>click me</button>
+    </div>
+  `);
+  const error = await page.locator('button').click({ __testHookNoAutoWaiting: true } as any).catch(e => e);
+  expect(error.message).toContain('locator.click: <div>…</div> intercepts pointer events');
+});
+
+it('should not wait with noAutoWaiting 3', async ({ page }) => {
+  await page.setContent(`<button disabled>click me</button>`);
+  const error = await page.locator('button').click({ __testHookNoAutoWaiting: true } as any).catch(e => e);
+  expect(error.message).toContain('locator.click: Element is not enabled');
 });

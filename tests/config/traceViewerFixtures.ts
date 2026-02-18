@@ -47,9 +47,10 @@ class TraceViewerPage {
   metadataTab: Locator;
   snapshotContainer: Locator;
   sourceCodeTab: Locator;
+  networkTab: Locator;
 
   settingsDialog: Locator;
-  darkModeSetting: Locator;
+  themeSetting: Locator;
   displayCanvasContentSetting: Locator;
 
   constructor(public page: Page) {
@@ -65,9 +66,10 @@ class TraceViewerPage {
     this.snapshotContainer = page.locator('.snapshot-container iframe.snapshot-visible[name=snapshot]');
     this.metadataTab = page.getByRole('tabpanel', { name: 'Metadata' });
     this.sourceCodeTab = page.getByRole('tabpanel', { name: 'Source' });
+    this.networkTab = page.getByRole('tabpanel', { name: 'Network' });
 
     this.settingsDialog = page.getByTestId('settings-toolbar-dialog');
-    this.darkModeSetting = page.locator('.setting').getByText('Dark mode');
+    this.themeSetting = this.settingsDialog.getByRole('combobox', { name: 'Theme' });
     this.displayCanvasContentSetting = page.locator('.setting').getByText('Display canvas content');
   }
 

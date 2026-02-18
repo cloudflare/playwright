@@ -92,8 +92,9 @@ test('test_debug (browser_snapshot/network/console)', async ({ startClient, serv
       import { test, expect } from '@playwright/test';
       test('fail', async ({ page }) => {
         await page.goto(${JSON.stringify(server.HELLO_WORLD)});
-        await page.evaluate(() => {
+        await page.evaluate(async () => {
           console.log('hello from console');
+          await fetch('/missing');
           setTimeout(() => { throw new Error('error from page'); }, 0);
         });
         await expect(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 1000 });
@@ -108,17 +109,17 @@ test('test_debug (browser_snapshot/network/console)', async ({ startClient, serv
   await expect.poll(() => client.callTool({
     name: 'browser_network_requests',
   })).toHaveResponse({
-    result: expect.stringContaining(`[GET] ${server.HELLO_WORLD} => [200] OK`),
+    result: expect.stringContaining(`[GET] ${server.PREFIX}/missing => [404]`),
   });
   expect(await client.callTool({
     name: 'browser_console_messages',
   })).toHaveResponse({
-    result: expect.stringMatching(/\[LOG\] hello from console.*\nError: error from page/),
+    result: expect.stringMatching(/\[LOG\] hello from console.*\n.*404.*\nError: error from page/),
   });
   expect(await client.callTool({
     name: 'browser_snapshot',
   })).toHaveResponse({
-    pageState: expect.stringContaining(`generic [active] [ref=e1]: Hello, world!`),
+    snapshot: expect.stringContaining(`generic [active] [ref=e1]: Hello, world!`),
   });
 });
 
@@ -200,7 +201,7 @@ Try recovering from the error prior to continuing`);
   expect(await client.callTool({
     name: 'browser_snapshot',
   })).toHaveResponse({
-    pageState: expect.stringContaining(`- button \"Submit\" [ref=e2]`),
+    snapshot: expect.stringContaining(`- button \"Submit\" [ref=e2]`),
   });
 
   expect(await client.callTool({
@@ -403,7 +404,7 @@ Error: expect(locator).toBeVisible() failed`));
   expect(await client.callTool({
     name: 'browser_network_requests',
   })).toHaveResponse({
-    result: `\[GET\] ${server.HELLO_WORLD} => [200] OK\n\[GET\] ${server.PREFIX}/missing => [404] Not Found`,
+    result: `[GET\] ${server.PREFIX}/missing => [404] Not Found`,
   });
 });
 
@@ -434,6 +435,6 @@ Error: expect(locator).toBeVisible() failed`));
     name: 'browser_navigate',
     arguments: { url: server.HELLO_WORLD, intent: 'Go to hello world' },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`- Page URL: ${server.HELLO_WORLD}\n- Page Title: Title2`),
+    page: expect.stringContaining(`- Page URL: ${server.HELLO_WORLD}\n- Page Title: Title2`),
   });
 });

@@ -1,7 +1,6 @@
 ---
 name: playwright-test-planner
-description: Use this agent when you need to create comprehensive test plan for
-  a web application or website
+description: Use this agent when you need to create comprehensive test plan for a web application or website
 tools:
   - search
   - playwright-test/browser_click
@@ -16,6 +15,7 @@ tools:
   - playwright-test/browser_navigate_back
   - playwright-test/browser_network_requests
   - playwright-test/browser_press_key
+  - playwright-test/browser_run_code
   - playwright-test/browser_select_option
   - playwright-test/browser_snapshot
   - playwright-test/browser_take_screenshot

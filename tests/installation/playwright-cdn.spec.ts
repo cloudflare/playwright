@@ -24,7 +24,7 @@ const CDNS = [
   'https://cdn.playwright.dev',
 ];
 
-const DL_STAT_BLOCK = /^.*from url: (.*)$\n^.*to location: (.*)$\n^.*response status code: (.*)$\n^.*is chunked: (.*)$\n^.*total bytes: (\d+)$\n^.*download complete, size: (\d+)$\n^.*SUCCESS downloading (\w+) .*$/gm;
+const DL_STAT_BLOCK = /^.*from url: (.*)$\n^.*to location: (.*)$\n^.*response status code: (.*)$\n^.*is chunked: (.*)$\n^.*total bytes: (\d+)$\n^.*download complete, size: (\d+)$\n^.*SUCCESS downloading.*\(playwright ([a-zA-Z-]+) v\d+\).*$/gm;
 
 const parsedDownloads = (rawLogs: string) => {
   const out: { url: string, status: number, name: string }[] = [];
@@ -46,7 +46,7 @@ for (const cdn of CDNS) {
     expect(result).toHaveLoggedSoftwareDownload(['chromium', 'chromium-headless-shell', 'ffmpeg', 'firefox', 'webkit', ...extraInstalledSoftware]);
     await checkInstalledSoftwareOnDisk((['chromium', 'chromium-headless-shell', 'ffmpeg', 'firefox', 'webkit', ...extraInstalledSoftware]));
     const dls = parsedDownloads(result);
-    for (const software of ['chromium', 'ffmpeg', 'firefox', 'webkit'])
+    for (const software of ['ffmpeg', 'firefox', 'webkit'])
       expect(dls).toContainEqual({ status: 200, name: software, url: expect.stringContaining(cdn) });
     await exec('node sanity.js playwright chromium firefox webkit');
     await exec('node esm-playwright.mjs');
@@ -123,7 +123,7 @@ test(`playwright cdn should not timeout on redirect`, {
       expectToExitWithError: true
     });
     // Steps after the extraction will fail, but the download should succeed without timeouts.
-    expect(result).toContain(`pw:install SUCCESS downloading Chromium`);
+    expect(result).toContain(`pw:install SUCCESS downloading Chrome`);
     expect(result).not.toContain(`timed out after 1000ms`);
   } finally {
     await new Promise(resolve => server.close(resolve));

@@ -39,6 +39,8 @@ type ReportData = {
   reportFile: string;
   metadata: BlobReportMetadata;
   tags: string[];
+  startTime: number;
+  duration: number;
 };
 
 export async function createMergedReport(config: FullConfigInternal, dir: string, reporterDescriptions: ReporterDescription[], rootDirOverride: string | undefined) {
@@ -58,10 +60,15 @@ export async function createMergedReport(config: FullConfigInternal, dir: string
   const eventData = await mergeEvents(dir, shardFiles, stringPool, printStatus, rootDirOverride);
   // If explicit config is provided, use platform path separator, otherwise use the one from the report (if any).
   const pathSeparator = rootDirOverride ? path.sep : (eventData.pathSeparatorFromMetadata ?? path.sep);
+  const pathPackage = pathSeparator === '/' ? path.posix : path.win32;
   const receiver = new TeleReporterReceiver(multiplexer, {
     mergeProjects: false,
     mergeTestCases: false,
-    resolvePath: (rootDir, relativePath) => stringPool.internString(rootDir + pathSeparator + relativePath),
+    // When merging on a different OS, an absolute path like `C:\foo\bar` from win may look like
+    // a relative path on posix, and vice versa.
+    // Therefore, we cannot use `path.resolve()` here - it will resolve relative-looking paths
+    // against `process.cwd()`, while we just want to normalize ".." and "." segments.
+    resolvePath: (rootDir, relativePath) => stringPool.internString(pathPackage.normalize(pathPackage.join(rootDir, relativePath))),
     configOverrides: config.config,
   });
   printStatus(`processing test events`);
@@ -77,7 +84,7 @@ export async function createMergedReport(config: FullConfigInternal, dir: string
   };
 
   await dispatchEvents(eventData.prologue);
-  for (const { reportFile, eventPatchers, metadata, tags } of eventData.reports) {
+  for (const { reportFile, eventPatchers, metadata, tags, startTime, duration } of eventData.reports) {
     const reportJsonl = await fs.promises.readFile(reportFile);
     const events = parseTestEvents(reportJsonl);
     new JsonStringInternalizer(stringPool).traverse(events);
@@ -88,6 +95,12 @@ export async function createMergedReport(config: FullConfigInternal, dir: string
       eventPatchers.patchers.push(new GlobalErrorPatcher(tags.join(' ')));
     eventPatchers.patchEvents(events);
     await dispatchEvents(events);
+    multiplexer.onMachineEnd({
+      startTime: new Date(startTime),
+      duration,
+      tag: tags,
+      shardIndex: metadata.shard?.current,
+    });
   }
   await dispatchEvents(eventData.epilogue);
 }
@@ -183,7 +196,7 @@ async function mergeEvents(dir: string, shardReportFiles: string[], stringPool: 
 
   const configureEvents: JsonOnConfigureEvent[] = [];
   const projectEvents: JsonOnProjectEvent[] = [];
-  const endEvents: JsonOnEndEvent[] = [];
+  const endEvents: { event: JsonOnEndEvent, metadata: BlobReportMetadata, tags: string[] }[] = [];
 
   const blobs = await extractAndParseReports(dir, shardReportFiles, internalizer, printStatus);
   // Sort by (report name; shard; file name), so that salt generation below is deterministic when:
@@ -223,6 +236,8 @@ async function mergeEvents(dir: string, shardReportFiles: string[], stringPool: 
     eventPatchers.patchEvents(parsedEvents);
 
     let tags: string[] = [];
+    let startTime = 0;
+    let duration = 0;
     for (const event of parsedEvents) {
       if (event.method === 'onConfigure') {
         configureEvents.push(event);
@@ -230,7 +245,9 @@ async function mergeEvents(dir: string, shardReportFiles: string[], stringPool: 
       } else if (event.method === 'onProject') {
         projectEvents.push(event);
       } else if (event.method === 'onEnd') {
-        endEvents.push(event);
+        endEvents.push({ event, metadata, tags });
+        startTime = event.params.result.startTime;
+        duration = event.params.result.duration;
       }
     }
 
@@ -240,6 +257,8 @@ async function mergeEvents(dir: string, shardReportFiles: string[], stringPool: 
       reportFile: localPath,
       metadata,
       tags,
+      startTime,
+      duration,
     });
   }
 
@@ -318,12 +337,12 @@ function mergeConfigs(to: JsonConfig, from: JsonConfig): JsonConfig {
   };
 }
 
-function mergeEndEvents(endEvents: JsonOnEndEvent[]): JsonEvent {
+function mergeEndEvents(endEvents: { event: JsonOnEndEvent }[]): JsonEvent {
   let startTime = endEvents.length ? 10000000000000 : Date.now();
   let status: JsonFullResult['status'] = 'passed';
-  let duration: number = 0;
+  let endTime: number = 0;
 
-  for (const event of endEvents) {
+  for (const { event } of endEvents) {
     const shardResult = event.params.result;
     if (shardResult.status === 'failed')
       status = 'failed';
@@ -332,12 +351,12 @@ function mergeEndEvents(endEvents: JsonOnEndEvent[]): JsonEvent {
     else if (shardResult.status === 'interrupted' && status !== 'failed' && status !== 'timedout')
       status = 'interrupted';
     startTime = Math.min(startTime, shardResult.startTime);
-    duration = Math.max(duration, shardResult.duration);
+    endTime = Math.max(endTime, shardResult.startTime + shardResult.duration);
   }
   const result: JsonFullResult = {
     status,
     startTime,
-    duration,
+    duration: endTime - startTime,
   };
   return {
     method: 'onEnd',

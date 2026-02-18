@@ -880,17 +880,17 @@ test('page.pause() should disable test timeout', async ({ runInlineTest }) => {
       import { test, expect } from '@playwright/test';
 
       test('test', async ({ page }) => {
-        test.setTimeout(2000);
+        test.setTimeout(4000);
 
         await Promise.race([
           page.pause(),
-          new Promise(f => setTimeout(f, 3000)),
+          new Promise(f => setTimeout(f, 5000)),
         ]);
 
         console.log('success!');
       });
     `,
-  }, { headed: true });
+  }, { headed: true });  // This needs to be headed otherwise entire worker is gone.
   expect(result.exitCode).toBe(0);
   expect(result.passed).toBe(1);
   expect(result.output).toContain('success!');

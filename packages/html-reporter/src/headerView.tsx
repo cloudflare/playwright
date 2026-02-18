@@ -25,7 +25,7 @@ import { statusIcon } from './statusIcon';
 import { filterWithQuery } from './filter';
 import { linkifyText } from '@web/renderUtils';
 import { Dialog } from '@web/shared/dialog';
-import { useDarkModeSetting } from '@web/theme';
+import { kThemeOptions, type Theme, useThemeSetting } from '@web/theme';
 import { useSetting } from '@web/uiUtils';
 
 export const HeaderView: React.FC<{
@@ -48,8 +48,7 @@ export const GlobalFilterView: React.FC<{
   filterText: string,
   setFilterText: (filterText: string) => void,
 }> = ({ stats, filterText, setFilterText }) => {
-  const searchParams = useSearchParams();
-  const query = searchParams.get('q');
+  const query = useSearchParams().get('q');
   React.useEffect(() => {
     // Add an extra space such that users can easily add to query
     setFilterText(query ? `${query.trim()} ` : '');
@@ -78,7 +77,7 @@ export const GlobalFilterView: React.FC<{
       }>
         {icons.search()}
         {/* Use navigationId to reset defaultValue */}
-        <input name='q' spellCheck={false} className='form-control subnav-search-input input-contrast width-full' value={filterText} onChange={e => {
+        <input name='q' spellCheck={false} className='form-control subnav-search-input input-contrast width-full' aria-label='Search tests' placeholder='Search tests' value={filterText} onChange={e => {
           setFilterText(e.target.value);
         }}></input>
       </form>
@@ -89,7 +88,7 @@ export const GlobalFilterView: React.FC<{
 const StatsNavView: React.FC<{
   stats: Stats
 }> = ({ stats }) => {
-  const searchParams = useSearchParams();
+  const isSpeedboard = useSearchParams().has('speedboard');
 
   return <nav>
     <Link className='subnav-item' href='#?'>
@@ -100,7 +99,7 @@ const StatsNavView: React.FC<{
     <NavLink token='failed' count={stats.unexpected} />
     <NavLink token='flaky' count={stats.flaky} />
     <NavLink token='skipped' count={stats.skipped} />
-    <Link className='subnav-item' href='#?speedboard' title='Speedboard' aria-selected={searchParams.has('speedboard')}>
+    <Link className='subnav-item' href='#?speedboard' title='Speedboard' aria-selected={isSpeedboard}>
       {icons.clock()}
     </Link>
     <SettingsButton />
@@ -111,7 +110,7 @@ const NavLink: React.FC<{
   token: string,
   count: number,
 }> = ({ token, count }) => {
-  const searchParams = useSearchParams();
+  const searchParams = new URLSearchParams(useSearchParams());
   searchParams.delete('speedboard');
   searchParams.delete('testId');
 
@@ -132,7 +131,7 @@ const NavLink: React.FC<{
 const SettingsButton: React.FC = () => {
   const settingsRef = React.useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const [darkMode, setDarkMode] = useDarkModeSetting();
+  const [theme, setTheme] = useThemeSetting();
   const [mergeFiles, setMergeFiles] = useSetting('mergeFiles', false);
 
   return <>
@@ -148,33 +147,34 @@ const SettingsButton: React.FC = () => {
       }}
       onMouseDown={preventDefault}>
       {icons.settings()}
-      <Dialog
-        open={settingsOpen}
-        minWidth={150}
-        verticalOffset={4}
-        requestClose={() => setSettingsOpen(false)}
-        anchor={settingsRef}
-        dataTestId='settings-dialog'
-      >
-        <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} onClick={stopPropagation}>
-          <input type='checkbox' checked={darkMode} onChange={() => setDarkMode(!darkMode)}></input>
-          Dark mode
-        </label>
-        <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} onClick={stopPropagation}>
-          <input type='checkbox' checked={mergeFiles} onChange={() => setMergeFiles(!mergeFiles)}></input>
-          Merge files
-        </label>
-      </Dialog>
     </div>
+
+    <Dialog
+      open={settingsOpen}
+      minWidth={150}
+      verticalOffset={4}
+      requestClose={() => setSettingsOpen(false)}
+      anchor={settingsRef}
+      dataTestId='settings-dialog'
+    >
+      <label className='header-setting-theme'>
+        Theme:
+        <select value={theme} onChange={e => setTheme(e.target.value as Theme)}>
+          {kThemeOptions.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+
+      <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input type='checkbox' checked={mergeFiles} onChange={() => setMergeFiles(!mergeFiles)}></input>
+        Merge files
+      </label>
+    </Dialog>
   </>;
 };
 
 const preventDefault = (e: any) => {
   e.stopPropagation();
   e.preventDefault();
-};
-
-const stopPropagation = (e: any) => {
-  e.stopPropagation();
-  e.stopImmediatePropagation();
 };

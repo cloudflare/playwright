@@ -24,7 +24,12 @@ it('SharedArrayBuffer should work @smoke', async function({ contextFactory, http
   httpsServer.setRoute('/sharedarraybuffer', (req, res) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-    res.end();
+    // Note: without 'onload', Firefox sometimes does not fire the load event
+    // over the protocol. The reason is unclear.
+    res.end(`
+      <div>Hello there!</div>
+      <script>window.onload = () => console.log('onload')</script>
+    `);
   });
   await page.goto(httpsServer.PREFIX + '/sharedarraybuffer');
   expect(await page.evaluate(() => typeof SharedArrayBuffer)).toBe('function');
@@ -241,18 +246,19 @@ it('window.GestureEvent in WebKit', async ({ page, server, browserName }) => {
   expect(type).toBe(browserName === 'webkit' ? 'function' : 'undefined');
 });
 
-it('requestFullscreen', async ({ page, server }) => {
+it('requestFullscreen', async ({ page, server, browserName, headless }) => {
   it.info().annotations.push({ type: 'issue', description: 'https://github.com/microsoft/playwright/issues/22832' });
+  it.fixme(browserName === 'firefox' && !headless, 'Error: Request for fullscreen was denied because requesting element is not in the currently focused tab');
   await page.goto(server.EMPTY_PAGE);
   await page.evaluate(() => {
     const result = new Promise(resolve => document.addEventListener('fullscreenchange', resolve));
-    void document.documentElement.requestFullscreen();
+    void document.documentElement.requestFullscreen().then(() => console.log('success')).catch(e => console.log(e));
     return result;
   });
   expect(await page.evaluate(() => document.fullscreenElement === document.documentElement)).toBeTruthy();
   await page.evaluate(() => {
     const result = new Promise(resolve => document.addEventListener('fullscreenchange', resolve));
-    void document.exitFullscreen();
+    void document.exitFullscreen().then(() => console.log('success')).catch(e => console.log(e));
     return result;
   });
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBeFalsy();
@@ -468,7 +474,10 @@ it('should not auto play audio', {
     });
   });
   await page.goto('http://127.0.0.1/audio.html');
-  await expect(page.locator('#log')).toHaveText('State: suspended');
+  if (browserName === 'webkit')
+    await expect(page.locator('#log')).toHaveText(/State: (interrupted|suspended)/);
+  else
+    await expect(page.locator('#log')).toHaveText('State: suspended');
 });
 
 it('should not crash on feature detection for PublicKeyCredential', {

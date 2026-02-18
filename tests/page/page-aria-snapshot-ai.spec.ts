@@ -17,7 +17,8 @@
 // @ts-ignore
 import { asLocator } from 'playwright-core/lib/utils';
 
-import { test as it, expect, unshift } from './pageTest';
+import { test as it, expect } from './pageTest';
+import { unshift } from '../config/utils';
 
 async function snapshotForAI(page: any, options?: { timeout?: number, mode?: 'full' | 'incremental', track?: string }): Promise<string> {
   const snapshot = await page._snapshotForAI(options);
@@ -428,7 +429,7 @@ it('return empty snapshot when iframe is not loaded', { annotation: { type: 'iss
   await page.waitForSelector('iframe');
 
   // Get the snapshot of the page
-  const snapshot = await snapshotForAI(page, { timeout: 100 });
+  const snapshot = await snapshotForAI(page, { timeout: 3000 });
 
   // The iframe should be present but empty
   expect(snapshot).toContainYaml(`

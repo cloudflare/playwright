@@ -17,6 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { chromium } from 'playwright';
+import { Loop } from '@lowire/loop';
 
 import { test as baseTest, expect as baseExpect } from '@playwright/test';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -54,6 +55,7 @@ export type StartClient = (options?: {
   roots?: { name: string, uri: string }[],
   rootsResponseDelay?: number,
   env?: NodeJS.ProcessEnv,
+  noTimeoutForTest?: boolean,
 }) => Promise<{ client: Client, stderr: () => string }>;
 
 
@@ -65,6 +67,7 @@ type TestFixtures = {
   server: TestServer;
   httpsServer: TestServer;
   mcpHeadless: boolean;
+  loop: Loop;
 };
 
 type WorkerFixtures = {
@@ -104,6 +107,8 @@ export const test = serverTest.extend<TestFixtures & TestOptions, WorkerFixtures
           await fs.promises.writeFile(configFile, JSON.stringify(options.config, null, 2));
           args.push(`--config=${path.relative(configDir, configFile)}`);
         }
+        if (!options?.noTimeoutForTest)
+          args.push('--timeout-action=10000');
       }
 
       if (options?.args)
@@ -121,7 +126,11 @@ export const test = serverTest.extend<TestFixtures & TestOptions, WorkerFixtures
           };
         });
       }
-      const env = { ...process.env, ...options?.env };
+      const env = {
+        ...process.env,
+        PW_TMPDIR_FOR_TEST: testInfo.outputPath('tmp'),
+        ...options?.env
+      };
       const { transport, stderr } = await createTransport(mcpServerType, { args, env, cwd: options?.cwd || test.info().outputPath() });
       let stderrBuffer = '';
       stderr?.on('data', data => {
@@ -214,16 +223,27 @@ type Response = Awaited<ReturnType<Client['callTool']>>;
 export const expect = baseExpect.extend({
   toHaveResponse(response: Response, object: any) {
     const parsed = parseResponse(response);
+    const text = parsed.text;
     const isNot = this.isNot;
+
+    const keys = Object.keys(object);
+    for (const key of Object.keys(parsed)) {
+      if (!keys.includes(key))
+        delete parsed[key];
+    }
+
     try {
-      if (isNot)
+      if (isNot) {
         expect(parsed).not.toEqual(expect.objectContaining(object));
-      else
+      } else {
         expect(parsed).toEqual(expect.objectContaining(object));
+        if (parsed.isError && !object.isError)
+          throw new Error('Response is an error, but expected is not');
+      }
     } catch (e) {
       return {
         pass: isNot,
-        message: () => e.message,
+        message: () => e.message + '\n\nResponse text:\n' + text,
       };
     }
     return {

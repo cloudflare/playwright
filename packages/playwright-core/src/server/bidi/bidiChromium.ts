@@ -23,10 +23,10 @@ import { kBrowserCloseMessageId } from './bidiConnection';
 import { chromiumSwitches } from '../chromium/chromiumSwitches';
 import { RecentLogsCollector } from '../utils/debugLogger';
 import { waitForReadyState } from '../chromium/chromium';
+import { hasGpuMac } from '../utils/hostPlatform';
 
 import type { BrowserOptions } from '../browser';
 import type { SdkObject } from '../instrumentation';
-import type { ProtocolError } from '../protocolError';
 import type { ConnectionTransport } from '../transport';
 import type * as types from '../types';
 
@@ -55,16 +55,14 @@ export class BidiChromium extends BrowserType {
     }
   }
 
-  override doRewriteStartupLog(error: ProtocolError): ProtocolError {
-    if (!error.logs)
-      return error;
-    if (error.logs.includes('Missing X server'))
-      error.logs = '\n' + wrapInASCIIBox(kNoXServerRunningError, 1);
+  override doRewriteStartupLog(logs: string): string {
+    if (logs.includes('Missing X server'))
+      logs = '\n' + wrapInASCIIBox(kNoXServerRunningError, 1);
     // These error messages are taken from Chromium source code as of July, 2020:
     // https://github.com/chromium/chromium/blob/70565f67e79f79e17663ad1337dc6e63ee207ce9/content/browser/zygote_host/zygote_host_impl_linux.cc
-    if (!error.logs.includes('crbug.com/357670') && !error.logs.includes('No usable sandbox!') && !error.logs.includes('crbug.com/638180'))
-      return error;
-    error.logs = [
+    if (!logs.includes('crbug.com/357670') && !logs.includes('No usable sandbox!') && !logs.includes('crbug.com/638180'))
+      return logs;
+    return [
       `Chromium sandboxing failed!`,
       `================================`,
       `To avoid the sandboxing issue, do either of the following:`,
@@ -73,7 +71,6 @@ export class BidiChromium extends BrowserType {
       `================================`,
       ``,
     ].join('\n');
-    return error;
   }
 
   override amendEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -118,13 +115,11 @@ export class BidiChromium extends BrowserType {
       throw new Error('Arguments can not specify page to be opened');
     const chromeArguments = [...chromiumSwitches(options.assistantMode)];
 
-    if (os.platform() === 'darwin') {
+    if (os.platform() !== 'darwin' || !hasGpuMac()) {
       // See https://issues.chromium.org/issues/40277080
       chromeArguments.push('--enable-unsafe-swiftshader');
     }
 
-    if (options.devtools)
-      chromeArguments.push('--auto-open-devtools-for-tabs');
     if (options.headless) {
       chromeArguments.push('--headless');
 

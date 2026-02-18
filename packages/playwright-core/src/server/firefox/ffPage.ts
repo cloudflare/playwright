@@ -24,9 +24,9 @@ import { FFSession } from './ffConnection';
 import { createHandle, FFExecutionContext } from './ffExecutionContext';
 import { RawKeyboardImpl, RawMouseImpl, RawTouchscreenImpl } from './ffInput';
 import { FFNetworkManager } from './ffNetworkManager';
-import { debugLogger } from '../utils/debugLogger';
 import { splitErrorMessage } from '../../utils/isomorphic/stackTrace';
 import { TargetClosedError } from '../errors';
+import { debugLogger } from '../utils/debugLogger';
 
 import type { Progress } from '../progress';
 import type { FFBrowserContext } from './ffBrowser';
@@ -89,7 +89,6 @@ export class FFPage implements PageDelegate {
       eventsHelper.addEventListener(this._session, 'Page.workerDestroyed', this._onWorkerDestroyed.bind(this)),
       eventsHelper.addEventListener(this._session, 'Page.dispatchMessageFromWorker', this._onDispatchMessageFromWorker.bind(this)),
       eventsHelper.addEventListener(this._session, 'Page.crashed', this._onCrashed.bind(this)),
-      eventsHelper.addEventListener(this._session, 'Page.videoRecordingStarted', this._onVideoRecordingStarted.bind(this)),
 
       eventsHelper.addEventListener(this._session, 'Page.webSocketCreated', this._onWebSocketCreated.bind(this)),
       eventsHelper.addEventListener(this._session, 'Page.webSocketClosed', this._onWebSocketClosed.bind(this)),
@@ -98,6 +97,12 @@ export class FFPage implements PageDelegate {
       eventsHelper.addEventListener(this._session, 'Page.screencastFrame', this._onScreencastFrame.bind(this)),
 
     ];
+
+    const screencast = this._page.screencast;
+    const videoOptions = screencast.launchVideoRecorder();
+    if (videoOptions)
+      screencast.startVideoRecording(videoOptions).catch(e => debugLogger.log('error', e));
+
     this._session.once('Page.ready', () => {
       if (this._reportedAsNew)
         return;
@@ -311,12 +316,9 @@ export class FFPage implements PageDelegate {
     this._page._didCrash();
   }
 
-  _onVideoRecordingStarted(event: Protocol.Page.videoRecordingStartedPayload) {
-    this._browserContext._browser._videoStarted(this._browserContext, event.screencastId, event.file, this._page.waitForInitializedOrError());
-  }
 
   didClose() {
-    this._markAsError(new TargetClosedError());
+    this._markAsError(new TargetClosedError(this._page.closeReason()));
     this._session.dispose();
     eventsHelper.removeEventListeners(this._eventListeners);
     this._networkManager.dispose();
@@ -478,26 +480,23 @@ export class FFPage implements PageDelegate {
     });
   }
 
-  async setScreencastOptions(options: { width: number, height: number, quality: number } | null): Promise<void> {
-    if (options) {
-      const { screencastId } = await this._session.send('Page.startScreencast', options);
-      this._screencastId = screencastId;
-    } else {
-      await this._session.send('Page.stopScreencast');
-    }
+  async startScreencast(options: { width: number, height: number, quality: number }): Promise<void> {
+    await this._session.send('Page.startScreencast', options);
+  }
+
+  async stopScreencast(): Promise<void> {
+    await this._session.sendMayFail('Page.stopScreencast');
   }
 
   private _onScreencastFrame(event: Protocol.Page.screencastFramePayload) {
-    if (!this._screencastId)
-      return;
-    const screencastId = this._screencastId;
-    this._page.throttleScreencastFrameAck(() => {
-      this._session.send('Page.screencastFrameAck', { screencastId }).catch(e => debugLogger.log('error', e));
+    this._page.screencast.throttleFrameAck(() => {
+      this._session.sendMayFail('Page.screencastFrameAck');
     });
 
     const buffer = Buffer.from(event.data, 'base64');
     this._page.emit(Page.Events.ScreencastFrame, {
       buffer,
+      frameSwapWallTime: event.timestamp * 1000, // timestamp is in seconds, we need to convert to milliseconds.
       width: event.deviceWidth,
       height: event.deviceHeight,
     });

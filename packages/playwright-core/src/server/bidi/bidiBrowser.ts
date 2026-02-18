@@ -138,10 +138,13 @@ export class BidiBrowser extends Browser {
       const page = this._findPageForFrame(parentFrameId);
       if (page) {
         page._session.addFrameBrowsingContext(event.context);
-        page._page.frameManager.frameAttached(event.context, parentFrameId);
-        const frame = page._page.frameManager.frame(event.context);
-        if (frame)
-          frame._url = event.url;
+        const frame = page._page.frameManager.frameAttached(event.context, parentFrameId);
+        frame._url = event.url;
+        page._getFrameNode(frame).then(node => {
+          const attributes = node?.value?.attributes;
+          frame._name = attributes?.name ?? attributes?.id ?? '';
+        });
+        return;
       }
       return;
     }
@@ -150,6 +153,7 @@ export class BidiBrowser extends Browser {
       context = this._defaultContext as BidiBrowserContext;
     if (!context)
       return;
+    context.doGrantGlobalPermissionsForURL(event.url);
     const session = this._connection.createMainFrameBrowsingContextSession(event.context);
     const opener = event.originalOpener && this._findPageForFrame(event.originalOpener);
     const page = new BidiPage(context, session, opener || null);
@@ -196,6 +200,7 @@ export class BidiBrowserContext extends BrowserContext {
   declare readonly _browser: BidiBrowser;
   private _originToPermissions = new Map<string, string[]>();
   private _initScriptIds = new Map<InitScript, string>();
+  private _interceptId: bidi.Network.Intercept | undefined;
 
   constructor(browser: BidiBrowser, browserContextId: string | undefined, options: types.BrowserContextOptions) {
     super(browser, options, browserContextId);
@@ -233,6 +238,8 @@ export class BidiBrowserContext extends BrowserContext {
     }
     if (this._options.extraHTTPHeaders)
       promises.push(this.doUpdateExtraHTTPHeaders());
+    if (this._options.permissions)
+      promises.push(this.doGrantPermissions('*', this._options.permissions));
     await Promise.all(promises);
   }
 
@@ -291,17 +298,36 @@ export class BidiBrowserContext extends BrowserContext {
   }
 
   async doGrantPermissions(origin: string, permissions: string[]) {
+    if (origin === 'null')
+      return;
     const currentPermissions = this._originToPermissions.get(origin) || [];
     const toGrant = permissions.filter(permission => !currentPermissions.includes(permission));
     this._originToPermissions.set(origin, [...currentPermissions, ...toGrant]);
-    await Promise.all(toGrant.map(permission => this._setPermission(origin, permission, bidi.Permissions.PermissionState.Granted)));
+    if (origin === '*') {
+      await Promise.all(this._bidiPages().flatMap(page =>
+        page._page.frames().map(frame =>
+          this.doGrantPermissions(new URL(frame._url).origin, permissions)
+        )
+      ));
+    } else {
+      await Promise.all(toGrant.map(permission => this._setPermission(origin, permission, bidi.Permissions.PermissionState.Granted)));
+    }
+  }
+
+  async doGrantGlobalPermissionsForURL(url: string) {
+    const permissions = this._originToPermissions.get('*');
+    if (!permissions)
+      return;
+    await this.doGrantPermissions(new URL(url).origin, permissions);
   }
 
   async doClearPermissions() {
     const currentPermissions = [...this._originToPermissions.entries()];
     this._originToPermissions = new Map();
-    await Promise.all(currentPermissions.map(([origin, permissions]) => permissions.map(
-        p => this._setPermission(origin, p, bidi.Permissions.PermissionState.Prompt))));
+    await Promise.all(currentPermissions.flatMap(([origin, permissions]) => {
+      if (origin !== '*')
+        return permissions.map(p => this._setPermission(origin, p, bidi.Permissions.PermissionState.Prompt));
+    }));
   }
 
   private async _setPermission(origin: string, permission: string, state: bidi.Permissions.PermissionState) {
@@ -333,7 +359,7 @@ export class BidiBrowserContext extends BrowserContext {
   async doUpdateExtraHTTPHeaders(): Promise<void> {
     const allHeaders = this._options.extraHTTPHeaders || [];
     await this._browser._browserSession.send('network.setExtraHeaders', {
-      headers: allHeaders.map(({ name, value }) => ({ name, value: { type: 'string', value } })),
+      headers: allHeaders.map(({ name, value }) => ({ name, value: { type: 'string' as 'string', value } })),
       userContexts: [this._userContextId()],
     });
   }
@@ -376,22 +402,44 @@ export class BidiBrowserContext extends BrowserContext {
   }
 
   async doUpdateRequestInterception(): Promise<void> {
+    if (this.requestInterceptors.length > 0 && !this._interceptId) {
+      const { intercept } = await this._browser._browserSession.send('network.addIntercept', {
+        phases: [bidi.Network.InterceptPhase.BeforeRequestSent],
+        urlPatterns: [{ type: 'pattern' }],
+      });
+      this._interceptId = intercept;
+    }
+    if (this.requestInterceptors.length === 0 && this._interceptId) {
+      const intercept = this._interceptId;
+      this._interceptId = undefined;
+      await this._browser._browserSession.send('network.removeIntercept', { intercept });
+    }
   }
 
   override async doUpdateDefaultViewport() {
-    if (!this._options.viewport)
+    if (!this._options.viewport && !this._options.screen)
       return;
+
+    const screenSize = (this._options.screen || this._options.viewport)!;
+    const viewportSize = (this._options.viewport || this._options.screen)!;
     await Promise.all([
       this._browser._browserSession.send('browsingContext.setViewport', {
         viewport: {
-          width: this._options.viewport.width,
-          height: this._options.viewport.height
+          width: viewportSize.width,
+          height: viewportSize.height
         },
         devicePixelRatio: this._options.deviceScaleFactor || 1,
         userContexts: [this._userContextId()],
       }),
       this._browser._browserSession.send('emulation.setScreenOrientationOverride', {
-        screenOrientation: getScreenOrientation(!!this._options.isMobile, this._options.viewport),
+        screenOrientation: getScreenOrientation(!!this._options.isMobile, screenSize),
+        userContexts: [this._userContextId()],
+      }),
+      this._browser._browserSession.send('emulation.setScreenSettingsOverride', {
+        screenArea: {
+          width: screenSize.width,
+          height: screenSize.height,
+        },
         userContexts: [this._userContextId()],
       })
     ]);

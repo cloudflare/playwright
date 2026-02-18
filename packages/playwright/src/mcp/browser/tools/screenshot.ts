@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-import fs from 'fs';
-
-import { mkdirIfNeeded, scaleImageToSize } from 'playwright-core/lib/utils';
+import { scaleImageToSize } from 'playwright-core/lib/utils';
 import { jpegjs, PNG } from 'playwright-core/lib/utilsBundle';
+import { formatObject } from 'playwright-core/lib/utils';
 
-import { z } from '../../sdk/bundle';
+import { z } from 'playwright-core/lib/mcpBundle';
 import { defineTabTool } from './tool';
-import * as javascript from '../codegen';
 import { dateAsFileName } from './utils';
 
 import type * as playwright from 'playwright-core';
@@ -51,7 +49,6 @@ const screenshot = defineTabTool({
       throw new Error('fullPage cannot be used with element screenshots.');
 
     const fileType = params.type || 'png';
-    const fileName = await tab.context.outputFile(params.filename || dateAsFileName(fileType), { origin: 'llm', reason: 'Saving screenshot' });
     const options: playwright.PageScreenshotOptions = {
       type: fileType,
       quality: fileType === 'png' ? undefined : 90,
@@ -61,26 +58,22 @@ const screenshot = defineTabTool({
     const isElementScreenshot = params.element && params.ref;
 
     const screenshotTarget = isElementScreenshot ? params.element : (params.fullPage ? 'full page' : 'viewport');
-    response.addCode(`// Screenshot ${screenshotTarget} and save it as ${fileName}`);
-
-    // Only get snapshot when element screenshot is needed
     const ref = params.ref ? await tab.refLocator({ element: params.element || '', ref: params.ref }) : null;
 
+    const data = ref ? await ref.locator.screenshot(options) : await tab.page.screenshot(options);
+    const fileName = params.filename || dateAsFileName(fileType);
+
+    response.addCode(`// Screenshot ${screenshotTarget} and save it as ${fileName}`);
     if (ref)
-      response.addCode(`await page.${ref.resolved}.screenshot(${javascript.formatObject(options)});`);
+      response.addCode(`await page.${ref.resolved}.screenshot(${formatObject({ ...options, path: fileName })});`);
     else
-      response.addCode(`await page.screenshot(${javascript.formatObject(options)});`);
+      response.addCode(`await page.screenshot(${formatObject({ ...options, path: fileName })});`);
 
-    const buffer = ref ? await ref.locator.screenshot(options) : await tab.page.screenshot(options);
-
-    await mkdirIfNeeded(fileName);
-    await fs.promises.writeFile(fileName, buffer);
-
-    response.addResult(`Took the ${screenshotTarget} screenshot and saved it as ${fileName}`);
+    await response.addResult({ data, title: `Screenshot of ${screenshotTarget}`, suggestedFilename: fileName });
 
     response.addImage({
       contentType: fileType === 'png' ? 'image/png' : 'image/jpeg',
-      data: scaleImageToFitMessage(buffer, fileType)
+      data: scaleImageToFitMessage(data, fileType)
     });
   }
 });

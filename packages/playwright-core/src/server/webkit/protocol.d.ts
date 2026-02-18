@@ -1,10 +1,10 @@
 // This is generated from /utils/protocol-types-generator/index.js
 type binary = string;
-export module Protocol {
+export namespace Protocol {
   /**
    * Domain for tracking/modifying Web Animations, as well as CSS (declarative) animations and transitions.
    */
-  export module Animation {
+  export namespace Animation {
     /**
      * Unique Web Animation identifier.
      */
@@ -200,7 +200,7 @@ export module Protocol {
     }
   }
   
-  export module Audit {
+  export namespace Audit {
     
     
     /**
@@ -249,7 +249,7 @@ export module Protocol {
   /**
    * The Browser domain contains commands and events related to getting information about the browser 
    */
-  export module Browser {
+  export namespace Browser {
     /**
      * Unique extension identifier.
      */
@@ -300,7 +300,7 @@ export module Protocol {
   /**
    * CPUProfiler domain exposes cpu usage tracking.
    */
-  export module CPUProfiler {
+  export namespace CPUProfiler {
     /**
      * CPU usage for an individual thread.
      */
@@ -372,7 +372,7 @@ export module Protocol {
   /**
    * This domain exposes CSS read/write operations. All CSS objects, like stylesheets, rules, and styles, have an associated <code>id</code> used in subsequent operations on the related object. Each object type has a specific <code>id</code> structure, and those are not interchangeable between objects of different kinds. CSS objects can be loaded using the <code>get*ForNode()</code> calls (which accept a DOM node id). Alternatively, a client can discover all the existing stylesheets with the <code>getAllStyleSheets()</code> method and subsequently load the required stylesheet contents using the <code>getStyleSheet[Text]()</code> methods.
    */
-  export module CSS {
+  export namespace CSS {
     export type StyleSheetId = string;
     /**
      * This object identifies a CSS style in a unique way.
@@ -1095,7 +1095,7 @@ export module Protocol {
   /**
    * Canvas domain allows tracking of canvases that have an associated graphics context. Tracks canvases in the DOM and CSS canvases created with -webkit-canvas.
    */
-  export module Canvas {
+  export namespace Canvas {
     /**
      * Unique canvas identifier.
      */
@@ -1432,7 +1432,7 @@ export module Protocol {
   /**
    * Console domain defines methods and events for interaction with the JavaScript console. Console collects messages created by means of the <a href='http://getfirebug.com/wiki/index.php/Console_API'>JavaScript Console API</a>. One needs to enable this domain using <code>enable</code> command in order to start receiving the console messages. Browser collects messages issued while console domain is not enabled as well and reports them using <code>messageAdded</code> notification upon enabling.
    */
-  export module Console {
+  export namespace Console {
     /**
      * Channels for different types of log messages.
      */
@@ -1652,7 +1652,7 @@ export module Protocol {
   /**
    * This domain exposes DOM read/write operations. Each DOM Node is represented with its mirror object that has an <code>id</code>. This <code>id</code> can be used to get additional information on the Node, resolve it into the JavaScript object wrapper, etc. It is important that client receives DOM events only for the nodes that are known to the client. Backend keeps track of the nodes that were sent to the client and never sends the same node twice. It is client's responsibility to collect information about the nodes that were sent to the client.<p>Note that <code>iframe</code> owner elements will return corresponding document elements as their child nodes.</p>
    */
-  export module DOM {
+  export namespace DOM {
     /**
      * Unique DOM node identifier.
      */
@@ -2076,6 +2076,10 @@ export module Protocol {
        * Show labels for grid area names. If not specified, the default value is false.
        */
       showAreaNames?: boolean;
+      /**
+       * Show labels for grid item order. If not specified, the default value is false.
+       */
+      showOrderNumbers?: boolean;
     }
     /**
      * Configuration data for flex overlays.
@@ -2141,6 +2145,10 @@ export module Protocol {
        * The sample rate of the primary audio track in hertz.
        */
       sampleRate: number;
+      /**
+       * Whether the track contains protected contents
+       */
+      isProtected?: boolean;
     }
     /**
      * A structure holding media element's audio-specific statistics and configurations.
@@ -2171,8 +2179,11 @@ export module Protocol {
        * The native width of the video track in CSS pixels
        */
       width: number;
-      spatialVideoMetadata?: SpatialVideoMetadata;
-      videoProjectionMetadata?: VideoProjectionMetadata;
+      immersiveVideoMetadata?: ImmersiveVideoMetadata;
+      /**
+       * Whether the track contains protected contents
+       */
+      isProtected?: boolean;
     }
     /**
      * WebCodecs VideoColorSpace
@@ -2215,35 +2226,30 @@ export module Protocol {
     /**
      * A structure containing metadata describing spatial video properties.
      */
-    export interface SpatialVideoMetadata {
+    export interface ImmersiveVideoMetadata {
+      /**
+       * The kind of immersive video.
+       */
+      kind: VideoProjectionMetadataKind;
       width: number;
       height: number;
       /**
        * The horizontal field-of-view measurement, in degrees
        */
-      horizontalFOVDegrees: number;
+      horizontalFieldOfView?: number;
       /**
        * The distance between the centers of the lenses in a camera system, in micrometers
        */
-      baseline: number;
+      stereoCameraBaseline?: number;
       /**
-       * The relative shift of the left and right eye images, as a percentage.
+       * The relative shift of the left and right eye images, as a percentage
        */
-      disparityAdjustment: number;
+      horizontalDisparityAdjustment?: number;
     }
     /**
      * Video Projection Metadata Kind.
      */
-    export type VideoProjectionMetadataKind = "unknown"|"equirectangular"|"half-equirectangular"|"equi-angular-cubemap"|"parametric"|"pyramid"|"apple-immersive-video";
-    /**
-     * A structure containing metadata describing video projections.
-     */
-    export interface VideoProjectionMetadata {
-      /**
-       * The kind of video projection.
-       */
-      kind: VideoProjectionMetadataKind;
-    }
+    export type VideoProjectionMetadataKind = "unknown"|"rectilinear"|"equirectangular"|"half-equirectangular"|"equi-angular-cubemap"|"parametric"|"pyramid"|"apple-immersive-video";
     export interface ViewportSize {
       width: number;
       height: number;
@@ -3343,7 +3349,7 @@ might return multiple quads for inline nodes.
   /**
    * DOM debugging allows setting breakpoints on particular DOM operations and events. JavaScript execution will stop on these operations as if there was a regular breakpoint set.
    */
-  export module DOMDebugger {
+  export namespace DOMDebugger {
     /**
      * DOM breakpoint type.
      */
@@ -3471,7 +3477,7 @@ might return multiple quads for inline nodes.
   /**
    * Query and modify DOM storage.
    */
-  export module DOMStorage {
+  export namespace DOMStorage {
     /**
      * DOM Storage identifier.
      */
@@ -3552,7 +3558,7 @@ might return multiple quads for inline nodes.
   /**
    * Debugger domain exposes JavaScript debugging capabilities. It allows setting and removing breakpoints, stepping through execution, exploring stack traces, etc.
    */
-  export module Debugger {
+  export namespace Debugger {
     /**
      * Breakpoint identifier.
      */
@@ -4315,7 +4321,7 @@ might return multiple quads for inline nodes.
   /**
    * Actions and events related to alert boxes.
    */
-  export module Dialog {
+  export namespace Dialog {
     
     /**
      * Fired when a JavaScript initiated dialog (alert, confirm, prompt, or onbeforeunload) is about to open.
@@ -4366,7 +4372,7 @@ might return multiple quads for inline nodes.
     }
   }
   
-  export module Emulation {
+  export namespace Emulation {
     
     
     /**
@@ -4435,7 +4441,7 @@ might return multiple quads for inline nodes.
   /**
    * Exposes generic types to be used by any domain.
    */
-  export module GenericTypes {
+  export namespace GenericTypes {
     /**
      * Search match in a resource.
      */
@@ -4456,7 +4462,7 @@ might return multiple quads for inline nodes.
   /**
    * Heap domain exposes JavaScript heap attributes and capabilities.
    */
-  export module Heap {
+  export namespace Heap {
     /**
      * Information about a garbage collection.
      */
@@ -4588,7 +4594,7 @@ might return multiple quads for inline nodes.
     }
   }
   
-  export module IndexedDB {
+  export namespace IndexedDB {
     /**
      * Database with an array of object stores.
      */
@@ -4842,7 +4848,7 @@ might return multiple quads for inline nodes.
     }
   }
   
-  export module Input {
+  export namespace Input {
     /**
      * UTC time in seconds, counted from January 1, 1970.
      */
@@ -5042,7 +5048,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     }
   }
   
-  export module Inspector {
+  export namespace Inspector {
     
     export type evaluateForTestInFrontendPayload = {
       script: string;
@@ -5075,7 +5081,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     }
   }
   
-  export module LayerTree {
+  export namespace LayerTree {
     /**
      * Unique RenderLayer identifier.
      */
@@ -5326,12 +5332,27 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
        */
       compositingReasons: CompositingReasons;
     }
+    /**
+     * Captures a snapshot of the layer's rendered content as a PNG data URL.
+     */
+    export type requestContentParameters = {
+      /**
+       * The id of the layer to snapshot.
+       */
+      layerId: LayerId;
+    }
+    export type requestContentReturnValue = {
+      /**
+       * Base64-encoded PNG data URL of the layer's rendered content.
+       */
+      content: string;
+    }
   }
   
   /**
    * Memory domain exposes page memory tracking.
    */
-  export module Memory {
+  export namespace Memory {
     export interface Event {
       timestamp: number;
       /**
@@ -5412,7 +5433,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * Network domain allows tracking network activities of the page. It exposes information about http, file, data and other requests and responses, their headers, bodies, timing, etc.
    */
-  export module Network {
+  export namespace Network {
     /**
      * Unique loader identifier.
      */
@@ -6336,7 +6357,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * Actions and events related to the inspected page belong to the page domain.
    */
-  export module Page {
+  export namespace Page {
     /**
      * List of settings able to be overridden by WebInspector.
      */
@@ -6524,119 +6545,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
        */
       partitionKey?: string;
     }
-    /**
-     * Accessibility Node
-     */
-    export interface AXNode {
-      /**
-       * The role.
-       */
-      role: string;
-      /**
-       * A human readable name for the node.
-       */
-      name?: string;
-      /**
-       * The current value of the node.
-       */
-      value?: any;
-      /**
-       * An additional human readable description of the node.
-       */
-      description?: string;
-      /**
-       * Keyboard shortcuts associated with this node.
-       */
-      keyshortcuts?: string;
-      /**
-       * A human readable alternative to the role.
-       */
-      roledescription?: string;
-      /**
-       * A description of the current value.
-       */
-      valuetext?: string;
-      /**
-       * Whether the node is disabled.
-       */
-      disabled?: boolean;
-      /**
-       * Whether the node is expanded or collapsed.
-       */
-      expanded?: boolean;
-      /**
-       * Whether the node is focused.
-       */
-      focused?: boolean;
-      /**
-       * Whether the node is modal.
-       */
-      modal?: boolean;
-      /**
-       * Whether more than one child can be selected.
-       */
-      multiselectable?: boolean;
-      /**
-       * Whether the node is read only.
-       */
-      readonly?: boolean;
-      /**
-       * Whether the node is required.
-       */
-      required?: boolean;
-      /**
-       * Whether the node is selected in its parent node.
-       */
-      selected?: boolean;
-      /**
-       * Whether the checkbox is checked, or "mixed".
-       */
-      checked?: "true"|"false"|"mixed";
-      /**
-       * Whether the toggle button is checked, or "mixed".
-       */
-      pressed?: "true"|"false"|"mixed";
-      /**
-       * The level of a heading.
-       */
-      level?: number;
-      /**
-       * The minimum value in a node.
-       */
-      valuemin?: number;
-      /**
-       * The maximum value in a node.
-       */
-      valuemax?: number;
-      /**
-       * What kind of autocomplete is supported by a control.
-       */
-      autocomplete?: string;
-      /**
-       * What kind of popup is currently being shown for a node.
-       */
-      haspopup?: string;
-      /**
-       * Whether and in what way this node's value is invalid.
-       */
-      invalid?: "true"|"false"|"grammar"|"spelling";
-      /**
-       * Whether the node is oriented horizontally or vertically.
-       */
-      orientation?: string;
-      /**
-       * Whether the node is focusable.
-       */
-      focusable?: boolean;
-      /**
-       * Child AXNodes of this node, if any.
-       */
-      children?: AXNode[];
-      /**
-       * True if this AXNode corresponds with the ObjectId passed into acessibilitySnapshot.
-       */
-      found?: boolean;
-    }
     export interface Insets {
       top: number;
       right: number;
@@ -6789,17 +6697,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     export type goForwardParameters = {
     }
     export type goForwardReturnValue = {
-    }
-    /**
-     * Navigates current page to the given URL.
-     */
-    export type navigateParameters = {
-      /**
-       * URL to navigate the page to.
-       */
-      url: string;
-    }
-    export type navigateReturnValue = {
     }
     /**
      * Override's the user agent of the inspected page
@@ -7133,21 +7030,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     export type insertTextReturnValue = {
     }
     /**
-     * Serializes and returns all of the accessibility nodes of the page.
-     */
-    export type accessibilitySnapshotParameters = {
-      /**
-       * Object Id of a node to find in the accessibility tree.
-       */
-      objectId?: string;
-    }
-    export type accessibilitySnapshotReturnValue = {
-      /**
-       * The root AXNode.
-       */
-      axNode: AXNode;
-    }
-    /**
      * Intercepts file chooser dialog
      */
     export type setInterceptFileChooserDialogParameters = {
@@ -7207,7 +7089,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     }
   }
   
-  export module Playwright {
+  export namespace Playwright {
     /**
      * Id of Browser context.
      */
@@ -7405,12 +7287,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     export type downloadFinishedPayload = {
       uuid: string;
       error: string;
-    }
-    export type screencastFinishedPayload = {
-      /**
-       * Unique identifier of the screencast.
-       */
-      screencastId: Screencast.ScreencastId;
     }
     
     export type enableParameters = {
@@ -7688,7 +7564,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * General types used for recordings of actions performed in the inspected page.
    */
-  export module Recording {
+  export namespace Recording {
     /**
      * The type of the recording.
      */
@@ -7755,7 +7631,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * Runtime domain exposes JavaScript runtime by means of remote evaluation and mirror objects. Evaluation results are returned as mirror object that expose object type, string representation and unique identifier that can be used for further object reference. Original objects are maintained in memory unless they are either explicitly released or are released along with the other objects in their object group.
    */
-  export module Runtime {
+  export namespace Runtime {
     /**
      * Unique object identifier.
      */
@@ -8561,7 +8437,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     }
   }
   
-  export module Screencast {
+  export namespace Screencast {
     /**
      * Unique identifier of the screencast.
      */
@@ -8572,35 +8448,11 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
        * Base64 data
        */
       data: string;
+      timestamp: number;
       deviceWidth: number;
       deviceHeight: number;
     }
     
-    /**
-     * Starts recoring video to speified file.
-     */
-    export type startVideoParameters = {
-      /**
-       * Output file location.
-       */
-      file: string;
-      width: number;
-      height: number;
-      toolbarHeight: number;
-    }
-    export type startVideoReturnValue = {
-      /**
-       * Unique identifier of the screencast.
-       */
-      screencastId: ScreencastId;
-    }
-    /**
-     * Stops recoding video. Returns after the file has been closed.
-     */
-    export type stopVideoParameters = {
-    }
-    export type stopVideoReturnValue = {
-    }
     /**
      * Starts screencast.
      */
@@ -8636,7 +8488,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * Profiler domain exposes JavaScript evaluation timing and profiling.
    */
-  export module ScriptProfiler {
+  export namespace ScriptProfiler {
     export type EventType = "API"|"Microtask"|"Other";
     export interface Event {
       startTime: number;
@@ -8730,7 +8582,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * Security domain allows the frontend to query for information relating to the security of the page (e.g. HTTPS info, TLS info, user activity, etc.).
    */
-  export module Security {
+  export namespace Security {
     /**
      * Information about a SSL connection to display in the frontend.
      */
@@ -8768,7 +8620,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * Actions and events related to the inspected service worker.
    */
-  export module ServiceWorker {
+  export namespace ServiceWorker {
     /**
      * ServiceWorker metadata and initial state.
      */
@@ -8796,7 +8648,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     }
   }
   
-  export module Target {
+  export namespace Target {
     /**
      * Description of a target.
      */
@@ -8897,7 +8749,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
   /**
    * Timeline provides its clients with instrumentation records that are generated during the page runtime. Timeline instrumentation can be started and stopped using corresponding commands. While timeline is started, it is generating timeline event records.
    */
-  export module Timeline {
+  export namespace Timeline {
     /**
      * Timeline record type.
      */
@@ -9012,7 +8864,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     }
   }
   
-  export module Worker {
+  export namespace Worker {
     
     export type workerCreatedPayload = {
       workerId: string;
@@ -9066,7 +8918,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     }
   }
   
-  export interface Events {
+  export type Events = {
     "Animation.animationCreated": Animation.animationCreatedPayload;
     "Animation.nameChanged": Animation.nameChangedPayload;
     "Animation.effectChanged": Animation.effectChangedPayload;
@@ -9175,7 +9027,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Playwright.downloadCreated": Playwright.downloadCreatedPayload;
     "Playwright.downloadFilenameSuggested": Playwright.downloadFilenameSuggestedPayload;
     "Playwright.downloadFinished": Playwright.downloadFinishedPayload;
-    "Playwright.screencastFinished": Playwright.screencastFinishedPayload;
     "Runtime.executionContextCreated": Runtime.executionContextCreatedPayload;
     "Runtime.bindingCalled": Runtime.bindingCalledPayload;
     "Screencast.screencastFrame": Screencast.screencastFramePayload;
@@ -9193,6 +9044,133 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Worker.workerCreated": Worker.workerCreatedPayload;
     "Worker.workerTerminated": Worker.workerTerminatedPayload;
     "Worker.dispatchMessageFromWorker": Worker.dispatchMessageFromWorkerPayload;
+  }
+  export type EventMap = {
+    ["Animation.animationCreated"]: [Animation.animationCreatedPayload];
+    ["Animation.nameChanged"]: [Animation.nameChangedPayload];
+    ["Animation.effectChanged"]: [Animation.effectChangedPayload];
+    ["Animation.targetChanged"]: [Animation.targetChangedPayload];
+    ["Animation.animationDestroyed"]: [Animation.animationDestroyedPayload];
+    ["Animation.trackingStart"]: [Animation.trackingStartPayload];
+    ["Animation.trackingUpdate"]: [Animation.trackingUpdatePayload];
+    ["Animation.trackingComplete"]: [Animation.trackingCompletePayload];
+    ["Browser.extensionsEnabled"]: [Browser.extensionsEnabledPayload];
+    ["Browser.extensionsDisabled"]: [Browser.extensionsDisabledPayload];
+    ["CPUProfiler.trackingStart"]: [CPUProfiler.trackingStartPayload];
+    ["CPUProfiler.trackingUpdate"]: [CPUProfiler.trackingUpdatePayload];
+    ["CPUProfiler.trackingComplete"]: [CPUProfiler.trackingCompletePayload];
+    ["CSS.mediaQueryResultChanged"]: [CSS.mediaQueryResultChangedPayload];
+    ["CSS.styleSheetChanged"]: [CSS.styleSheetChangedPayload];
+    ["CSS.styleSheetAdded"]: [CSS.styleSheetAddedPayload];
+    ["CSS.styleSheetRemoved"]: [CSS.styleSheetRemovedPayload];
+    ["CSS.nodeLayoutFlagsChanged"]: [CSS.nodeLayoutFlagsChangedPayload];
+    ["Canvas.canvasAdded"]: [Canvas.canvasAddedPayload];
+    ["Canvas.canvasRemoved"]: [Canvas.canvasRemovedPayload];
+    ["Canvas.canvasSizeChanged"]: [Canvas.canvasSizeChangedPayload];
+    ["Canvas.canvasMemoryChanged"]: [Canvas.canvasMemoryChangedPayload];
+    ["Canvas.extensionEnabled"]: [Canvas.extensionEnabledPayload];
+    ["Canvas.clientNodesChanged"]: [Canvas.clientNodesChangedPayload];
+    ["Canvas.recordingStarted"]: [Canvas.recordingStartedPayload];
+    ["Canvas.recordingProgress"]: [Canvas.recordingProgressPayload];
+    ["Canvas.recordingFinished"]: [Canvas.recordingFinishedPayload];
+    ["Canvas.programCreated"]: [Canvas.programCreatedPayload];
+    ["Canvas.programDeleted"]: [Canvas.programDeletedPayload];
+    ["Console.messageAdded"]: [Console.messageAddedPayload];
+    ["Console.messageRepeatCountUpdated"]: [Console.messageRepeatCountUpdatedPayload];
+    ["Console.messagesCleared"]: [Console.messagesClearedPayload];
+    ["Console.heapSnapshot"]: [Console.heapSnapshotPayload];
+    ["DOM.documentUpdated"]: [DOM.documentUpdatedPayload];
+    ["DOM.inspect"]: [DOM.inspectPayload];
+    ["DOM.setChildNodes"]: [DOM.setChildNodesPayload];
+    ["DOM.attributeModified"]: [DOM.attributeModifiedPayload];
+    ["DOM.attributeRemoved"]: [DOM.attributeRemovedPayload];
+    ["DOM.inlineStyleInvalidated"]: [DOM.inlineStyleInvalidatedPayload];
+    ["DOM.characterDataModified"]: [DOM.characterDataModifiedPayload];
+    ["DOM.childNodeCountUpdated"]: [DOM.childNodeCountUpdatedPayload];
+    ["DOM.childNodeInserted"]: [DOM.childNodeInsertedPayload];
+    ["DOM.childNodeRemoved"]: [DOM.childNodeRemovedPayload];
+    ["DOM.willDestroyDOMNode"]: [DOM.willDestroyDOMNodePayload];
+    ["DOM.shadowRootPushed"]: [DOM.shadowRootPushedPayload];
+    ["DOM.shadowRootPopped"]: [DOM.shadowRootPoppedPayload];
+    ["DOM.customElementStateChanged"]: [DOM.customElementStateChangedPayload];
+    ["DOM.pseudoElementAdded"]: [DOM.pseudoElementAddedPayload];
+    ["DOM.pseudoElementRemoved"]: [DOM.pseudoElementRemovedPayload];
+    ["DOM.didAddEventListener"]: [DOM.didAddEventListenerPayload];
+    ["DOM.willRemoveEventListener"]: [DOM.willRemoveEventListenerPayload];
+    ["DOM.didFireEvent"]: [DOM.didFireEventPayload];
+    ["DOM.powerEfficientPlaybackStateChanged"]: [DOM.powerEfficientPlaybackStateChangedPayload];
+    ["DOMStorage.domStorageItemsCleared"]: [DOMStorage.domStorageItemsClearedPayload];
+    ["DOMStorage.domStorageItemRemoved"]: [DOMStorage.domStorageItemRemovedPayload];
+    ["DOMStorage.domStorageItemAdded"]: [DOMStorage.domStorageItemAddedPayload];
+    ["DOMStorage.domStorageItemUpdated"]: [DOMStorage.domStorageItemUpdatedPayload];
+    ["Debugger.globalObjectCleared"]: [Debugger.globalObjectClearedPayload];
+    ["Debugger.scriptParsed"]: [Debugger.scriptParsedPayload];
+    ["Debugger.scriptFailedToParse"]: [Debugger.scriptFailedToParsePayload];
+    ["Debugger.breakpointResolved"]: [Debugger.breakpointResolvedPayload];
+    ["Debugger.paused"]: [Debugger.pausedPayload];
+    ["Debugger.resumed"]: [Debugger.resumedPayload];
+    ["Debugger.didSampleProbe"]: [Debugger.didSampleProbePayload];
+    ["Debugger.playBreakpointActionSound"]: [Debugger.playBreakpointActionSoundPayload];
+    ["Dialog.javascriptDialogOpening"]: [Dialog.javascriptDialogOpeningPayload];
+    ["Heap.garbageCollected"]: [Heap.garbageCollectedPayload];
+    ["Heap.trackingStart"]: [Heap.trackingStartPayload];
+    ["Heap.trackingComplete"]: [Heap.trackingCompletePayload];
+    ["Inspector.evaluateForTestInFrontend"]: [Inspector.evaluateForTestInFrontendPayload];
+    ["Inspector.inspect"]: [Inspector.inspectPayload];
+    ["LayerTree.layerTreeDidChange"]: [LayerTree.layerTreeDidChangePayload];
+    ["Memory.memoryPressure"]: [Memory.memoryPressurePayload];
+    ["Memory.trackingStart"]: [Memory.trackingStartPayload];
+    ["Memory.trackingUpdate"]: [Memory.trackingUpdatePayload];
+    ["Memory.trackingComplete"]: [Memory.trackingCompletePayload];
+    ["Network.requestWillBeSent"]: [Network.requestWillBeSentPayload];
+    ["Network.responseReceived"]: [Network.responseReceivedPayload];
+    ["Network.dataReceived"]: [Network.dataReceivedPayload];
+    ["Network.loadingFinished"]: [Network.loadingFinishedPayload];
+    ["Network.loadingFailed"]: [Network.loadingFailedPayload];
+    ["Network.requestServedFromMemoryCache"]: [Network.requestServedFromMemoryCachePayload];
+    ["Network.requestIntercepted"]: [Network.requestInterceptedPayload];
+    ["Network.responseIntercepted"]: [Network.responseInterceptedPayload];
+    ["Network.webSocketWillSendHandshakeRequest"]: [Network.webSocketWillSendHandshakeRequestPayload];
+    ["Network.webSocketHandshakeResponseReceived"]: [Network.webSocketHandshakeResponseReceivedPayload];
+    ["Network.webSocketCreated"]: [Network.webSocketCreatedPayload];
+    ["Network.webSocketClosed"]: [Network.webSocketClosedPayload];
+    ["Network.webSocketFrameReceived"]: [Network.webSocketFrameReceivedPayload];
+    ["Network.webSocketFrameError"]: [Network.webSocketFrameErrorPayload];
+    ["Network.webSocketFrameSent"]: [Network.webSocketFrameSentPayload];
+    ["Page.domContentEventFired"]: [Page.domContentEventFiredPayload];
+    ["Page.loadEventFired"]: [Page.loadEventFiredPayload];
+    ["Page.frameNavigated"]: [Page.frameNavigatedPayload];
+    ["Page.frameAttached"]: [Page.frameAttachedPayload];
+    ["Page.frameDetached"]: [Page.frameDetachedPayload];
+    ["Page.navigatedWithinDocument"]: [Page.navigatedWithinDocumentPayload];
+    ["Page.defaultUserPreferencesDidChange"]: [Page.defaultUserPreferencesDidChangePayload];
+    ["Page.willCheckNavigationPolicy"]: [Page.willCheckNavigationPolicyPayload];
+    ["Page.didCheckNavigationPolicy"]: [Page.didCheckNavigationPolicyPayload];
+    ["Page.fileChooserOpened"]: [Page.fileChooserOpenedPayload];
+    ["Playwright.pageProxyCreated"]: [Playwright.pageProxyCreatedPayload];
+    ["Playwright.pageProxyDestroyed"]: [Playwright.pageProxyDestroyedPayload];
+    ["Playwright.provisionalLoadFailed"]: [Playwright.provisionalLoadFailedPayload];
+    ["Playwright.windowOpen"]: [Playwright.windowOpenPayload];
+    ["Playwright.downloadCreated"]: [Playwright.downloadCreatedPayload];
+    ["Playwright.downloadFilenameSuggested"]: [Playwright.downloadFilenameSuggestedPayload];
+    ["Playwright.downloadFinished"]: [Playwright.downloadFinishedPayload];
+    ["Runtime.executionContextCreated"]: [Runtime.executionContextCreatedPayload];
+    ["Runtime.bindingCalled"]: [Runtime.bindingCalledPayload];
+    ["Screencast.screencastFrame"]: [Screencast.screencastFramePayload];
+    ["ScriptProfiler.trackingStart"]: [ScriptProfiler.trackingStartPayload];
+    ["ScriptProfiler.trackingUpdate"]: [ScriptProfiler.trackingUpdatePayload];
+    ["ScriptProfiler.trackingComplete"]: [ScriptProfiler.trackingCompletePayload];
+    ["Target.targetCreated"]: [Target.targetCreatedPayload];
+    ["Target.targetDestroyed"]: [Target.targetDestroyedPayload];
+    ["Target.didCommitProvisionalTarget"]: [Target.didCommitProvisionalTargetPayload];
+    ["Target.dispatchMessageFromTarget"]: [Target.dispatchMessageFromTargetPayload];
+    ["Timeline.eventRecorded"]: [Timeline.eventRecordedPayload];
+    ["Timeline.recordingStarted"]: [Timeline.recordingStartedPayload];
+    ["Timeline.recordingStopped"]: [Timeline.recordingStoppedPayload];
+    ["Timeline.autoCaptureStarted"]: [Timeline.autoCaptureStartedPayload];
+    ["Worker.workerCreated"]: [Worker.workerCreatedPayload];
+    ["Worker.workerTerminated"]: [Worker.workerTerminatedPayload];
+    ["Worker.dispatchMessageFromWorker"]: [Worker.dispatchMessageFromWorkerPayload];
   }
   export interface CommandParameters {
     "Animation.enable": Animation.enableParameters;
@@ -9378,6 +9356,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "LayerTree.disable": LayerTree.disableParameters;
     "LayerTree.layersForNode": LayerTree.layersForNodeParameters;
     "LayerTree.reasonsForCompositingLayer": LayerTree.reasonsForCompositingLayerParameters;
+    "LayerTree.requestContent": LayerTree.requestContentParameters;
     "Memory.enable": Memory.enableParameters;
     "Memory.disable": Memory.disableParameters;
     "Memory.startTracking": Memory.startTrackingParameters;
@@ -9405,7 +9384,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Page.reload": Page.reloadParameters;
     "Page.goBack": Page.goBackParameters;
     "Page.goForward": Page.goForwardParameters;
-    "Page.navigate": Page.navigateParameters;
     "Page.overrideUserAgent": Page.overrideUserAgentParameters;
     "Page.overridePlatform": Page.overridePlatformParameters;
     "Page.overrideSetting": Page.overrideSettingParameters;
@@ -9429,7 +9407,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Page.archive": Page.archiveParameters;
     "Page.setScreenSizeOverride": Page.setScreenSizeOverrideParameters;
     "Page.insertText": Page.insertTextParameters;
-    "Page.accessibilitySnapshot": Page.accessibilitySnapshotParameters;
     "Page.setInterceptFileChooserDialog": Page.setInterceptFileChooserDialogParameters;
     "Page.setDefaultBackgroundColorOverride": Page.setDefaultBackgroundColorOverrideParameters;
     "Page.createUserWorld": Page.createUserWorldParameters;
@@ -9477,8 +9454,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Runtime.enableControlFlowProfiler": Runtime.enableControlFlowProfilerParameters;
     "Runtime.disableControlFlowProfiler": Runtime.disableControlFlowProfilerParameters;
     "Runtime.getBasicBlocks": Runtime.getBasicBlocksParameters;
-    "Screencast.startVideo": Screencast.startVideoParameters;
-    "Screencast.stopVideo": Screencast.stopVideoParameters;
     "Screencast.startScreencast": Screencast.startScreencastParameters;
     "Screencast.stopScreencast": Screencast.stopScreencastParameters;
     "Screencast.screencastFrameAck": Screencast.screencastFrameAckParameters;
@@ -9685,6 +9660,7 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "LayerTree.disable": LayerTree.disableReturnValue;
     "LayerTree.layersForNode": LayerTree.layersForNodeReturnValue;
     "LayerTree.reasonsForCompositingLayer": LayerTree.reasonsForCompositingLayerReturnValue;
+    "LayerTree.requestContent": LayerTree.requestContentReturnValue;
     "Memory.enable": Memory.enableReturnValue;
     "Memory.disable": Memory.disableReturnValue;
     "Memory.startTracking": Memory.startTrackingReturnValue;
@@ -9712,7 +9688,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Page.reload": Page.reloadReturnValue;
     "Page.goBack": Page.goBackReturnValue;
     "Page.goForward": Page.goForwardReturnValue;
-    "Page.navigate": Page.navigateReturnValue;
     "Page.overrideUserAgent": Page.overrideUserAgentReturnValue;
     "Page.overridePlatform": Page.overridePlatformReturnValue;
     "Page.overrideSetting": Page.overrideSettingReturnValue;
@@ -9736,7 +9711,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Page.archive": Page.archiveReturnValue;
     "Page.setScreenSizeOverride": Page.setScreenSizeOverrideReturnValue;
     "Page.insertText": Page.insertTextReturnValue;
-    "Page.accessibilitySnapshot": Page.accessibilitySnapshotReturnValue;
     "Page.setInterceptFileChooserDialog": Page.setInterceptFileChooserDialogReturnValue;
     "Page.setDefaultBackgroundColorOverride": Page.setDefaultBackgroundColorOverrideReturnValue;
     "Page.createUserWorld": Page.createUserWorldReturnValue;
@@ -9784,8 +9758,6 @@ the top of the viewport and Y increases as it proceeds towards the bottom of the
     "Runtime.enableControlFlowProfiler": Runtime.enableControlFlowProfilerReturnValue;
     "Runtime.disableControlFlowProfiler": Runtime.disableControlFlowProfilerReturnValue;
     "Runtime.getBasicBlocks": Runtime.getBasicBlocksReturnValue;
-    "Screencast.startVideo": Screencast.startVideoReturnValue;
-    "Screencast.stopVideo": Screencast.stopVideoReturnValue;
     "Screencast.startScreencast": Screencast.startScreencastReturnValue;
     "Screencast.stopScreencast": Screencast.stopScreencastReturnValue;
     "Screencast.screencastFrameAck": Screencast.screencastFrameAckReturnValue;

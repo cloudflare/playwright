@@ -24,6 +24,7 @@ import { generateCurlCommand, generateFetchCall } from '../third_party/devtools'
 import { CopyToClipboardTextButton } from './copyToClipboard';
 import { getAPIRequestCodeGen } from './codegen';
 import type { Language } from '@isomorphic/locatorGenerators';
+import { isJsonMimeType } from '@isomorphic/mimeType';
 import { msToString, useAsyncMemo, useSetting } from '@web/uiUtils';
 import type { Entry } from '@trace/har';
 import { useTraceModel } from './traceModelContext';
@@ -38,7 +39,7 @@ export const NetworkResourceDetails: React.FunctionComponent<{
   startTimeOffset: number;
   onClose: () => void;
 }> = ({ resource, sdkLanguage, startTimeOffset, onClose }) => {
-  const [selectedTab, setSelectedTab] = React.useState('request');
+  const [selectedTab, setSelectedTab] = React.useState('headers');
   const model = useTraceModel();
 
   const requestBody = useAsyncMemo<RequestBody>(async () => {
@@ -57,24 +58,23 @@ export const NetworkResourceDetails: React.FunctionComponent<{
   }, [resource], null);
 
   return <TabbedPane
-    dataTestId='network-request-details'
     leftToolbar={[<ToolbarButton key='close' icon='close' title='Close' onClick={onClose} />]}
     rightToolbar={[<CopyDropdown key='dropdown' requestBody={requestBody} resource={resource} sdkLanguage={sdkLanguage} />]}
     tabs={[
       {
-        id: 'request',
-        title: 'Request',
-        render: () => <RequestTab resource={resource} startTimeOffset={startTimeOffset} requestBody={requestBody} />,
+        id: 'headers',
+        title: 'Headers',
+        render: () => <HeadersTab resource={resource} startTimeOffset={startTimeOffset} />,
+      },
+      {
+        id: 'payload',
+        title: 'Payload',
+        render: () => <PayloadTab resource={resource} requestBody={requestBody} />,
       },
       {
         id: 'response',
         title: 'Response',
-        render: () => <ResponseTab resource={resource}/>,
-      },
-      {
-        id: 'body',
-        title: 'Body',
-        render: () => <BodyTab resource={resource}/>,
+        render: () => <ResponseTab resource={resource} />,
       },
     ]}
     selectedTab={selectedTab}
@@ -87,6 +87,7 @@ const CopyDropdown: React.FC<{
   sdkLanguage: Language,
   requestBody: RequestBody,
 }> = ({ resource, sdkLanguage, requestBody }) => {
+  const model = useTraceModel();
   const copiedDescription = <><span className='codicon codicon-check' style={{ marginRight: '5px' }} /> Copied </>;
   const copyAsPlaywright = async () => getAPIRequestCodeGen(sdkLanguage).generatePlaywrightRequestCall(resource.request, requestBody?.text);
   return (
@@ -98,8 +99,8 @@ const CopyDropdown: React.FC<{
       </ToolbarButton>
 
       <div className='copy-request-dropdown-menu'>
-        <CopyToClipboardTextButton description='Copy as cURL' copiedDescription={copiedDescription} value={() => generateCurlCommand(resource)}/>
-        <CopyToClipboardTextButton description='Copy as Fetch' copiedDescription={copiedDescription} value={() => generateFetchCall(resource)}/>
+        <CopyToClipboardTextButton description='Copy as cURL' copiedDescription={copiedDescription} value={() => generateCurlCommand(model, resource)}/>
+        <CopyToClipboardTextButton description='Copy as Fetch' copiedDescription={copiedDescription} value={() => generateFetchCall(model, resource)}/>
         <CopyToClipboardTextButton description='Copy as Playwright' copiedDescription={copiedDescription} value={copyAsPlaywright}/>
       </div>
     </div>
@@ -108,53 +109,66 @@ const CopyDropdown: React.FC<{
 
 const ExpandableSection: React.FC<{
   title: string;
+  showCount?: boolean,
+  data?: { name: string, value: React.ReactNode }[],
   children?: React.ReactNode
   className?: string;
-}> = ({ title, children, className }) => {
+}> = ({ title, data, showCount, children, className }) => {
   const [expanded, setExpanded] = useSetting(`trace-viewer-network-details-${title.replaceAll(' ', '-')}`, true);
   return <Expandable
     expanded={expanded}
     setExpanded={setExpanded}
     expandOnTitleClick
-    title={<span className='network-request-details-header'>{title}</span>}
+    title={
+      <span className='network-request-details-header'>{title}
+        {showCount && <span className='network-request-details-header-count'> × {data?.length ?? 0}</span>}
+      </span>
+    }
     className={className}
   >
+    {data && <table className='network-request-details-table'>
+      <tbody>
+        {data.map(({ name, value }, index) => (
+          value !== null &&
+          (<tr key={index}>
+            <td>{name}</td>
+            <td>{value}</td>
+          </tr>)
+        ))}
+      </tbody>
+    </table>}
     {children}
   </Expandable>;
 };
 
-const RequestTab: React.FunctionComponent<{
+const HeadersTab: React.FunctionComponent<{
   resource: ResourceSnapshot;
   startTimeOffset: number;
-  requestBody: RequestBody,
-}> = ({ resource, startTimeOffset, requestBody }) => {
+}> = ({ resource, startTimeOffset }) => {
+  const generalData = React.useMemo(() =>
+    Object.entries({
+      'URL': resource.request.url,
+      'Method': resource.request.method,
+      'Status Code': resource.response.status !== -1 && <span className={statusClass(resource.response.status)}> {resource.response.status} {resource.response.statusText}</span>,
+      'Start': msToString(startTimeOffset),
+      'Duration': msToString(resource.time),
+    }).map(([name, value]) => ({ name, value })),
+  [resource, startTimeOffset]);
+
   return <div className='vbox network-request-details-tab'>
-    <ExpandableSection title='General'>
-      <div className='network-request-details-url'>{`URL: ${resource.request.url}`}</div>
-      <div className='network-request-details-general'>{`Method: ${resource.request.method}`}</div>
-      {resource.response.status !== -1 && <div className='network-request-details-general' style={{ display: 'flex' }}>
-        Status Code: <span className={statusClass(resource.response.status)} style={{ display: 'inline-flex' }}>
-          {`${resource.response.status} ${resource.response.statusText}`}
-        </span></div>}
-    </ExpandableSection>
+    <ExpandableSection title='General' data={generalData} />
+    <ExpandableSection title='Request Headers' showCount data={resource.request.headers} />
+    <ExpandableSection title='Response Headers' showCount data={resource.response.headers} />
+  </div>;
+};
 
-    {resource.request.queryString.length ?
-      <ExpandableSection title='Query String Parameters'>
-        <div className='network-request-details-headers'>
-          {resource.request.queryString.map(param => `${param.name}: ${param.value}`).join('\n')}
-        </div>
-      </ExpandableSection>
-      : null}
-
-    <ExpandableSection title='Request Headers'>
-      <div className='network-request-details-headers'>{resource.request.headers.map(pair => `${pair.name}: ${pair.value}`).join('\n')}</div>
-    </ExpandableSection>
-
-    <ExpandableSection title='Time'>
-      <div className='network-request-details-general'>{`Start: ${msToString(startTimeOffset)}`}</div>
-      <div className='network-request-details-general'>{`Duration: ${msToString(resource.time)}`}</div>
-    </ExpandableSection>
-
+const PayloadTab: React.FunctionComponent<{
+  resource: ResourceSnapshot;
+  requestBody: RequestBody,
+}> = ({ resource, requestBody }) => {
+  return <div className='vbox network-request-details-tab'>
+    {resource.request.queryString.length === 0 && !requestBody && <em className='network-request-no-payload'>No payload for this request.</em>}
+    {resource.request.queryString.length > 0 && <ExpandableSection title='Query String Parameters' showCount data={resource.request.queryString}/>}
     {requestBody && <ExpandableSection title='Request Body' className='network-request-request-body'>
       <CodeMirrorWrapper text={requestBody.text} mimeType={requestBody.mimeType} readOnly lineNumbers={true}/>
     </ExpandableSection>}
@@ -162,16 +176,6 @@ const RequestTab: React.FunctionComponent<{
 };
 
 const ResponseTab: React.FunctionComponent<{
-  resource: ResourceSnapshot;
-}> = ({ resource }) => {
-  return <div className='vbox network-request-details-tab'>
-    <ExpandableSection title='Response Headers'>
-      <div className='network-request-details-headers'>{resource.response.headers.map(pair => `${pair.name}: ${pair.value}`).join('\n')}</div>
-    </ExpandableSection>
-  </div>;
-};
-
-const BodyTab: React.FunctionComponent<{
   resource: ResourceSnapshot;
 }> = ({ resource }) => {
   const model = useTraceModel();
@@ -264,7 +268,7 @@ function formatBody(body: string | null, contentType: string): string {
   if (bodyStr === '')
     return '<Empty>';
 
-  if (contentType.includes('application/json')) {
+  if (isJsonMimeType(contentType)) {
     try {
       return JSON.stringify(JSON.parse(bodyStr), null, 2);
     } catch (err) {

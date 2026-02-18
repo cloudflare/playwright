@@ -73,6 +73,15 @@ it('should fill color input', async ({ page }) => {
   expect(await page.$eval('input', input => input.value)).toBe('#aaaaaa');
 });
 
+it('should fill color input case insensitive', async ({ page, browserName, isWindows }) => {
+  await page.setContent('<input type=color value="#e66465">');
+  await page.fill('input', '#AbCd00');
+  if (browserName === 'webkit' && isWindows)
+    expect(await page.$eval('input', input => input.value)).toBe('#AbCd00');
+  else
+    expect(await page.$eval('input', input => input.value)).toBe('#abcd00');
+});
+
 it('should throw on incorrect color value', async ({ page, browserName, isWindows }) => {
   it.skip(browserName === 'webkit' && isWindows, 'WebKit win does not support color inputs');
   await page.setContent('<input type=color value="#e66465">');
@@ -201,8 +210,8 @@ it('should fill contenteditable', async ({ page, server }) => {
   expect(await page.$eval('div[contenteditable]', div => div.textContent)).toBe('some value');
 });
 
-it('should fill contenteditable with new lines', async ({ page, server, browserName, channel }) => {
-  it.fixme(browserName === 'firefox' && !channel?.startsWith('moz-firefox'), 'Firefox does not handle new lines in contenteditable');
+it('should fill contenteditable with new lines', async ({ page, server, browserName, isBidi }) => {
+  it.fixme(browserName === 'firefox' && !isBidi, 'Firefox does not handle new lines in contenteditable');
 
   await page.goto(server.EMPTY_PAGE);
   await page.setContent(`<div contenteditable="true"></div>`);

@@ -23,6 +23,8 @@ env:
   # Force terminal colors. @see https://www.npmjs.com/package/colors
   FORCE_COLOR: 1
   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+  PWDEBUGIMPL: 1
+  DEBUG: pw:mcp:error
 
 jobs:
   test_mcp:
@@ -38,7 +40,7 @@ jobs:
       id-token: write   # This is required for OIDC login (azure/login) to succeed
       contents: read    # This is required for actions/checkout to succeed
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: ./.github/actions/run-test
       with:
         node-version: "20"

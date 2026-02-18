@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import { z } from '../../sdk/bundle';
+import { z } from 'playwright-core/lib/mcpBundle';
+import { formatObject } from 'playwright-core/lib/utils';
+
 import { defineTabTool, defineTool } from './tool';
-import * as javascript from '../codegen';
 
 const snapshot = defineTool({
   capability: 'core',
@@ -24,18 +25,20 @@ const snapshot = defineTool({
     name: 'browser_snapshot',
     title: 'Page snapshot',
     description: 'Capture accessibility snapshot of the current page, this is better than screenshot',
-    inputSchema: z.object({}),
+    inputSchema: z.object({
+      filename: z.string().optional().describe('Save snapshot to markdown file instead of returning it in the response.'),
+    }),
     type: 'readOnly',
   },
 
   handle: async (context, params, response) => {
     await context.ensureTab();
-    response.setIncludeSnapshot('full');
+    response.setIncludeFullSnapshot(params.filename);
   },
 });
 
 export const elementSchema = z.object({
-  element: z.string().describe('Human-readable element description used to obtain permission to interact with the element'),
+  element: z.string().optional().describe('Human-readable element description used to obtain permission to interact with the element'),
   ref: z.string().describe('Exact target element reference from the page snapshot'),
 });
 
@@ -63,7 +66,7 @@ const click = defineTabTool({
       button: params.button,
       modifiers: params.modifiers,
     };
-    const formatted = javascript.formatObject(options, ' ', 'oneline');
+    const formatted = formatObject(options, ' ', 'oneline');
     const optionsAttr = formatted !== '{}' ? formatted : '';
 
     if (params.doubleClick)
@@ -151,7 +154,7 @@ const selectOption = defineTabTool({
     response.setIncludeSnapshot();
 
     const { locator, resolved } = await tab.refLocator(params);
-    response.addCode(`await page.${resolved}.selectOption(${javascript.formatObject(params.values)});`);
+    response.addCode(`await page.${resolved}.selectOption(${formatObject(params.values)});`);
 
     await tab.waitForCompletion(async () => {
       await locator.selectOption(params.values);
@@ -171,7 +174,7 @@ const pickLocator = defineTabTool({
 
   handle: async (tab, params, response) => {
     const { resolved } = await tab.refLocator(params);
-    response.addResult(resolved);
+    response.addTextResult(resolved);
   },
 });
 

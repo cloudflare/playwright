@@ -17,9 +17,9 @@
 import { fileURLToPath } from 'url';
 
 import { debug } from 'playwright-core/lib/utilsBundle';
+import * as mcpBundle from 'playwright-core/lib/mcpBundle';
 
-import * as mcpBundle from './bundle';
-import { installHttpTransport, startHttpServer } from './http';
+import { startMcpHttpServer } from './http';
 import { InProcessTransport } from './inProcessTransport';
 
 import type { Tool, CallToolResult, CallToolRequest, Root } from '@modelcontextprotocol/sdk/types.js';
@@ -27,6 +27,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 export type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 export type { Tool, CallToolResult, CallToolRequest, Root } from '@modelcontextprotocol/sdk/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
 const serverDebug = debug('pw:mcp:server');
 const serverDebugResponse = debug('pw:mcp:server:response');
@@ -60,9 +61,18 @@ export async function connect(factory: ServerBackendFactory, transport: Transpor
   await server.connect(transport);
 }
 
-export async function wrapInProcess(backend: ServerBackend): Promise<Transport> {
+export function wrapInProcess(backend: ServerBackend): Transport {
   const server = createServer('Internal', '0.0.0', backend, false);
   return new InProcessTransport(server);
+}
+
+export async function wrapInClient(backend: ServerBackend, options: { name: string, version: string }): Promise<Client> {
+  const server = createServer('Internal', '0.0.0', backend, false);
+  const transport = new InProcessTransport(server);
+  const client = new mcpBundle.Client({ name: options.name, version: options.version });
+  await client.connect(transport);
+  await client.ping();
+  return client;
 }
 
 export function createServer(name: string, version: string, backend: ServerBackend, runHeartbeat: boolean): Server {
@@ -162,14 +172,13 @@ function addServerListener(server: Server, event: 'close' | 'initialized', liste
   };
 }
 
-export async function start(serverBackendFactory: ServerBackendFactory, options: { host?: string; port?: number, allowedHosts?: string[] }) {
+export async function start(serverBackendFactory: ServerBackendFactory, options: { host?: string; port?: number, allowedHosts?: string[], socketPath?: string }) {
   if (options.port === undefined) {
     await connect(serverBackendFactory, new mcpBundle.StdioServerTransport(), false);
     return;
   }
 
-  const httpServer = await startHttpServer(options);
-  const url = await installHttpTransport(httpServer, serverBackendFactory, false, options.allowedHosts);
+  const url = await startMcpHttpServer(options, serverBackendFactory, options.allowedHosts);
 
   const mcpConfig: any = { mcpServers: { } };
   mcpConfig.mcpServers[serverBackendFactory.nameInConfig] = {
@@ -196,6 +205,21 @@ export function firstRootPath(clientInfo: ClientInfo): string | undefined {
     serverDebug(error);
     return undefined;
   }
+}
+
+export function allRootPaths(clientInfo: ClientInfo): string[] {
+  const paths: string[] = [];
+  for (const root of clientInfo.roots) {
+    try {
+      const url = new URL(root.uri);
+      const path = fileURLToPath(url);
+      if (path)
+        paths.push(path);
+    } catch (error) {
+      serverDebug(error);
+    }
+  }
+  return paths;
 }
 
 function mergeTextParts(result: CallToolResult): CallToolResult {

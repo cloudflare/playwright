@@ -16,7 +16,7 @@
 
 import type * as playwright from 'playwright-core';
 
-export type ToolCapability = 'core' | 'core-tabs' | 'core-install' | 'vision' | 'pdf' | 'testing' | 'tracing';
+export type ToolCapability = 'core' | 'core-tabs' | 'core-install' | 'vision' | 'pdf' | 'testing' | 'tracing' | 'internal';
 
 export type Config = {
   /**
@@ -63,6 +63,11 @@ export type Config = {
      * CDP headers to send with the connect request.
      */
     cdpHeaders?: Record<string, string>;
+
+    /**
+     * Timeout in milliseconds for connecting to CDP endpoint. Defaults to 30000 (30 seconds). Pass 0 to disable timeout.
+     */
+    cdpTimeout?: number;
 
     /**
      * Remote endpoint to connect to an existing Playwright server.
@@ -143,6 +148,30 @@ export type Config = {
   outputDir?: string;
 
   /**
+   * Whether to save snapshots, console messages, network logs and other session logs to a file or to the standard output. Defaults to "stdout".
+   */
+  outputMode?: 'file' | 'stdout';
+
+  console?: {
+    /**
+     * The level of console messages to return. Each level includes the messages of more severe levels. Defaults to "info".
+     */
+    level?: 'error' | 'warning' | 'info' | 'debug';
+  },
+
+  network?: {
+    /**
+     * List of origins to allow the browser to request. Default is to allow all. Origins matching both `allowedOrigins` and `blockedOrigins` will be blocked.
+     */
+    allowedOrigins?: string[];
+
+    /**
+     * List of origins to block the browser to request. Origins matching both `allowedOrigins` and `blockedOrigins` will be blocked.
+     */
+    blockedOrigins?: string[];
+  };
+
+  /**
    * Specify the attribute to use for test ids, defaults to "data-testid".
    */
   testIdAttribute?: string;
@@ -163,5 +192,22 @@ export type Config = {
    * Whether to send image responses to the client. Can be "allow", "omit", or "auto". Defaults to "auto", which sends images if the client can display them.
    */
   imageResponses?: 'allow' | 'omit';
-};
 
+  snapshot?: {
+    /**
+     * When taking snapshots for responses, specifies the mode to use.
+     */
+    mode?: 'incremental' | 'full' | 'none';
+  };
+
+  /**
+   * Whether to allow file uploads from anywhere on the file system.
+   * By default (false), file uploads are restricted to paths within the MCP roots only.
+   */
+  allowUnrestrictedFileAccess?: boolean;
+
+  /**
+   * Specify the language to use for code generation.
+   */
+  codegen?: 'typescript' | 'none';
+};

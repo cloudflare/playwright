@@ -237,6 +237,7 @@ export function cleanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     PW_TEST_SOURCE_TRANSFORM: undefined,
     PW_TEST_SOURCE_TRANSFORM_SCOPE: undefined,
     PWTEST_BOT_NAME: undefined,
+    PWTEST_SHARD_WEIGHTS: undefined,
     TEST_WORKER_INDEX: undefined,
     TEST_PARALLEL_INDEX: undefined,
     NODE_OPTIONS: undefined,
@@ -253,7 +254,7 @@ type Fixtures = {
   deleteFile: (file: string) => Promise<void>;
   runInlineTest: (files: Files, params?: Params, env?: NodeJS.ProcessEnv, options?: RunOptions) => Promise<RunResult>;
   runCLICommand: (files: Files, command: string, args?: string[]) => Promise<{ stdout: string, stderr: string, exitCode: number }>;
-  startCLICommand: (files: Files, command: string, args?: string[], options?: RunOptions) => Promise<TestChildProcess>;
+  startCLICommand: (files: Files, command: string, args?: string[], options?: RunOptions, env?: NodeJS.ProcessEnv) => Promise<TestChildProcess>;
   runWatchTest: (files: Files, params?: Params, env?: NodeJS.ProcessEnv, options?: RunOptions) => Promise<TestChildProcess>;
   interactWithTestRunner: (files: Files, params?: Params, env?: NodeJS.ProcessEnv, options?: RunOptions) => Promise<TestChildProcess>;
   runTSC: (files: Files) => Promise<TSCResult>;
@@ -297,9 +298,9 @@ export const test = base
 
       startCLICommand: async ({ childProcess }, use, testInfo: TestInfo) => {
         const cacheDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'playwright-test-cache-'));
-        await use(async (files: Files, command: string, args?: string[], options: RunOptions = {}) => {
+        await use(async (files: Files, command: string, args?: string[], options: RunOptions = {}, env: NodeJS.ProcessEnv = {}) => {
           const baseDir = await writeFiles(testInfo, files, true);
-          return startPlaywrightChildProcess(childProcess, baseDir, [command, ...(args || [])], { PWTEST_CACHE_DIR: cacheDir }, options);
+          return startPlaywrightChildProcess(childProcess, baseDir, [command, ...(args || [])], { ...env, PWTEST_CACHE_DIR: cacheDir }, options);
         });
         await removeFolders([cacheDir]);
       },

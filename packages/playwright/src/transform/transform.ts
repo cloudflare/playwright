@@ -26,8 +26,9 @@ import { createFileMatcher, fileIsModule, resolveImportSpecifierAfterMapping } f
 import { sourceMapSupport } from '../utilsBundle';
 import { belongsToNodeModules, currentFileDepsCollector, getFromCompilationCache, installSourceMapSupport } from './compilationCache';
 import { addHook } from '../third_party/pirates';
+import { transformMDToTS } from './md';
 
-import type { BabelPlugin, BabelTransformFunction } from './babelBundle';
+import type { BabelPlugin, BabelTransformFunction, EncodedSourceMap } from './babelBundle';
 import type { Location } from '../../types/testReporter';
 import type { LoadedTsConfig } from '../third_party/tsconfig-loader';
 import type { Matcher } from '../util';
@@ -220,6 +221,15 @@ export function setTransformData(pluginName: string, value: any) {
 }
 
 export function transformHook(originalCode: string, filename: string, moduleUrl?: string): { code: string, serializedCache?: any } {
+  // TODO: ideally, we would not transform before checking the cache. However, the source
+  // currently depends on the seed.md, so "originalCode" is not enough to produce a cache key.
+  let inputSourceMap: EncodedSourceMap | undefined;
+  if (filename.endsWith('.md') && false) {
+    const transformed = transformMDToTS(originalCode, filename);
+    originalCode = transformed.code;
+    inputSourceMap = transformed.map;
+  }
+
   const hasPreprocessor =
     process.env.PW_TEST_SOURCE_TRANSFORM &&
     process.env.PW_TEST_SOURCE_TRANSFORM_SCOPE &&
@@ -237,7 +247,7 @@ export function transformHook(originalCode: string, filename: string, moduleUrl?
 
   const { babelTransform }: { babelTransform: BabelTransformFunction } = require('./babelBundle');
   transformData = new Map<string, any>();
-  const babelResult = babelTransform(originalCode, filename, !!moduleUrl, pluginsPrologue, pluginsEpilogue);
+  const babelResult = babelTransform(originalCode, filename, !!moduleUrl, pluginsPrologue, pluginsEpilogue, inputSourceMap);
   if (!babelResult?.code)
     return { code: originalCode, serializedCache };
   const { code, map } = babelResult;
@@ -260,16 +270,20 @@ function calculateHash(content: string, filePath: string, isModule: boolean, plu
 export async function requireOrImport(file: string) {
   installTransformIfNeeded();
   const isModule = fileIsModule(file);
-  const esmImport = () => eval(`import(${JSON.stringify(url.pathToFileURL(file))})`);
   if (isModule) {
-    return await esmImport().finally(async () => {
-      // Compilation cache, which includes source maps, is populated in a post task.
-      // When importing a module results in an error, the very next access to `error.stack`
-      // will need source maps. To make sure source maps have arrived, we insert a task
-      // that will be processed after compilation cache and guarantee that
-      // source maps are available, before `error.stack` is accessed.
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    const fileName = url.pathToFileURL(file);
+    const esmImport = () => eval(`import(${JSON.stringify(fileName)})`);
+
+    // For ESM imports, issue a preflight to populate the compilation cache with the
+    // source maps. This allows inline test() calls to resolve wrapFunctionWithLocation.
+    await eval(`import(${JSON.stringify(fileName + '.esm.preflight')})`).finally(nextTask);
+
+    // Compilation cache, which includes source maps, is populated in a post task.
+    // When importing a module results in an error, the very next access to `error.stack`
+    // will need source maps. To make sure source maps have arrived, we insert a task
+    // that will be processed after compilation cache and guarantee that
+    // source maps are available, before `error.stack` is accessed.
+    return await esmImport().finally(nextTask);
   }
   const result = require(file);
   const depsCollector = currentFileDepsCollector();
@@ -304,7 +318,7 @@ function installTransformIfNeeded() {
   // Hopefully, one day we can migrate to synchronous loader hooks instead, similar to our esmLoader...
   addHook((code, filename) => {
     return transformHook(code, filename).code;
-  }, shouldTransform, ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.mts', '.cjs', '.cts']);
+  }, shouldTransform, ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.mts', '.cjs', '.cts', '.md']);
 }
 
 const collectCJSDependencies = (module: Module, dependencies: Set<string>) => {
@@ -343,4 +357,8 @@ export function wrapFunctionWithLocation<A extends any[], R>(func: (location: Lo
 
 function isRelativeSpecifier(specifier: string) {
   return specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../');
+}
+
+async function nextTask() {
+  return new Promise(resolve => setTimeout(resolve, 0));
 }

@@ -18,7 +18,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { noColors, escapeRegExp, ManualPromise } from 'playwright-core/lib/utils';
+import { noColors, escapeRegExp, ManualPromise, toPosixPath } from 'playwright-core/lib/utils';
 
 import { terminalScreen } from '../../reporters/base';
 import ListReporter from '../../reporters/list';
@@ -64,7 +64,7 @@ export class GeneratorJournal {
     const result: string[] = [];
     result.push(`# Plan`);
     result.push(this._plan);
-    result.push(`# Seed file: ${path.relative(this._rootPath, this._seed.file)}`);
+    result.push(`# Seed file: ${toPosixPath(path.relative(this._rootPath, this._seed.file))}`);
     result.push('```ts');
     result.push(this._seed.content);
     result.push('```');
@@ -205,7 +205,7 @@ export class TestContext {
 
     claimStdio();
     try {
-      const setupReporter = new ListReporter({ configDir, screen, includeTestId: true });
+      const setupReporter = new MCPListReporter({ configDir, screen, includeTestId: true });
       const { status } = await testRunner.runGlobalSetup([setupReporter]);
       if (status !== 'passed')
         return { output: testRunnerAndScreen.output.join('\n'), status };
@@ -227,7 +227,7 @@ export class TestContext {
     };
 
     try {
-      const reporter = new ListReporter({ configDir, screen, includeTestId: true });
+      const reporter = new MCPListReporter({ configDir, screen, includeTestId: true });
       status = await Promise.race([
         testRunner.runTests(reporter, params).then(result => result.status),
         testRunnerAndScreen.waitForTestPaused().then(() => 'paused' as const),
@@ -320,3 +320,10 @@ const bestPracticesMarkdown = `
 - NEVER! use page.waitForTimeout()
 - NEVER! use page.evaluate()
 `;
+
+class MCPListReporter extends ListReporter {
+  override async onTestPaused() {
+    // ListReporter waits for user input to resume, we don't want that in MCP.
+    await new Promise<void>(() => {});
+  }
+}

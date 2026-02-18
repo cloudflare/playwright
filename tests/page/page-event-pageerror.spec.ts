@@ -17,7 +17,7 @@
 
 import { test as it, expect } from './pageTest';
 
-it('should fire', async ({ page, server, browserName, channel }) => {
+it('should fire', async ({ page, server, browserName, isBidi }) => {
   const url = server.PREFIX + '/error.html';
   const [error] = await Promise.all([
     page.waitForEvent('pageerror'),
@@ -25,7 +25,7 @@ it('should fire', async ({ page, server, browserName, channel }) => {
   ]);
   expect(error.name).toBe('Error');
   expect(error.message).toBe('Fancy error!');
-  if (browserName === 'chromium' || channel?.startsWith('moz-firefox')) {
+  if (browserName === 'chromium' || (browserName === 'firefox' && isBidi)) {
     expect(error.stack).toBe(`Error: Fancy error!
     at c (myscript.js:14:11)
     at b (myscript.js:10:5)
@@ -46,7 +46,7 @@ it('should fire', async ({ page, server, browserName, channel }) => {
   }
 });
 
-it('should not receive console message for pageError', async ({ page, server, browserName }) => {
+it('should not receive console message for pageError', async ({ page, server }) => {
   const messages = [];
   page.on('console', e => messages.push(e));
   await Promise.all([
@@ -155,7 +155,7 @@ it('pageErrors should work', async ({ page }) => {
   await page.evaluate(async () => {
     for (let i = 0; i < 301; i++)
       window.builtins.setTimeout(() => { throw new Error('error' + i); }, 0);
-    await new Promise(f => window.builtins.setTimeout(f, 100));
+    await new Promise(f => window.builtins.setTimeout(f, 2000));
   });
 
   const errors = await page.pageErrors();
@@ -167,4 +167,40 @@ it('pageErrors should work', async ({ page }) => {
 
   expect(messages.length, 'should be at least 100 errors').toBeGreaterThanOrEqual(100);
   expect(messages.slice(messages.length - expected.length), 'should return last errors').toEqual(expected);
+});
+
+it('should fire illegal character error', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/38388' },
+}, async ({ page, server, browserName, isWindows }) => {
+  server.setRoute('/error.html', (req, res) => {
+    res.end(`
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>vite-project</title>
+        </head>
+        <body>
+          <div id="app"></div>
+          <script >
+            let a=10；//   !!!note: ； not ;
+          </script>
+        </body>
+      </html>
+    `);
+  });
+  const url = server.PREFIX + '/error.html';
+  const [error] = await Promise.all([
+    page.waitForEvent('pageerror'),
+    page.goto(url),
+  ]);
+  if (browserName === 'chromium')
+    expect(error.message).toContain('Invalid or unexpected token');
+  else if (browserName === 'webkit' && isWindows)
+    expect(error.message).toContain('No identifiers allowed directly after numeric literal');
+  else if (browserName === 'webkit')
+    expect(error.message).toContain('Invalid character');
+  else
+    expect(error.message).toContain('illegal character');
 });

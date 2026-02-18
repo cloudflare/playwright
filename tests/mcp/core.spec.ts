@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import fs from 'fs/promises';
+import { pathToFileURL } from 'url';
 import { test, expect } from './fixtures';
 
 test('browser_navigate', async ({ client, server }) => {
@@ -22,11 +24,72 @@ test('browser_navigate', async ({ client, server }) => {
     arguments: { url: server.HELLO_WORLD },
   })).toHaveResponse({
     code: `await page.goto('${server.HELLO_WORLD}');`,
-    pageState: `- Page URL: ${server.HELLO_WORLD}
-- Page Title: Title
-- Page Snapshot:
-\`\`\`yaml
+    page: `- Page URL: ${server.HELLO_WORLD}
+- Page Title: Title`,
+    snapshot: `\`\`\`yaml
 - generic [active] [ref=e1]: Hello, world!
+\`\`\``,
+  });
+});
+
+test('browser_navigate blocks file:// URLs by default', async ({ client }) => {
+  expect(await client.callTool({
+    name: 'browser_navigate',
+    arguments: { url: 'file:///etc/passwd' },
+  })).toHaveResponse({
+    error: expect.stringContaining('Error: Access to "file:" URL is blocked. Allowed protocols: http:, https:, about:, data:. Attempted URL: file:///etc/passwd'),
+    isError: true,
+  });
+});
+
+test('browser_navigate allows about:, data: and javascript: protocols', async ({ client, server }) => {
+  expect(await client.callTool({
+    name: 'browser_navigate',
+    arguments: { url: 'about:blank' },
+  })).toHaveResponse({
+    code: `await page.goto('about:blank');`,
+    page: `- Page URL: about:blank`,
+    snapshot: `\`\`\`yaml
+
+\`\`\``,
+  });
+
+  expect(await client.callTool({
+    name: 'browser_navigate',
+    arguments: { url: 'data:text/html,<h1>Hello</h1>' },
+  })).toHaveResponse({
+    code: `await page.goto('data:text/html,<h1>Hello</h1>');`,
+    page: `- Page URL: data:text/html,<h1>Hello</h1>`,
+    snapshot: `\`\`\`yaml
+- heading \"Hello\" [level=1] [ref=e2]
+\`\`\``,
+  });
+});
+
+test('browser_navigate can navigate to file:// URLs allowUnrestrictedFileAccess is true', async ({ startClient }, testInfo) => {
+  const rootDir = testInfo.outputPath();
+  const fileOutsideRoot = testInfo.outputPath('test.txt');
+  await fs.writeFile(fileOutsideRoot, 'Test file content');
+  const { client } = await startClient({
+    config: {
+      allowUnrestrictedFileAccess: true,
+    },
+    roots: [
+      {
+        name: 'workspace',
+        uri: pathToFileURL(rootDir).href,
+      }
+    ],
+  });
+
+  const url = pathToFileURL(fileOutsideRoot).href;
+  expect(await client.callTool({
+    name: 'browser_navigate',
+    arguments: { url },
+  })).toHaveResponse({
+    page: `- Page URL: ${url}`,
+    snapshot: `\`\`\`yaml
+- generic [ref=e2]: Test file content
 \`\`\``,
   });
 });
@@ -53,11 +116,8 @@ test('browser_select_option', async ({ client, server }) => {
       values: ['bar'],
     },
   })).toHaveResponse({
-    code: `await page.getByRole('combobox').selectOption(['bar']);`,
-    pageState: `- Page URL: ${server.PREFIX}/
-- Page Title: Title
-- Page Snapshot:
-\`\`\`yaml
+    page: undefined,  // Did not change.
+    snapshot: `\`\`\`yaml
 - <changed> combobox [ref=e2]:
   - option "Foo"
   - option "Bar" [selected]
@@ -89,9 +149,11 @@ test('browser_select_option (multiple)', async ({ client, server }) => {
     },
   })).toHaveResponse({
     code: `await page.getByRole('listbox').selectOption(['bar', 'baz']);`,
-    pageState: expect.stringContaining(`
+    page: undefined,  // did not change
+    snapshot: `\`\`\`yaml
 - <changed> option "Bar" [selected] [ref=e4]
-- <changed> option "Baz" [selected] [ref=e5]`),
+- <changed> option "Baz" [selected] [ref=e5]
+\`\`\``,
   });
 });
 
@@ -120,7 +182,7 @@ test('browser_resize', async ({ client, server }) => {
     code: `await page.setViewportSize({ width: 390, height: 780 });`,
   });
   await expect.poll(() => client.callTool({ name: 'browser_snapshot' })).toHaveResponse({
-    pageState: expect.stringContaining(`Window size: 390x780`),
+    snapshot: expect.stringContaining(`Window size: 390x780`),
   });
 });
 
@@ -141,7 +203,7 @@ test('old locator error message', async ({ client, server }) => {
       url: server.PREFIX,
     },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`
+    snapshot: expect.stringContaining(`
   - button "Button 1" [ref=e2]
   - button "Button 2" [ref=e3]`),
   });
@@ -161,7 +223,7 @@ test('old locator error message', async ({ client, server }) => {
       ref: 'e3',
     },
   })).toHaveResponse({
-    result: expect.stringContaining(`Ref e3 not found in the current page snapshot. Try capturing new snapshot.`),
+    error: expect.stringContaining(`Ref e3 not found in the current page snapshot. Try capturing new snapshot.`),
     isError: true,
   });
 });
@@ -183,6 +245,6 @@ test('visibility: hidden > visible should be shown', { annotation: { type: 'issu
   expect(await client.callTool({
     name: 'browser_snapshot'
   })).toHaveResponse({
-    pageState: expect.stringContaining(`- button "Button"`),
+    snapshot: expect.stringContaining(`- button "Button"`),
   });
 });

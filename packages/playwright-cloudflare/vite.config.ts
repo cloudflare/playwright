@@ -39,6 +39,7 @@ export default defineConfig({
       './utilsBundleImpl': path.resolve(__dirname, './src/bundles/utilsBundleImpl'),
       './zipBundleImpl': path.resolve(__dirname, './src/bundles/zipBundleImpl'),
       './expectBundleImpl': path.resolve(__dirname, './src/bundles/expectBundleImpl'),
+      './mcpBundleImpl': path.resolve(__dirname, './src/mocks/empty'),
       'pngjs': path.resolve(__dirname, './src/bundles/pngjs'),
 
       "child_process": path.resolve(__dirname, './src/mocks/childProcess'),

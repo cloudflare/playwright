@@ -85,7 +85,7 @@ test('install command should work with mirror that uses chunked encoding', async
   await exec('npm i playwright');
   const server = http.createServer(async (req, res) => {
     try {
-      const upstream = await fetch('https://cdn.playwright.dev/dbazure/download/playwright' + req.url);
+      const upstream = await fetch('https://cdn.playwright.dev' + req.url);
       const headers = new Headers(upstream.headers);
       headers.delete('content-length');
       res.writeHead(upstream.status, Object.fromEntries(headers));
@@ -151,7 +151,7 @@ test('should be able to remove browsers', async ({ exec, checkInstalledSoftwareO
   await exec('npx playwright install chromium');
   await checkInstalledSoftwareOnDisk(['chromium', 'chromium-headless-shell', 'ffmpeg', ...extraInstalledSoftware]);
   await exec('npx playwright uninstall');
-  await checkInstalledSoftwareOnDisk([...extraInstalledSoftware]);
+  await checkInstalledSoftwareOnDisk([]);
 });
 
 test('should print the right install command without browsers', async ({ exec }) => {

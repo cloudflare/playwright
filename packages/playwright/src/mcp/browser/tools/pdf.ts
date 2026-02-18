@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import { z } from '../../sdk/bundle';
+import { z } from 'playwright-core/lib/mcpBundle';
+import { formatObject } from 'playwright-core/lib/utils';
+
 import { defineTabTool } from './tool';
-import * as javascript from '../codegen';
 import { dateAsFileName } from './utils';
 
 const pdfSchema = z.object({
@@ -35,10 +36,10 @@ const pdf = defineTabTool({
   },
 
   handle: async (tab, params, response) => {
-    const fileName = await tab.context.outputFile(params.filename ?? dateAsFileName('pdf'), { origin: 'llm', reason: 'Saving PDF' });
-    response.addCode(`await page.pdf(${javascript.formatObject({ path: fileName })});`);
-    response.addResult(`Saved page as ${fileName}`);
-    await tab.page.pdf({ path: fileName });
+    const data = await tab.page.pdf();
+    const suggestedFilename = params.filename ?? dateAsFileName('pdf');
+    await response.addResult({ data, title: 'Page as pdf', suggestedFilename });
+    response.addCode(`await page.pdf(${formatObject({ path: suggestedFilename })});`);
   },
 });
 

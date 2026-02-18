@@ -16,7 +16,8 @@
 
 import { test, expect } from './fixtures';
 
-test('action timeout (default)', async ({ client, server }) => {
+test('action timeout (default)', async ({ server, startClient }) => {
+  const { client } = await startClient({ noTimeoutForTest: true });
   server.setContent('/', `
     <!DOCTYPE html>
     <html>
@@ -40,7 +41,8 @@ test('action timeout (default)', async ({ client, server }) => {
       submit: true,
     },
   })).toHaveResponse({
-    result: expect.stringContaining(`Timeout 5000ms exceeded.`),
+    error: expect.stringContaining(`Timeout 5000ms exceeded.`),
+    isError: true,
   });
 });
 
@@ -69,7 +71,8 @@ test('action timeout (custom)', async ({ startClient, server }) => {
       submit: true,
     },
   })).toHaveResponse({
-    result: expect.stringContaining(`Timeout 1234ms exceeded.`),
+    error: expect.stringContaining(`Timeout 1234ms exceeded.`),
+    isError: true,
   });
 });
 
@@ -92,6 +95,7 @@ test('navigation timeout', async ({ startClient, server }) => {
       url: server.PREFIX + '/slow',
     },
   })).toHaveResponse({
-    result: expect.stringContaining(`Timeout 1234ms exceeded.`),
+    error: expect.stringContaining(`Timeout 1234ms exceeded.`),
+    isError: true,
   });
 });

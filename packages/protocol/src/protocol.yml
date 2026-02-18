@@ -467,7 +467,6 @@ LaunchOptions:
       type: array?
       items: NameValue
     headless: boolean?
-    devtools: boolean?
     proxy:
       type: object?
       properties:
@@ -590,7 +589,6 @@ ContextOptions:
       type: array?
       items: SelectorEngine
     testIdAttributeName: string?
-
 
 LocalUtils:
   type: interface
@@ -991,6 +989,7 @@ BrowserType:
           items: NameValue
         slowMo: float?
         timeout: float
+        isLocal: boolean?
       returns:
         browser: Browser
         defaultContext: BrowserContext?
@@ -1338,6 +1337,9 @@ BrowserContext:
         omitCallTracking: boolean?
 
     disableRecorder:
+      internal: true
+
+    exposeConsoleApi:
       internal: true
 
     newCDPSession:
@@ -2010,6 +2012,28 @@ Page:
           - requestFinished
           - requestFailed
         enabled: boolean
+
+    agent:
+      internal: true
+      parameters:
+        api: string?
+        apiKey: string?
+        apiEndpoint: string?
+        apiTimeout: int?
+        apiCacheFile: string?
+        cacheFile: string?
+        cacheOutFile: string?
+        doNotRenderActive: boolean?
+        maxActions: int?
+        maxActionRetries: int?
+        maxTokens: int?
+        model: string?
+        secrets:
+          type: array?
+          items: NameValue
+        systemPrompt: string?
+      returns:
+        agent: PageAgent
 
   events:
 
@@ -4289,3 +4313,79 @@ JsonPipe:
     closed:
       parameters:
         reason: string?
+
+
+PageAgent:
+  type: interface
+  extends: EventTarget
+
+  initializer:
+    page: Page
+
+  commands:
+    perform:
+      title: 'Perform "{task}"'
+      parameters:
+        task: string
+        $mixin: PageAgentOptions
+
+      returns:
+        usage: AgentUsage
+
+    expect:
+      title: 'Expect "{expectation}"'
+      parameters:
+        expectation: string
+        $mixin: PageAgentOptions
+
+      returns:
+        usage: AgentUsage
+
+    extract:
+      title: 'Extract "{query}"'
+      parameters:
+        query: string
+        schema: json
+        $mixin: PageAgentOptions
+
+      returns:
+        result: json
+        usage: AgentUsage
+
+    dispose:
+      internal: true
+
+    usage:
+      title: 'Get agent usage'
+      group: configuration
+      returns:
+        usage: AgentUsage
+
+  events:
+
+    turn:
+      parameters:
+        role: string
+        message: string
+        usage:
+          type: object?
+          properties:
+            inputTokens: int
+            outputTokens: int
+
+
+PageAgentOptions:
+  type: mixin
+  properties:
+    maxActions: int?
+    maxActionRetries: int?
+    maxTokens: int?
+    cacheKey: string?
+    timeout: int?
+
+AgentUsage:
+  type: object
+  properties:
+    turns: int
+    inputTokens: int
+    outputTokens: int

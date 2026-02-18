@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { z } from '../../sdk/bundle';
+import { z } from 'playwright-core/lib/mcpBundle';
 import { defineTool } from './tool';
 
 const wait = defineTool({
@@ -55,7 +55,7 @@ const wait = defineTool({
       await locator.waitFor({ state: 'visible' });
     }
 
-    response.addResult(`Waited for ${params.text || params.textGone || params.time}`);
+    response.addTextResult(`Waited for ${params.text || params.textGone || params.time}`);
     response.setIncludeSnapshot();
   },
 });

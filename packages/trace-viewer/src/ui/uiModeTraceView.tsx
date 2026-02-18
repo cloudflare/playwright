@@ -20,9 +20,9 @@ import '@web/common.css';
 import '@web/third_party/vscode/codicon.css';
 import type * as reporterTypes from 'playwright/types/testReporter';
 import React from 'react';
-import type { ContextEntry } from '../types/entries';
-import type { SourceLocation } from './modelUtil';
-import { MultiTraceModel } from './modelUtil';
+import type { ContextEntry } from '@isomorphic/trace/entries';
+import type { SourceLocation } from '@isomorphic/trace/traceModel';
+import { TraceModel } from '@isomorphic/trace/traceModel';
 import { Workbench } from './workbench';
 
 export const TraceView: React.FC<{
@@ -32,7 +32,7 @@ export const TraceView: React.FC<{
   revealSource?: boolean,
   pathSeparator: string,
 }> = ({ item, rootDir, onOpenExternally, revealSource, pathSeparator }) => {
-  const [model, setModel] = React.useState<{ model: MultiTraceModel, isLive: boolean } | undefined>(undefined);
+  const [model, setModel] = React.useState<{ model: TraceModel, isLive: boolean } | undefined>(undefined);
   const [counter, setCounter] = React.useState(0);
   const pollTimer = React.useRef<NodeJS.Timeout | null>(null);
 
@@ -46,7 +46,7 @@ export const TraceView: React.FC<{
       clearTimeout(pollTimer.current);
 
     const result = item.testCase?.results[0];
-    if (!result) {
+    if (!result || item.treeItem?.status === 'scheduled') {
       setModel(undefined);
       return;
     }
@@ -54,7 +54,7 @@ export const TraceView: React.FC<{
     // Test finished.
     const attachment = result && result.duration >= 0 && result.attachments.find(a => a.name === 'trace');
     if (attachment && attachment.path) {
-      loadSingleTraceFile(attachment.path).then(model => setModel({ model, isLive: false }));
+      loadSingleTraceFile(attachment.path, result.startTime.getTime()).then(model => setModel({ model, isLive: false }));
       return;
     }
 
@@ -65,17 +65,17 @@ export const TraceView: React.FC<{
 
     const traceLocation = [
       outputDir,
-      artifactsFolderName(result!.workerIndex),
+      artifactsFolderName(result.workerIndex),
       'traces',
       `${item.testCase?.id}.json`
     ].join(pathSeparator);
     // Start polling running test.
     pollTimer.current = setTimeout(async () => {
       try {
-        const model = await loadSingleTraceFile(traceLocation);
+        const model = await loadSingleTraceFile(traceLocation, Date.now());
         setModel({ model, isLive: true });
       } catch {
-        const model = new MultiTraceModel('', []);
+        const model = new TraceModel('', []);
         model.errorDescriptors.push(...result.errors.flatMap(error => !!error.message ? [{ message: error.message }] : []));
         setModel({ model, isLive: false });
       } finally {
@@ -110,10 +110,11 @@ const outputDirForTestCase = (testCase: reporterTypes.TestCase): string | undefi
   return undefined;
 };
 
-async function loadSingleTraceFile(url: string): Promise<MultiTraceModel> {
+async function loadSingleTraceFile(absolutePath: string, timestamp: number): Promise<TraceModel> {
+  const traceUri = `file?path=${encodeURIComponent(absolutePath)}&timestamp=${timestamp}`;
   const params = new URLSearchParams();
-  params.set('trace', url);
+  params.set('trace', traceUri);
   const response = await fetch(`contexts?${params.toString()}`);
   const contextEntries = await response.json() as ContextEntry[];
-  return new MultiTraceModel(url, contextEntries);
+  return new TraceModel(traceUri, contextEntries);
 }

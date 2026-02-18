@@ -25,7 +25,7 @@ const reporters = () => {
   const result: ReporterDescription[] = process.env.CI ? [
     ['dot'],
     ['json', { outputFile: path.join(outputDir, 'report.json') }],
-    ['blob', { outputDir: path.join(__dirname, '..', '..', 'blob-report'), fileName: `${process.env.PWTEST_BOT_NAME}.zip` }],
+    ['blob', { outputDir: path.join(__dirname, '..', '..', 'blob-report') }],
   ] : [
     ['list']
   ];
@@ -34,7 +34,7 @@ const reporters = () => {
 export default defineConfig({
   timeout: 30000,
   forbidOnly: !!process.env.CI,
-  workers: process.env.CI ? 2 : undefined,
+  workers: process.env.CI ? 3 : undefined,
   snapshotPathTemplate: '__screenshots__/{testFilePath}/{arg}{ext}',
   projects: [
     {
@@ -49,6 +49,7 @@ export default defineConfig({
     }
   ],
   reporter: reporters(),
+  tag: process.env.PW_TAG,
   metadata: {
     clock: process.env.PW_CLOCK ? 'clock-' + process.env.PW_CLOCK : undefined,
   },
