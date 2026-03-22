@@ -158,6 +158,7 @@ export type BrowserTestWorkerFixtures = PageWorkerFixtures & {
   isElectron: boolean;
   isHeadlessShell: boolean;
   nodeVersion: { major: number, minor: number, patch: number };
+  isBidi: boolean;
 };
 
 type BrowserTestTestFixtures = {
@@ -252,6 +253,7 @@ export const test = platformTest.extend<PageTestFixtures & ServerFixtures & Test
   electronMajorVersion: [0, { scope: 'worker' }],
   isHeadlessShell: [false, { scope: 'worker' }],
   nodeVersion: [{ major: 20, minor: 0, patch: 0 }, { scope: 'worker' }],
+  isBidi: [false, { scope: 'worker' }],
 
   browserType: [async ({ playwright, browserName, }, run) => {
     await run(playwright[browserName]);
