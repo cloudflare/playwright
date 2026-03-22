@@ -27,7 +27,8 @@ import { RouteDispatcher, WebSocketDispatcher } from './networkDispatchers';
 import { WebSocketRouteDispatcher } from './webSocketRouteDispatcher';
 import { SdkObject } from '../instrumentation';
 import { urlMatches } from '../../utils/isomorphic/urlMatch';
-import { PageAgentDispatcher } from './pageAgentDispatcher';
+// TODO enable in the future
+// import { PageAgentDispatcher } from './pageAgentDispatcher';
 
 import type { Artifact } from '../artifact';
 import type { BrowserContext } from '../browserContext';
@@ -362,7 +363,8 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
   }
 
   async agent(params: channels.PageAgentParams, progress: Progress): Promise<channels.PageAgentResult> {
-    return { agent: new PageAgentDispatcher(this, params) };
+    // return { agent: new PageAgentDispatcher(this, params) };
+    throw new Error('Agent not implemented');
   }
 
   _onFrameAttached(frame: Frame) {
