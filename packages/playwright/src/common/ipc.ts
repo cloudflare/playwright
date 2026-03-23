@@ -31,17 +31,20 @@ export type ConfigCLIOverrides = {
   maxFailures?: number;
   outputDir?: string;
   preserveOutputDir?: boolean;
+  pause?: boolean;
   quiet?: boolean;
   repeatEach?: number;
   retries?: number;
   reporter?: ReporterDescription[];
   additionalReporters?: ReporterDescription[];
   shard?: { current: number, total: number };
+  shardWeights?: number[];
   timeout?: number;
   tsconfig?: string;
   ignoreSnapshots?: boolean;
   updateSnapshots?: 'all' | 'changed' | 'missing' | 'none';
   updateSourceMethod?: 'overwrite' | 'patch' | '3way';
+  runAgents?: 'all' | 'missing' | 'none';
   workers?: number | string;
   projects?: { name: string, use?: any }[],
   use?: any;
@@ -89,6 +92,18 @@ export type TestInfoErrorImpl = TestInfoError;
 export type TestPausedPayload = {
   testId: string;
   errors: TestInfoErrorImpl[];
+  status: TestStatus;
+};
+
+export type ResumePayload = {};
+
+export type CloneStoragePayload = {
+  storageFile: string;
+};
+
+export type UpstreamStoragePayload = {
+  storageFile: string;
+  storageOutFile: string;
 };
 
 export type CustomMessageRequestPayload = {

@@ -17,30 +17,34 @@
 /* eslint-disable no-console */
 
 import fs from 'fs';
+import path from 'path';
 
 import { colors, ProgramOption } from 'playwright-core/lib/utilsBundle';
 import { registry } from 'playwright-core/lib/server';
 
 import * as mcpServer from './sdk/server';
-import { commaSeparatedList, dotenvFileLoader, headerParser, numberParser, resolutionParser, resolveCLIConfig } from './browser/config';
+import { startMcpDaemonServer } from './terminal/daemon';
+import { commaSeparatedList, dotenvFileLoader, enumParser, headerParser, numberParser, resolutionParser, resolveCLIConfig, semicolonSeparatedList } from './browser/config';
 import { setupExitWatchdog } from './browser/watchdog';
 import { contextFactory } from './browser/browserContextFactory';
-import { ProxyBackend } from './sdk/proxyBackend';
 import { BrowserServerBackend } from './browser/browserServerBackend';
 import { ExtensionContextFactory } from './extension/extensionContextFactory';
 
 import type { Command } from 'playwright-core/lib/utilsBundle';
-import type { MCPProvider } from './sdk/proxyBackend';
 
 export function decorateCommand(command: Command, version: string) {
   command
       .option('--allowed-hosts <hosts...>', 'comma-separated list of hosts this server is allowed to serve from. Defaults to the host the server is bound to. Pass \'*\' to disable the host check.', commaSeparatedList)
+      .option('--allowed-origins <origins>', 'semicolon-separated list of TRUSTED origins to allow the browser to request. Default is to allow all.\nImportant: *does not* serve as a security boundary and *does not* affect redirects. ', semicolonSeparatedList)
+      .option('--allow-unrestricted-file-access', 'allow access to files outside of the workspace roots. Also allows unrestricted access to file:// URLs. By default access to file system is restricted to workspace root directories (or cwd if no roots are configured) only, and navigation to file:// URLs is blocked.')
+      .option('--blocked-origins <origins>', 'semicolon-separated list of origins to block the browser from requesting. Blocklist is evaluated before allowlist. If used without the allowlist, requests not matching the blocklist are still allowed.\nImportant: *does not* serve as a security boundary and *does not* affect redirects.', semicolonSeparatedList)
       .option('--block-service-workers', 'block service workers')
       .option('--browser <browser>', 'browser or chrome channel to use, possible values: chrome, firefox, webkit, msedge.')
       .option('--caps <caps>', 'comma-separated list of additional capabilities to enable, possible values: vision, pdf.', commaSeparatedList)
       .option('--cdp-endpoint <endpoint>', 'CDP endpoint to connect to.')
       .option('--cdp-header <headers...>', 'CDP headers to send with the connect request, multiple can be specified.', headerParser)
       .option('--config <path>', 'path to the configuration file.')
+      .option('--console-level <level>', 'level of console messages to return: "error", "warning", "info", "debug". Each level includes the messages of more severe levels.', enumParser.bind(null, '--console-level', ['error', 'warning', 'info', 'debug']))
       .option('--device <device>', 'device to emulate, for example: "iPhone 15"')
       .option('--executable-path <path>', 'path to the browser executable.')
       .option('--extension', 'Connect to a running browser instance (Edge/Chrome only). Requires the "Playwright MCP Bridge" browser extension to be installed.')
@@ -51,9 +55,10 @@ export function decorateCommand(command: Command, version: string) {
       .option('--init-page <path...>', 'path to TypeScript file to evaluate on Playwright page object')
       .option('--init-script <path...>', 'path to JavaScript file to add as an initialization script. The script will be evaluated in every page before any of the page\'s scripts. Can be specified multiple times.')
       .option('--isolated', 'keep the browser profile in memory, do not save it to disk.')
-      .option('--image-responses <mode>', 'whether to send image responses to the client. Can be "allow" or "omit", Defaults to "allow".')
+      .option('--image-responses <mode>', 'whether to send image responses to the client. Can be "allow" or "omit", Defaults to "allow".', enumParser.bind(null, '--image-responses', ['allow', 'omit']))
       .option('--no-sandbox', 'disable the sandbox for all process types that are normally sandboxed.')
       .option('--output-dir <path>', 'path to the directory for output files.')
+      .option('--output-mode <mode>', 'whether to save snapshots, console messages, network logs to a file or to the standard output. Can be "file" or "stdout". Default is "stdout".', enumParser.bind(null, '--output-mode', ['file', 'stdout']))
       .option('--port <port>', 'port to listen on for SSE transport.')
       .option('--proxy-bypass <bypass>', 'comma-separated domains to bypass proxy, for example ".com,chromium.org,.domain.com"')
       .option('--proxy-server <proxy>', 'specify proxy server, for example "http://myproxy:3128" or "socks5://myproxy:8080"')
@@ -62,6 +67,7 @@ export function decorateCommand(command: Command, version: string) {
       .option('--save-video <size>', 'Whether to save the video of the session into the output directory. For example "--save-video=800x600"', resolutionParser.bind(null, '--save-video'))
       .option('--secrets <path>', 'path to a file containing secrets in the dotenv format', dotenvFileLoader)
       .option('--shared-browser-context', 'reuse the same browser context between all connected HTTP clients.')
+      .option('--snapshot-mode <mode>', 'when taking snapshots for responses, specifies the mode to use. Can be "incremental", "full", or "none". Default is incremental.')
       .option('--storage-state <path>', 'path to the storage state file for isolated sessions.')
       .option('--test-id-attribute <attribute>', 'specify the attribute to use for test ids, defaults to "data-testid"')
       .option('--timeout-action <timeout>', 'specify action timeout in milliseconds, defaults to 5000ms', numberParser)
@@ -69,8 +75,9 @@ export function decorateCommand(command: Command, version: string) {
       .option('--user-agent <ua string>', 'specify user agent string')
       .option('--user-data-dir <path>', 'path to the user data directory. If not specified, a temporary directory will be created.')
       .option('--viewport-size <size>', 'specify browser viewport size in pixels, for example "1280x720"', resolutionParser.bind(null, '--viewport-size'))
-      .addOption(new ProgramOption('--connect-tool', 'Allow to switch between different browser connection methods.').hideHelp())
+      .option('--codegen <lang>', 'specify the language to use for code generation, possible values: "typescript", "none". Default is "typescript".', enumParser.bind(null, '--codegen', ['none', 'typescript']))
       .addOption(new ProgramOption('--vision', 'Legacy option, use --caps=vision instead').hideHelp())
+      .addOption(new ProgramOption('--daemon <socket>', 'run as daemon').hideHelp())
       .action(async options => {
         setupExitWatchdog();
 
@@ -104,26 +111,21 @@ export function decorateCommand(command: Command, version: string) {
           return;
         }
 
-        if (options.connectTool) {
-          const providers: MCPProvider[] = [
-            {
-              name: 'default',
-              description: 'Starts standalone browser',
-              connect: () => mcpServer.wrapInProcess(new BrowserServerBackend(config, browserContextFactory)),
-            },
-            {
-              name: 'extension',
-              description: 'Connect to a browser using the Playwright MCP extension',
-              connect: () => mcpServer.wrapInProcess(new BrowserServerBackend(config, extensionContextFactory)),
-            },
-          ];
-          const factory: mcpServer.ServerBackendFactory = {
-            name: 'Playwright w/ switch',
-            nameInConfig: 'playwright-switch',
+        if (options.daemon) {
+          config.outputDir = path.join(process.cwd(), '.playwright-cli');
+          config.outputMode = 'file';
+          config.codegen = 'none';
+          config.snapshot.mode = 'full';
+          config.capabilities = ['core', 'internal', 'tracing', 'pdf', 'vision'];
+
+          const serverBackendFactory: mcpServer.ServerBackendFactory = {
+            name: 'Playwright',
+            nameInConfig: 'playwright-daemon',
             version,
-            create: () => new ProxyBackend(providers),
+            create: () => new BrowserServerBackend(config, browserContextFactory)
           };
-          await mcpServer.start(factory, config.server);
+          const socketPath = await startMcpDaemonServer(options.daemon, serverBackendFactory);
+          console.error(`Daemon server listening on ${socketPath}`);
           return;
         }
 

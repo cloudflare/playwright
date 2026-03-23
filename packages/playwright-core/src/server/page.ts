@@ -34,8 +34,11 @@ import { ManualPromise } from '../utils/isomorphic/manualPromise';
 import { parseEvaluationResultValue } from '../utils/isomorphic/utilityScriptSerializers';
 import { compressCallLog } from './callLog';
 import * as rawBindingsControllerSource from '../generated/bindingsControllerSource';
+import { Screencast } from './screencast';
 
 import type { Artifact } from './artifact';
+import type { BrowserContextEventMap } from './browserContext';
+import type { Download } from './download';
 import type * as dom from './dom';
 import type * as network from './network';
 import type { Progress } from './progress';
@@ -78,7 +81,8 @@ export interface PageDelegate {
   getBoundingBox(handle: dom.ElementHandle): Promise<types.Rect | null>;
   getFrameElement(frame: frames.Frame): Promise<dom.ElementHandle>;
   scrollRectIntoViewIfNeeded(handle: dom.ElementHandle, rect?: types.Rect): Promise<'error:notvisible' | 'error:notconnected' | 'done'>;
-  setScreencastOptions(options: { width: number, height: number, quality: number } | null): Promise<void>;
+  startScreencast(options: { width: number, height: number, quality: number }): Promise<void>;
+  stopScreencast(): Promise<void>;
 
   pdf?: (options: channels.PagePdfParams) => Promise<Buffer>;
   coverage?: () => any;
@@ -115,22 +119,40 @@ type ExpectScreenshotOptions = ImageComparatorOptions & ScreenshotOptions & {
   },
 };
 
-export class Page extends SdkObject {
-  static Events = {
-    Close: 'close',
-    Crash: 'crash',
-    Download: 'download',
-    EmulatedSizeChanged: 'emulatedsizechanged',
-    FileChooser: 'filechooser',
-    FrameAttached: 'frameattached',
-    FrameDetached: 'framedetached',
-    InternalFrameNavigatedToNewDocument: 'internalframenavigatedtonewdocument',
-    LocatorHandlerTriggered: 'locatorhandlertriggered',
-    ScreencastFrame: 'screencastframe',
-    Video: 'video',
-    WebSocket: 'websocket',
-    Worker: 'worker',
-  };
+const PageEvent = {
+  Close: 'close',
+  Crash: 'crash',
+  Download: 'download',
+  EmulatedSizeChanged: 'emulatedsizechanged',
+  FileChooser: 'filechooser',
+  FrameAttached: 'frameattached',
+  FrameDetached: 'framedetached',
+  InternalFrameNavigatedToNewDocument: 'internalframenavigatedtonewdocument',
+  LocatorHandlerTriggered: 'locatorhandlertriggered',
+  ScreencastFrame: 'screencastframe',
+  Video: 'video',
+  WebSocket: 'websocket',
+  Worker: 'worker',
+} as const;
+
+export type PageEventMap = {
+  [PageEvent.Close]: [];
+  [PageEvent.Crash]: [];
+  [PageEvent.Download]: [download: Download];
+  [PageEvent.EmulatedSizeChanged]: [];
+  [PageEvent.FileChooser]: [fileChooser: FileChooser];
+  [PageEvent.FrameAttached]: [frame: frames.Frame];
+  [PageEvent.FrameDetached]: [frame: frames.Frame];
+  [PageEvent.InternalFrameNavigatedToNewDocument]: [frame: frames.Frame];
+  [PageEvent.LocatorHandlerTriggered]: [uid: number];
+  [PageEvent.ScreencastFrame]: [frame: types.ScreencastFrame];
+  [PageEvent.Video]: [artifact: Artifact];
+  [PageEvent.WebSocket]: [webSocket: network.WebSocket];
+  [PageEvent.Worker]: [worker: Worker];
+};
+
+export class Page extends SdkObject<PageEventMap> {
+  static Events = PageEvent;
 
   private _closedState: 'open' | 'closing' | 'closed' = 'open';
   private _closedPromise = new ManualPromise<void>();
@@ -165,10 +187,8 @@ export class Page extends SdkObject {
   private _locatorHandlerRunningCounter = 0;
   private _networkRequests: network.Request[] = [];
 
-  // Aiming at 25 fps by default - each frame is 40ms, but we give some slack with 35ms.
-  // When throttling for tracing, 200ms between frames, except for 10 frames around the action.
-  private _frameThrottler = new FrameThrottler(10, 35, 200);
-  closeReason: string | undefined;
+  readonly screencast: Screencast;
+  _closeReason: string | undefined;
 
   constructor(delegate: PageDelegate, browserContext: BrowserContext) {
     super(browserContext, 'page');
@@ -180,6 +200,7 @@ export class Page extends SdkObject {
     this.touchscreen = new input.Touchscreen(delegate.rawTouchscreen, this);
     this.screenshotter = new Screenshotter(this);
     this.frameManager = new frames.FrameManager(this);
+    this.screencast = new Screencast(this);
     if (delegate.pdf)
       this.pdf = delegate.pdf.bind(delegate);
     this.coverage = delegate.coverage ? delegate.coverage() : null;
@@ -232,10 +253,10 @@ export class Page extends SdkObject {
     return this._initializedPromise;
   }
 
-  emitOnContext(event: string | symbol, ...args: any[]) {
+  emitOnContext<K extends keyof BrowserContextEventMap>(event: K, ...args: BrowserContextEventMap[K]) {
     if (this.isStorageStatePage)
       return;
-    this.browserContext.emit(event, ...args);
+    this.browserContext.emit(event, ...args as any);
   }
 
   async resetForReuse(progress: Progress) {
@@ -256,18 +277,18 @@ export class Page extends SdkObject {
 
   _didClose() {
     this.frameManager.dispose();
-    this._frameThrottler.dispose();
+    this.screencast.stopFrameThrottler();
     assert(this._closedState !== 'closed', 'Page closed twice');
     this._closedState = 'closed';
     this.emit(Page.Events.Close);
     this._closedPromise.resolve();
     this.instrumentation.onPageClose(this);
-    this.openScope.close(new TargetClosedError());
+    this.openScope.close(new TargetClosedError(this.closeReason()));
   }
 
   _didCrash() {
     this.frameManager.dispose();
-    this._frameThrottler.dispose();
+    this.screencast.stopFrameThrottler();
     this.emit(Page.Events.Crash);
     this._crashed = true;
     this.instrumentation.onPageClose(this);
@@ -749,7 +770,7 @@ export class Page extends SdkObject {
     if (this._closedState === 'closed')
       return;
     if (options.reason)
-      this.closeReason = options.reason;
+      this._closeReason = options.reason;
     const runBeforeUnload = !!options.runBeforeUnload;
     if (this._closedState !== 'closing') {
       // If runBeforeUnload is true, we don't know if we will close, so don't modify the state
@@ -827,20 +848,6 @@ export class Page extends SdkObject {
     return this._pageBindings.get(name) || this.browserContext._pageBindings.get(name);
   }
 
-  setScreencastOptions(options: { width: number, height: number, quality: number } | null) {
-    this.delegate.setScreencastOptions(options).catch(e => debugLogger.log('error', e));
-    this._frameThrottler.setThrottlingEnabled(!!options);
-  }
-
-  throttleScreencastFrameAck(ack: () => void) {
-    // Don't ack immediately, tracing has smart throttling logic that is implemented here.
-    this._frameThrottler.ack(ack);
-  }
-
-  temporarilyDisableTracingScreencastThrottling() {
-    this._frameThrottler.recharge();
-  }
-
   async safeNonStallingEvaluateInAllFrames(expression: string, world: types.World, options: { throwOnJSErrors?: boolean } = {}) {
     await Promise.all(this.frames().map(async frame => {
       try {
@@ -856,16 +863,22 @@ export class Page extends SdkObject {
     await Promise.all(this.frames().map(frame => frame.hideHighlight().catch(() => {})));
   }
 
-  async snapshotForAI(progress: Progress, options: { track?: string }): Promise<{ full: string, incremental?: string }> {
+  async snapshotForAI(progress: Progress, options: { track?: string, doNotRenderActive?: boolean } = {}): Promise<{ full: string, incremental?: string }> {
     const snapshot = await snapshotFrameForAI(progress, this.mainFrame(), options);
     return { full: snapshot.full.join('\n'), incremental: snapshot.incremental?.join('\n') };
   }
 }
 
-export class Worker extends SdkObject {
-  static Events = {
-    Close: 'close',
-  };
+export const WorkerEvent = {
+  Close: 'close',
+} as const;
+
+export type WorkerEventMap = {
+  [WorkerEvent.Close]: [worker: Worker];
+};
+
+export class Worker extends SdkObject<WorkerEventMap> {
+  static Events = WorkerEvent;
 
   readonly url: string;
   private _executionContextPromise = new ManualPromise<js.ExecutionContext>();
@@ -972,73 +985,8 @@ export class InitScript {
   }
 }
 
-class FrameThrottler {
-  private _acks: (() => void)[] = [];
-  private _defaultInterval: number;
-  private _throttlingInterval: number;
-  private _nonThrottledFrames: number;
-  private _budget: number;
-  private _throttlingEnabled = false;
-  private _timeoutId: NodeJS.Timeout | undefined;
 
-  constructor(nonThrottledFrames: number, defaultInterval: number, throttlingInterval: number) {
-    this._nonThrottledFrames = nonThrottledFrames;
-    this._budget = nonThrottledFrames;
-    this._defaultInterval = defaultInterval;
-    this._throttlingInterval = throttlingInterval;
-    this._tick();
-  }
-
-  dispose() {
-    if (this._timeoutId) {
-      clearTimeout(this._timeoutId);
-      this._timeoutId = undefined;
-    }
-  }
-
-  setThrottlingEnabled(enabled: boolean) {
-    this._throttlingEnabled = enabled;
-  }
-
-  recharge() {
-    // Send all acks, reset budget.
-    for (const ack of this._acks)
-      ack();
-    this._acks = [];
-    this._budget = this._nonThrottledFrames;
-    if (this._timeoutId) {
-      clearTimeout(this._timeoutId);
-      this._tick();
-    }
-  }
-
-  ack(ack: () => void) {
-    if (!this._timeoutId) {
-      // Already disposed.
-      ack();
-      return;
-    }
-    this._acks.push(ack);
-  }
-
-  private _tick() {
-    const ack = this._acks.shift();
-    if (ack) {
-      --this._budget;
-      ack();
-    }
-
-    if (this._throttlingEnabled && this._budget <= 0) {
-      // Non-throttled frame budget is exceeded. Next ack will be throttled.
-      this._timeoutId = setTimeout(() => this._tick(), this._throttlingInterval);
-    } else {
-      // Either not throttling, or still under budget. Next ack will be after the default timeout.
-      this._timeoutId = setTimeout(() => this._tick(), this._defaultInterval);
-    }
-  }
-}
-
-async function snapshotFrameForAI(progress: Progress, frame: frames.Frame, options: { track?: string }): Promise<{ full: string[], incremental?: string[] }> {
+async function snapshotFrameForAI(progress: Progress, frame: frames.Frame, options: { track?: string, doNotRenderActive?: boolean } = {}): Promise<{ full: string[], incremental?: string[] }> {
   // Only await the topmost navigations, inner frames will be empty when racing.
   const snapshot = await frame.retryWithProgressAndTimeouts(progress, [1000, 2000, 4000, 8000], async continuePolling => {
     try {
@@ -1049,7 +997,7 @@ async function snapshotFrameForAI(progress: Progress, frame: frames.Frame, optio
         if (!node)
           return true;
         return injected.incrementalAriaSnapshot(node, { mode: 'ai', ...options });
-      }, { refPrefix: frame.seq ? 'f' + frame.seq : '', track: options.track }));
+      }, { refPrefix: frame.seq ? 'f' + frame.seq : '', track: options.track, doNotRenderActive: options.doNotRenderActive }));
       if (snapshotOrRetry === true)
         return continuePolling;
       return snapshotOrRetry;

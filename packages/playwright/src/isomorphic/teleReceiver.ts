@@ -132,7 +132,7 @@ export type JsonFullResult = {
 };
 
 export type JsonEvent = JsonOnConfigureEvent | JsonOnBlobReportMetadataEvent | JsonOnEndEvent | JsonOnExitEvent | JsonOnProjectEvent | JsonOnBeginEvent | JsonOnTestBeginEvent
-  | JsonOnTestEndEvent | JsonOnStepBeginEvent | JsonOnStepEndEvent | JsonOnAttachEvent | JsonOnErrorEvent | JsonOnStdIOEvent;
+  | JsonOnTestEndEvent | JsonOnStepBeginEvent | JsonOnStepEndEvent | JsonOnAttachEvent | JsonOnErrorEvent | JsonOnTestPausedEvent | JsonOnStdIOEvent;
 
 export type JsonOnConfigureEvent = {
   method: 'onConfigure';
@@ -163,6 +163,15 @@ export type JsonOnTestBeginEvent = {
   params: {
     testId: string;
     result: JsonTestResultStart;
+  };
+};
+
+export type JsonOnTestPausedEvent = {
+  method: 'onTestPaused';
+  params: {
+    testId: string;
+    resultId: string;
+    errors: reporterTypes.TestError[];
   };
 };
 
@@ -282,6 +291,10 @@ export class TeleReporterReceiver {
       this._onTestBegin(params.testId, params.result);
       return;
     }
+    if (method === 'onTestPaused') {
+      this._onTestPaused(params.testId, params.resultId, params.errors);
+      return;
+    }
     if (method === 'onTestEnd') {
       this._onTestEnd(params.test, params.result);
       return;
@@ -346,6 +359,15 @@ export class TeleReporterReceiver {
     this._reporter.onTestBegin?.(test, testResult);
   }
 
+  private _onTestPaused(testId: string, resultId: string, errors: reporterTypes.TestError[]) {
+    const test = this._tests.get(testId)!;
+    const result = test.results.find(r => r._id === resultId)!;
+
+    result.errors.push(...errors);
+    result.error = result.errors[0];
+    void this._reporter.onTestPaused?.(test, result);
+  }
+
   private _onTestEnd(testEndPayload: JsonTestEnd, payload: JsonTestResultEnd) {
     const test = this._tests.get(testEndPayload.testId)!;
     test.timeout = testEndPayload.timeout;
@@ -353,8 +375,8 @@ export class TeleReporterReceiver {
     const result = test.results.find(r => r._id === payload.id)!;
     result.duration = payload.duration;
     result.status = payload.status;
-    result.errors = payload.errors;
-    result.error = result.errors?.[0];
+    result.errors.push(...payload.errors ?? []);
+    result.error = result.errors[0];
     // Attachments are only present here from legacy blobs. These override all _onAttach events
     if (!!payload.attachments)
       result.attachments = this._parseAttachments(payload.attachments);
@@ -755,6 +777,8 @@ export const baseFullConfig: reporterTypes.FullConfig = {
   tags: [],
   updateSnapshots: 'missing',
   updateSourceMethod: 'patch',
+  // @ts-expect-error runAgents is hidden
+  runAgents: 'none',
   version: '',
   workers: 0,
   webServer: null,

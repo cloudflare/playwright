@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { ReporterV2 } from './reporterV2';
+import type { MachineEndResult, ReporterV2 } from './reporterV2';
 import type { FullConfig, FullResult, TestCase, TestError, TestResult, TestStep } from '../../types/testReporter';
 import type { Suite } from '../common/test';
 
@@ -54,9 +54,19 @@ export class Multiplexer implements ReporterV2 {
       wrap(() => reporter.onStdErr?.(chunk, test, result));
   }
 
+  async onTestPaused(test: TestCase, result: TestResult) {
+    for (const reporter of this._reporters)
+      await wrapAsync(() => reporter.onTestPaused?.(test, result));
+  }
+
   onTestEnd(test: TestCase, result: TestResult) {
     for (const reporter of this._reporters)
       wrap(() => reporter.onTestEnd?.(test, result));
+  }
+
+  onMachineEnd(result: MachineEndResult): void {
+    for (const reporter of this._reporters)
+      wrap(() => reporter.onMachineEnd?.(result));
   }
 
   async onEnd(result: FullResult) {

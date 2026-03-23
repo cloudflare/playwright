@@ -57,11 +57,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+import type { TraceModel } from '@isomorphic/trace/traceModel';
 import type { Entry } from '@trace/har';
 
 // The following function is derived from Chromium's source code
-// https://github.com/ChromeDevTools/devtools-frontend/blob/83cbe41b4107e188a1f66fdf6ea3a9cca42587c6/front_end/panels/network/NetworkLogView.ts#L2363
-export async function generateCurlCommand(resource: Entry): Promise<string> {
+// https://github.com/ChromeDevTools/devtools-frontend/blob/5d4c12362e84535371d8b966b0c7e421c236b720/front_end/panels/network/NetworkLogView.ts#L2441
+export async function generateCurlCommand(model: TraceModel | undefined, resource: Entry): Promise<string> {
   const platform = navigator.platform.includes('Win') ? 'win' : 'unix';
   let command: string[] = [];
   // Most of these headers are derived from the URL and are automatically added by cURL.
@@ -95,6 +96,10 @@ export async function generateCurlCommand(resource: Entry): Promise<string> {
    Lastly we replace new lines with ^ and TWO new lines because the first
    new line is there to enact the escape command the second is the character
    to escape (in this case new line).
+
+   All other whitespace characters are replaced with a single space, as there
+   is no way to enter their literal values in a command line, and they do break
+   the command allowing for injection.
   */
     const encapsChars = '^"';
     return encapsChars +
@@ -102,7 +107,8 @@ export async function generateCurlCommand(resource: Entry): Promise<string> {
           .replace(/"/g, '\\"')
           .replace(/[^a-zA-Z0-9\s_\-:=+~'\/.',?;()*`]/g, '^$&')
           .replace(/%(?=[a-zA-Z0-9_])/g, '%^')
-          .replace(/\r?\n/g, '^\n\n') +
+          .replace(/[^ -~\r\n]/g, ' ')
+          .replace(/\r?\n|\r/g, '^\n\n') +
       encapsChars;
   }
 
@@ -141,7 +147,7 @@ export async function generateCurlCommand(resource: Entry): Promise<string> {
 
   let inferredMethod = 'GET';
   const data = [];
-  const formData = await fetchRequestPostData(resource);
+  const formData = await fetchRequestPostData(model, resource);
   if (formData) {
     // Note that formData is not necessarily urlencoded because it might for example
     // come from a fetch request made with an explicitly unencoded body.
@@ -161,13 +167,16 @@ export async function generateCurlCommand(resource: Entry): Promise<string> {
     if (ignoredHeaders.has(name.toLowerCase()))
       continue;
 
-    if (header.value.trim()) {
-      command.push('-H ' + escapeString(name + ': ' + header.value));
-    } else {
+    const value = header.value;
+    if (!value.trim()) {
       // A header passed with -H with no value or only whitespace as its
       // value tells curl to not set the header at all. To post an empty
       // header, you have to terminate it with a semicolon.
       command.push('-H ' + escapeString(name + ';'));
+    } else if (name.toLowerCase() === 'cookie') {
+      command.push('-b ' + escapeString(value));
+    } else {
+      command.push('-H ' + escapeString(name + ': ' + value));
     }
   }
   command = command.concat(data);
@@ -180,7 +189,7 @@ const enum FetchStyle {
   NODE_JS = 1,
 }
 
-export async function generateFetchCall(resource: Entry, style: FetchStyle = FetchStyle.BROWSER): Promise<string> {
+export async function generateFetchCall(model: TraceModel | undefined, resource: Entry, style: FetchStyle = FetchStyle.BROWSER): Promise<string> {
   const ignoredHeaders = new Set<string>([
     // Internal headers
     'method',
@@ -243,7 +252,7 @@ export async function generateFetchCall(resource: Entry, style: FetchStyle = Fet
 
   const referrer = referrerHeader ? referrerHeader.value : void 0;
 
-  const requestBody = await fetchRequestPostData(resource);
+  const requestBody = await fetchRequestPostData(model, resource);
 
   const fetchOptions: RequestInit = {
     headers: Object.keys(headers).length ? headers : void 0,
@@ -280,6 +289,8 @@ export async function generateFetchCall(resource: Entry, style: FetchStyle = Fet
   return `fetch(${url}, ${options});`;
 }
 
-async function fetchRequestPostData(resource: Entry) {
-  return resource.request.postData?._sha1 ? await fetch(`sha1/${resource.request.postData._sha1}`).then(r => r.text()) : resource.request.postData?.text;
+async function fetchRequestPostData(model: TraceModel | undefined, resource: Entry) {
+  return (model && resource.request.postData?._sha1) ?
+    await fetch(model.createRelativeUrl(`sha1/${resource.request.postData._sha1}`)).then(r => r.text())
+    : resource.request.postData?.text;
 }

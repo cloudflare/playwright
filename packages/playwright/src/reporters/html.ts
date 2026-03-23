@@ -28,7 +28,7 @@ import { CommonReporterOptions, formatError, formatResultFailure, internalScreen
 import { codeFrameColumns } from '../transform/babelBundle';
 import { resolveReporterOutputPath, stripAnsiEscapes } from '../util';
 
-import type { ReporterV2 } from './reporterV2';
+import type { MachineEndResult, ReporterV2 } from './reporterV2';
 import type { HtmlReporterOptions as HtmlReporterConfigOptions, Metadata, TestAnnotation } from '../../types/test';
 import type * as api from '../../types/testReporter';
 import type { HTMLReport, HTMLReportOptions, Location, Stats, TestAttachment, TestCase, TestCaseSummary, TestFile, TestFileSummary, TestResult, TestStep } from '@html-reporter/types';
@@ -58,6 +58,7 @@ class HtmlReporter implements ReporterV2 {
   private _host: string | undefined;
   private _buildResult: { ok: boolean, singleTestId: string | undefined } | undefined;
   private _topLevelErrors: api.TestError[] = [];
+  private _machines: MachineEndResult[] = [];
 
   constructor(options: HtmlReporterConfigOptions & CommonReporterOptions) {
     this._options = options;
@@ -121,6 +122,10 @@ class HtmlReporter implements ReporterV2 {
     this._topLevelErrors.push(error);
   }
 
+  onMachineEnd(result: MachineEndResult): void {
+    this._machines.push(result);
+  }
+
   async onEnd(result: api.FullResult) {
     const projectSuites = this.suite.suites;
     await removeFolders([this._outputFolder]);
@@ -143,7 +148,7 @@ class HtmlReporter implements ReporterV2 {
       noSnippets,
       noCopyPrompt,
     });
-    this._buildResult = await builder.build(this.config.metadata, projectSuites, result, this._topLevelErrors);
+    this._buildResult = await builder.build(this.config.metadata, projectSuites, result, this._topLevelErrors, this._machines);
   }
 
   async onExit() {
@@ -250,7 +255,7 @@ class HtmlBuilder {
     this._attachmentsBaseURL = attachmentsBaseURL;
   }
 
-  async build(metadata: Metadata, projectSuites: api.Suite[], result: api.FullResult, topLevelErrors: api.TestError[]): Promise<{ ok: boolean, singleTestId: string | undefined }> {
+  async build(metadata: Metadata, projectSuites: api.Suite[], result: api.FullResult, topLevelErrors: api.TestError[], machines: MachineEndResult[]): Promise<{ ok: boolean, singleTestId: string | undefined }> {
     const data: DataMap = new Map();
     for (const projectSuite of projectSuites) {
       const projectName = projectSuite.project()!.name;
@@ -298,6 +303,12 @@ class HtmlBuilder {
       stats: { ...[...data.values()].reduce((a, e) => addStats(a, e.testFileSummary.stats), emptyStats()) },
       errors: topLevelErrors.map(error => formatError(internalScreen, error).message),
       options: this._options,
+      machines: machines.map(s => ({
+        duration: s.duration,
+        startTime: s.startTime.getTime(),
+        tag: s.tag,
+        shardIndex: s.shardIndex,
+      })),
     };
     htmlReport.files.sort((f1, f2) => {
       const w1 = f1.stats.unexpected * 1000 + f1.stats.flaky;

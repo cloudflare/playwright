@@ -18,11 +18,11 @@ import type { ActionTraceEvent } from '@trace/trace';
 import { clsx, msToString } from '@web/uiUtils';
 import * as React from 'react';
 import './actionList.css';
-import * as modelUtil from './modelUtil';
+import { stats, buildActionTree } from '@isomorphic/trace/traceModel';
 import { asLocatorDescription, type Language } from '@isomorphic/locatorGenerators';
 import type { TreeState } from '@web/components/treeView';
 import { TreeView } from '@web/components/treeView';
-import type { ActionTraceEventInContext, ActionTreeItem } from './modelUtil';
+import type { ActionTraceEventInContext, ActionTreeItem } from '@isomorphic/trace/traceModel';
 import type { Boundaries } from './geometry';
 import { ToolbarButton } from '@web/components/toolbarButton';
 import { testStatusIcon } from './testUtils';
@@ -60,7 +60,7 @@ export const ActionList: React.FC<ActionListProps> = ({
   revealActionAttachment,
   isLive,
 }) => {
-  const { rootItem, itemMap } = React.useMemo(() => modelUtil.buildActionTree(actions), [actions]);
+  const { rootItem, itemMap } = React.useMemo(() => buildActionTree(actions), [actions]);
 
   const { selectedItem } = React.useMemo(() => {
     const selectedItem = selectedAction ? itemMap.get(selectedAction.callId) : undefined;
@@ -68,24 +68,24 @@ export const ActionList: React.FC<ActionListProps> = ({
   }, [itemMap, selectedAction]);
 
   const isError = React.useCallback((item: ActionTreeItem) => {
-    return !!item.action?.error?.message;
+    return !!item.action.error?.message;
   }, []);
 
   const onAccepted = React.useCallback((item: ActionTreeItem) => {
-    return setSelectedTime({ minimum: item.action!.startTime, maximum: item.action!.endTime });
+    return setSelectedTime({ minimum: item.action.startTime, maximum: item.action.endTime });
   }, [setSelectedTime]);
 
   const render = React.useCallback((item: ActionTreeItem) => {
-    const showAttachments = !!revealActionAttachment && !!item.action?.attachments?.length;
-    return renderAction(item.action!, { sdkLanguage, revealConsole, revealActionAttachment: () => revealActionAttachment?.(item.action!.callId), isLive, showDuration: true, showBadges: true, showAttachments });
+    const showAttachments = !!revealActionAttachment && !!item.action.attachments?.length;
+    return renderAction(item.action, { sdkLanguage, revealConsole, revealActionAttachment: () => revealActionAttachment?.(item.action.callId), isLive, showDuration: true, showBadges: true, showAttachments });
   }, [isLive, revealConsole, revealActionAttachment, sdkLanguage]);
 
   const isVisible = React.useCallback((item: ActionTreeItem) => {
-    return !selectedTime || !item.action || (item.action!.startTime <= selectedTime.maximum && item.action!.endTime >= selectedTime.minimum);
+    return !selectedTime || !item.action || (item.action.startTime <= selectedTime.maximum && item.action.endTime >= selectedTime.minimum);
   }, [selectedTime]);
 
   const onSelectedAction = React.useCallback((item: ActionTreeItem) => {
-    onSelected?.(item.action!);
+    onSelected?.(item.action);
   }, [onSelected]);
 
   const onHighlightedAction = React.useCallback((item: ActionTreeItem | undefined) => {
@@ -122,7 +122,7 @@ export const renderAction = (
     showAttachments?: boolean,
   }) => {
   const { sdkLanguage, revealConsole, revealActionAttachment, isLive, showDuration, showBadges, showAttachments } = options;
-  const { errors, warnings } = modelUtil.stats(action);
+  const { errors, warnings } = stats(action);
 
   const locator = action.params.selector ? asLocatorDescription(sdkLanguage || 'javascript', action.params.selector) : undefined;
 
@@ -152,7 +152,8 @@ export const renderAction = (
 };
 
 export function renderTitleForCall(action: ActionTraceEvent): { elements: React.ReactNode[], title: string } {
-  const titleFormat = action.title ?? methodMetainfo.get(action.class + '.' + action.method)?.title ?? action.method;
+  let titleFormat = action.title ?? methodMetainfo.get(action.class + '.' + action.method)?.title ?? action.method;
+  titleFormat = titleFormat.replace(/\n/g, ' ');
 
   const elements: React.ReactNode[] = [];
   const title: string[] = [];

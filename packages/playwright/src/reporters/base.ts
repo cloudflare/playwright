@@ -359,20 +359,40 @@ export class TerminalReporter implements ReporterV2 {
     return formatError(this.screen, error);
   }
 
+  formatResultErrors(test: TestCase, result: TestResult): string {
+    return formatResultErrors(this.screen, test, result);
+  }
+
   writeLine(line?: string) {
     this.screen.stdout?.write(line ? line + '\n' : '\n');
   }
 }
 
+function formatResultErrors(screen: Screen, test: TestCase, result: TestResult): string {
+  const lines: string[] = [];
+  if (test.outcome() === 'unexpected') {
+    const errorDetails = formatResultFailure(screen, test, result, '    ');
+    if (errorDetails.length > 0)
+      lines.push('');
+    for (const error of errorDetails)
+      lines.push(error.message, '');
+  }
+  return lines.join('\n');
+}
+
 export function formatFailure(screen: Screen, config: FullConfig, test: TestCase, index?: number, options?: TerminalReporterOptions): string {
   const lines: string[] = [];
-  const header = formatTestHeader(screen, config, test, { indent: '  ', index, mode: 'error', includeTestId: options?.includeTestId });
-  lines.push(screen.colors.red(header));
+  let printedHeader = false;
   for (const result of test.results) {
     const resultLines: string[] = [];
     const errors = formatResultFailure(screen, test, result, '    ');
     if (!errors.length)
       continue;
+    if (!printedHeader) {
+      const header = formatTestHeader(screen, config, test, { indent: '  ', index, mode: 'error', includeTestId: options?.includeTestId });
+      lines.push(screen.colors.red(header));
+      printedHeader = true;
+    }
     if (result.retry) {
       resultLines.push('');
       resultLines.push(screen.colors.gray(separator(screen, `    Retry #${result.retry}`)));
@@ -455,6 +475,12 @@ function quotePathIfNeeded(path: string): string {
   return path;
 }
 
+const kReportedSymbol = Symbol('reported');
+
+export function markErrorsAsReported(result: TestResult) {
+  (result as any)[kReportedSymbol] = result.errors.length;
+}
+
 export function formatResultFailure(screen: Screen, test: TestCase, result: TestResult, initialIndent: string): ErrorDetails[] {
   const errorDetails: ErrorDetails[] = [];
 
@@ -469,7 +495,8 @@ export function formatResultFailure(screen: Screen, test: TestCase, result: Test
     });
   }
 
-  for (const error of result.errors) {
+  const reportedIndex = (result as any)[kReportedSymbol] || 0;
+  for (const error of result.errors.slice(reportedIndex)) {
     const formattedError = formatError(screen, error);
     errorDetails.push({
       message: indent(formattedError.message, initialIndent),
@@ -502,7 +529,7 @@ function formatTestTitle(screen: Screen, config: FullConfig, test: TestCase, ste
   const projectLabel = options.includeTestId ? `project=` : '';
   const projectTitle = projectName ? `[${projectLabel}${projectName}] › ` : '';
   const testTitle = `${testId}${projectTitle}${location} › ${titles.join(' › ')}`;
-  const extraTags = test.tags.filter(t => !testTitle.includes(t));
+  const extraTags = test.tags.filter(t => !testTitle.includes(t) && !config.tags.includes(t));
   return `${testTitle}${stepSuffix(step)}${extraTags.length ? ' ' + extraTags.join(' ') : ''}`;
 }
 

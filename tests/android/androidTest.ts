@@ -57,10 +57,10 @@ export const androidTest = baseTest.extend<PageTestFixtures & AndroidTestFixture
     await run(Number(browserVersion.split('.')[0]));
   }, { scope: 'worker' }],
 
+  isBidi: [false, { scope: 'worker' }],
   isAndroid: [true, { scope: 'worker' }],
   isElectron: [false, { scope: 'worker' }],
   electronMajorVersion: [0, { scope: 'worker' }],
-  isWebView2: [false, { scope: 'worker' }],
   isHeadlessShell: [false, { scope: 'worker' }],
 
   androidDevice: async ({ androidDeviceWorker }, use) => {

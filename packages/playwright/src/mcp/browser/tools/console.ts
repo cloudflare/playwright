@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { z } from '../../sdk/bundle';
+import { z } from 'playwright-core/lib/mcpBundle';
 import { defineTabTool } from './tool';
 
 const console = defineTabTool({
@@ -24,13 +24,15 @@ const console = defineTabTool({
     title: 'Get console messages',
     description: 'Returns all console messages',
     inputSchema: z.object({
-      onlyErrors: z.boolean().optional().describe('Only return error messages'),
+      level: z.enum(['error', 'warning', 'info', 'debug']).default('info').describe('Level of the console messages to return. Each level includes the messages of more severe levels. Defaults to "info".'),
+      filename: z.string().optional().describe('Filename to save the console messages to. If not provided, messages are returned as text.'),
     }),
     type: 'readOnly',
   },
   handle: async (tab, params, response) => {
-    const messages = await tab.consoleMessages(params.onlyErrors ? 'error' : undefined);
-    messages.map(message => response.addResult(message.toString()));
+    const messages = await tab.consoleMessages(params.level);
+    const text = messages.map(message => message.toString()).join('\n');
+    await response.addResult({ text, suggestedFilename: params.filename });
   },
 });
 

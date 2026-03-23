@@ -28,7 +28,7 @@ import { helper } from './helper';
 import { SdkObject } from './instrumentation';
 import { PipeTransport } from './pipeTransport';
 import { envArrayToObject, launchProcess } from './utils/processLauncher';
-import {  isProtocolError } from './protocolError';
+import { isProtocolError } from './protocolError';
 import { registry } from './registry';
 import { ClientCertificatesProxy } from './socksClientCertificatesInterceptor';
 import { WebSocketTransport } from './transport';
@@ -37,7 +37,6 @@ import { RecentLogsCollector } from './utils/debugLogger';
 import type { Browser, BrowserOptions, BrowserProcess } from './browser';
 import type { BrowserContext } from './browserContext';
 import type { Progress } from './progress';
-import type { ProtocolError } from './protocolError';
 import type { BrowserName } from './registry';
 import type { ConnectionTransport } from './transport';
 import type * as types from './types';
@@ -264,6 +263,11 @@ export abstract class BrowserType extends SdkObject {
         this.waitForReadyState(options, browserLogsCollector),
         exitPromise.then(() => ({ wsEndpoint: undefined })),
       ]);
+      if (exitPromise.isDone()) {
+        const log = helper.formatBrowserLogs(browserLogsCollector.recentLogs());
+        const updatedLog = this.doRewriteStartupLog(log);
+        throw new Error(`Failed to launch the browser process.\nBrowser logs:\n${updatedLog}`);
+      }
       if (options.cdpPort !== undefined || !this.supportsPipeTransport()) {
         transport = await WebSocketTransport.connect(progress, wsEndpoint!);
       } else {
@@ -284,7 +288,7 @@ export abstract class BrowserType extends SdkObject {
       await fs.promises.mkdir(options.tracesDir, { recursive: true });
   }
 
-  async connectOverCDP(progress: Progress, endpointURL: string, options: { slowMo?: number, timeout?: number, headers?: types.HeadersArray }): Promise<Browser> {
+  async connectOverCDP(progress: Progress, endpointURL: string, options: { slowMo?: number, timeout?: number, headers?: types.HeadersArray, isLocal?: boolean }): Promise<Browser> {
     throw new Error('CDP connections are only supported by Chromium');
   }
 
@@ -293,15 +297,14 @@ export abstract class BrowserType extends SdkObject {
   }
 
   private _validateLaunchOptions(options: types.LaunchOptions): types.LaunchOptions {
-    const { devtools = false } = options;
-    let { headless = !devtools, downloadsPath, proxy } = options;
+    let { headless = true, downloadsPath, proxy } = options;
     if (debugMode() === 'inspector')
       headless = false;
     if (downloadsPath && !path.isAbsolute(downloadsPath))
       downloadsPath = path.join(process.cwd(), downloadsPath);
     if (options.socksProxyPort)
       proxy = { server: `socks5://127.0.0.1:${options.socksProxyPort}` };
-    return { ...options, devtools, headless, downloadsPath, proxy };
+    return { ...options, headless, downloadsPath, proxy };
   }
 
   protected _createUserDataDirArgMisuseError(userDataDirArg: string): Error {
@@ -320,7 +323,9 @@ export abstract class BrowserType extends SdkObject {
   private _rewriteStartupLog(error: Error): Error {
     if (!isProtocolError(error))
       return error;
-    return this.doRewriteStartupLog(error);
+    if (error.logs)
+      error.logs = this.doRewriteStartupLog(error.logs);
+    return error;
   }
 
   async waitForReadyState(options: types.LaunchOptions, browserLogsCollector: RecentLogsCollector): Promise<{ wsEndpoint?: string }> {
@@ -341,7 +346,7 @@ export abstract class BrowserType extends SdkObject {
   abstract defaultArgs(options: types.LaunchOptions, isPersistent: boolean, userDataDir: string): Promise<string[]>;
   abstract connectToTransport(transport: ConnectionTransport, options: BrowserOptions, browserLogsCollector: RecentLogsCollector): Promise<Browser>;
   abstract amendEnvironment(env: NodeJS.ProcessEnv, userDataDir: string, isPersistent: boolean, options: types.LaunchOptions): NodeJS.ProcessEnv;
-  abstract doRewriteStartupLog(error: ProtocolError): ProtocolError;
+  abstract doRewriteStartupLog(logs: string): string;
   abstract attemptToGracefullyCloseBrowser(transport: ConnectionTransport): void;
 }
 

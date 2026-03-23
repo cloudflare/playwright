@@ -260,8 +260,8 @@ async function runTests(args: string[], opts: { [key: string]: any }) {
 }
 
 async function runTestServer(opts: { [key: string]: any }) {
-  const host = opts.host || 'localhost';
-  const port = opts.port ? +opts.port : 0;
+  const host = opts.host;
+  const port = opts.port ? +opts.port : undefined;
   const status = await testServer.runTestServer(opts.config, { }, { host, port });
   const exitCode = status === 'interrupted' ? 130 : (status === 'passed' ? 0 : 1);
   gracefullyProcessExitDoNotHang(exitCode);
@@ -300,12 +300,15 @@ function overridesFromOptions(options: { [key: string]: any }): ConfigCLIOverrid
     retries: options.retries ? parseInt(options.retries, 10) : undefined,
     reporter: resolveReporterOption(options.reporter),
     shard: resolveShardOption(options.shard),
+    shardWeights: resolveShardWeightsOption(),
     timeout: options.timeout ? parseInt(options.timeout, 10) : undefined,
     tsconfig: options.tsconfig ? path.resolve(process.cwd(), options.tsconfig) : undefined,
     ignoreSnapshots: options.ignoreSnapshots ? !!options.ignoreSnapshots : undefined,
     updateSnapshots: options.updateSnapshots,
     updateSourceMethod: options.updateSourceMethod,
+    runAgents: options.runAgents,
     workers: options.workers,
+    pause: process.env.PWPAUSE ? true : undefined,
   };
 
   if (options.browser) {
@@ -321,7 +324,7 @@ function overridesFromOptions(options: { [key: string]: any }): ConfigCLIOverrid
     });
   }
 
-  if (options.headed || options.debug)
+  if (options.headed || options.debug || overrides.pause)
     overrides.use = { headless: false };
   if (!options.ui && options.debug) {
     overrides.debug = true;
@@ -369,6 +372,19 @@ function resolveShardOption(shard?: string): ConfigCLIOverrides['shard'] {
   }
 
   return { current, total };
+}
+
+function resolveShardWeightsOption(): ConfigCLIOverrides['shardWeights'] {
+  const shardWeights = process.env.PWTEST_SHARD_WEIGHTS;
+  if (!shardWeights)
+    return undefined;
+
+  return shardWeights.split(':').map(w => {
+    const weight = parseInt(w, 10);
+    if (isNaN(weight) || weight < 0)
+      throw new Error(`PWTEST_SHARD_WEIGHTS="${shardWeights}" weights must be non-negative numbers`);
+    return weight;
+  });
 }
 
 function resolveReporter(id: string) {

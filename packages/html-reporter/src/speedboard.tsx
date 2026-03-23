@@ -19,9 +19,12 @@ import { LoadedReport } from './loadedReport';
 import { TestFileView } from './testFileView';
 import * as icons from './icons';
 import { TestCaseSummary } from './types';
+import { AutoChip } from './chip';
+import { formatDuration, GanttChart, GanttEntry } from './gantt';
 
 export function Speedboard({ report, tests }: { report: LoadedReport, tests: TestCaseSummary[] }) {
   return <>
+    <Shards report={report} />
     <SlowestTests report={report} tests={tests} />
   </>;
 }
@@ -45,4 +48,31 @@ export function SlowestTests({ report, tests }: { report: LoadedReport, tests: T
         : undefined
     }
   />;
+}
+
+export function Shards({ report }: { report: LoadedReport }) {
+  const machines = report.json().machines;
+  if (machines.length === 0)
+    return null;
+
+  const entries: GanttEntry[] = machines
+      .map(machine => {
+        const label = machine.tag.join(' ');
+        const startTimeFormatted = new Date(machine.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
+        let tooltip = `${label} started at ${startTimeFormatted}, runs ${formatDuration(machine.duration)}`;
+        if (machine.shardIndex)
+          tooltip += ` (shard ${machine.shardIndex})`;
+        return {
+          label,
+          tooltip,
+          startTime: machine.startTime,
+          duration: machine.duration,
+          shardIndex: machine.shardIndex ?? 1,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label) || a.shardIndex - b.shardIndex);
+
+  return <AutoChip header='Timeline'>
+    <GanttChart entries={entries} />
+  </AutoChip>;
 }

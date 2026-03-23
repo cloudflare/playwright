@@ -31,7 +31,7 @@ import type { ClientInstrumentationListener } from '../../playwright-core/src/cl
 import type { Playwright as PlaywrightImpl } from '../../playwright-core/src/client/playwright';
 import type { Browser as BrowserImpl } from '../../playwright-core/src/client/browser';
 import type { BrowserContext as BrowserContextImpl } from '../../playwright-core/src/client/browserContext';
-import type { APIRequestContext as APIRequestContextImpl } from '../../playwright-core/src/client/fetch';
+import type { APIRequestContext as APIRequestContextImpl, NewContextOptions as APIRequestContextOptions } from '../../playwright-core/src/client/fetch';
 import type { ChannelOwner } from '../../playwright-core/src/client/channelOwner';
 import type { Page as PageImpl } from '../../playwright-core/src/client/page';
 import type { BrowserContext, BrowserContextOptions, LaunchOptions, Page, Tracing } from 'playwright-core';
@@ -58,6 +58,9 @@ type TestFixtures = PlaywrightTestArgs & PlaywrightTestOptions & {
   _setupContextOptions: void;
   _setupArtifacts: void;
   _contextFactory: (options?: BrowserContextOptions) => Promise<{ context: BrowserContext, close: () => Promise<void> }>;
+
+  agent: {};
+  agentOptions?: any;
 };
 
 type WorkerFixtures = PlaywrightWorkerArgs & PlaywrightWorkerOptions & {
@@ -152,6 +155,7 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
   }, { option: true, box: true }],
   serviceWorkers: [({ contextOptions }, use) => use(contextOptions.serviceWorkers ?? 'allow'), { option: true, box: true }],
   contextOptions: [{}, { option: true, box: true }],
+  agentOptions: [undefined, { option: true, box: true }],
 
   _combinedContextOptions: [async ({
     acceptDownloads,
@@ -177,7 +181,7 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
     baseURL,
     contextOptions,
     serviceWorkers,
-  }, use) => {
+  }, use, testInfo) => {
     const options: BrowserContextOptions = {};
     if (acceptDownloads !== undefined)
       options.acceptDownloads = acceptDownloads;
@@ -223,29 +227,28 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
       options.baseURL = baseURL;
     if (serviceWorkers !== undefined)
       options.serviceWorkers = serviceWorkers;
+
     await use({
       ...contextOptions,
       ...options,
     });
   }, { box: true }],
 
-  _setupContextOptions: [async ({ playwright, _combinedContextOptions, actionTimeout, navigationTimeout, testIdAttribute }, use, testInfo) => {
+  _setupContextOptions: [async ({ playwright, actionTimeout, navigationTimeout, testIdAttribute }, use, testInfo) => {
     if (testIdAttribute)
       playwrightLibrary.selectors.setTestIdAttribute(testIdAttribute);
     testInfo.snapshotSuffix = process.platform;
     if (debugMode() === 'inspector')
       (testInfo as TestInfoImpl)._setDebugMode();
 
-    playwright._defaultContextOptions = _combinedContextOptions;
     playwright._defaultContextTimeout = actionTimeout || 0;
     playwright._defaultContextNavigationTimeout = navigationTimeout || 0;
     await use();
-    playwright._defaultContextOptions = undefined;
     playwright._defaultContextTimeout = undefined;
     playwright._defaultContextNavigationTimeout = undefined;
   }, { auto: 'all-hooks-included',  title: 'context configuration', box: true } as any],
 
-  _setupArtifacts: [async ({ playwright, screenshot }, use, testInfo) => {
+  _setupArtifacts: [async ({ playwright, screenshot, _combinedContextOptions }, use, testInfo) => {
     // This fixture has a separate zero-timeout slot to ensure that artifact collection
     // happens even after some fixtures or hooks time out.
     // Now that default test timeout is known, we can replace zero with an actual value.
@@ -305,20 +308,32 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
         if (!keepTestTimeout)
           currentTestInfo()?._setDebugMode();
       },
+      runBeforeCreateBrowserContext: async (options: BrowserContextOptions) => {
+        for (const [key, value] of Object.entries(_combinedContextOptions)) {
+          if (!(key in options))
+            options[key as keyof BrowserContextOptions] = value;
+        }
+      },
+      runBeforeCreateRequestContext: async (options: APIRequestContextOptions) => {
+        for (const [key, value] of Object.entries(_combinedContextOptions)) {
+          if (!(key in options))
+            options[key as keyof APIRequestContextOptions] = value;
+        }
+      },
       runAfterCreateBrowserContext: async (context: BrowserContextImpl) => {
-        await artifactsRecorder?.didCreateBrowserContext(context);
+        await artifactsRecorder.didCreateBrowserContext(context);
         const testInfo = currentTestInfo();
         if (testInfo)
           attachConnectedHeaderIfNeeded(testInfo, context.browser());
       },
       runAfterCreateRequestContext: async (context: APIRequestContextImpl) => {
-        await artifactsRecorder?.didCreateRequestContext(context);
+        await artifactsRecorder.didCreateRequestContext(context);
       },
       runBeforeCloseBrowserContext: async (context: BrowserContextImpl) => {
-        await artifactsRecorder?.willCloseBrowserContext(context);
+        await artifactsRecorder.willCloseBrowserContext(context);
       },
       runBeforeCloseRequestContext: async (context: APIRequestContextImpl) => {
-        await artifactsRecorder?.willCloseRequestContext(context);
+        await artifactsRecorder.willCloseRequestContext(context);
       },
     };
 
@@ -441,6 +456,50 @@ const playwrightFixtures: Fixtures<TestFixtures, WorkerFixtures> = ({
     if (!page)
       page = await context.newPage();
     await use(page);
+  },
+
+  agent: async ({ page, agentOptions }, use, testInfo) => {
+    const testInfoImpl = testInfo as TestInfoImpl;
+    const cachePathTemplate = agentOptions?.cachePathTemplate ?? '{testDir}/{testFilePath}-cache.json';
+    const resolvedCacheFile = testInfoImpl._applyPathTemplate(cachePathTemplate, '', '.json');
+    // @ts-expect-error runAgents is hidden
+    const cacheFile = testInfoImpl.config.runAgents === 'all' ? undefined : await testInfoImpl._cloneStorage(resolvedCacheFile);
+    const cacheOutFile = path.join(testInfoImpl.artifactsDir(), 'agent-cache-' + createGuid() + '.json');
+
+    // @ts-expect-error runAgents is hidden
+    const provider = agentOptions?.provider && testInfo.config.runAgents !== 'none' ? agentOptions.provider : undefined;
+    if (provider)
+      testInfo.setTimeout(0);
+
+    const cache = {
+      cacheFile,
+      cacheOutFile,
+    };
+
+    // @ts-expect-error agent is hidden
+    const agent = await page.agent({
+      provider,
+      cache,
+      limits: agentOptions?.limits,
+      secrets: agentOptions?.secrets,
+      systemPrompt: agentOptions?.systemPrompt,
+      expect: {
+        timeout: testInfoImpl._projectInternal.expect?.timeout,
+      },
+    });
+
+    await use(agent);
+
+    const usage = await agent.usage();
+    if (usage.turns > 0)
+      await testInfoImpl.attach('agent-usage', { contentType: 'application/json', body: Buffer.from(JSON.stringify(usage, null, 2)) });
+
+    if (!resolvedCacheFile || !cacheOutFile)
+      return;
+    if (testInfo.status !== 'passed')
+      return;
+
+    await testInfoImpl._upstreamStorage(resolvedCacheFile, cacheOutFile);
   },
 
   request: async ({ playwright }, use) => {

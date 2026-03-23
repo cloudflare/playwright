@@ -46,7 +46,7 @@ test('should work after theme switch', async ({ runUITest, writeFiles }) => {
   await expect(page.getByTestId('output')).toContainText(`Hello world 1`);
 
   await page.getByText('Settings', { exact: true }).click();
-  await page.getByLabel('Dark mode').click();
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('Dark mode');
   await writeFiles({
     'a.test.ts': `
       import { test, expect } from '@playwright/test';
@@ -84,6 +84,7 @@ test('should show console messages for test', async ({ runUITest }, testInfo) =>
       test('print', async ({ page }) => {
         await page.evaluate(() => console.log('page message'));
         console.log('node message');
+        await page.waitForTimeout(500);
         await page.evaluate(() => console.error('page error'));
         console.error('node error');
         console.log('Colors: \x1b[31mRED\x1b[0m \x1b[32mGREEN\x1b[0m');
@@ -118,12 +119,13 @@ test('should collapse repeated console messages for test', async ({ runUITest })
   const { page } = await runUITest({
     'a.spec.ts': `
       import { test, expect } from '@playwright/test';
-      test('print', async ({ page }) => {
+      test('print test', async ({ page }) => {
         await page.evaluate(() => {
           console.log('page message')
           for (let i = 0; i < 10; ++i)
             console.log('page message')
         });
+        await page.waitForTimeout(3000);
         for (let i = 0; i < 10; ++i)
           console.log('node message')
         await page.evaluate(async () => {
@@ -140,10 +142,10 @@ test('should collapse repeated console messages for test', async ({ runUITest })
       });
     `,
   });
-  await page.getByTitle('Run all').click();
-  await page.getByRole('tab', { name: 'Console' }).click();
-  await page.getByText('print').click();
+  await page.getByRole('treeitem', { name: 'print test' }).dblclick();
+  await expect(page.getByTestId('workbench-run-status')).toContainText('Passed');
 
+  await page.getByRole('tab', { name: 'Console' }).click();
   await expect(page.getByRole('tabpanel', { name: 'Console' })).toMatchAriaSnapshot(`
     - tabpanel "Console":
       - list:

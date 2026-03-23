@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { z } from '../sdk/bundle';
+import { z } from 'playwright-core/lib/mcpBundle';
 import ListModeReporter from '../../reporters/listModeReporter';
 import { defineTestTool } from './testTool';
 
@@ -49,7 +49,7 @@ export const runTests = defineTestTool({
 
   handle: async (context, params) => {
     const { output } = await context.runTestsWithGlobalSetupAndPossiblePause({
-      locations: params.locations,
+      locations: params.locations ?? [],
       projects: params.projects,
       disableConfigReporters: true,
     });
@@ -74,6 +74,7 @@ export const debugTest = defineTestTool({
   handle: async (context, params) => {
     const { output, status } = await context.runTestsWithGlobalSetupAndPossiblePause({
       headed: context.computedHeaded,
+      locations: [], // we can make this faster by passing the test's location, so we don't need to scan all tests to find the ID
       testIds: [params.test.id],
       // For automatic recovery
       timeout: 0,

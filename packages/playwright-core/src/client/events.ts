@@ -78,6 +78,10 @@ export const Events = {
     Worker: 'worker',
   },
 
+  PageAgent: {
+    Turn: 'turn',
+  },
+
   WebSocket: {
     Close: 'close',
     Error: 'socketerror',

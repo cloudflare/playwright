@@ -1,0 +1,32 @@
+{
+  "94919d5202a4e9298507668bb88822a939783915": {
+    "result": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "I need to verify that an input has the value \"hello\", but according to the page snapshot, the textbox currently has the value \"bye\". I'll use the browser_expect_value tool to assert the expected value."
+        },
+        {
+          "type": "tool_call",
+          "name": "browser_expect_value",
+          "arguments": {
+            "type": "textbox",
+            "element": "input",
+            "ref": "e2",
+            "value": "hello",
+            "_is_done": true
+          },
+          "id": "toolu_015XEEa4SNqFf64DD2uXYyb8"
+        }
+      ],
+      "stopReason": {
+        "code": "ok"
+      }
+    },
+    "usage": {
+      "input": 2204,
+      "output": 174
+    }
+  }
+}

@@ -33,14 +33,13 @@ test('test reopen browser', async ({ startClient, server }) => {
     name: 'browser_close',
   })).toHaveResponse({
     code: `await page.close()`,
-    tabs: `No open tabs. Use the "browser_navigate" tool to navigate to a page first.`,
   });
 
   expect(await client.callTool({
     name: 'browser_navigate',
     arguments: { url: server.HELLO_WORLD },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`- generic [active] [ref=e1]: Hello, world!`),
+    snapshot: expect.stringContaining(`- generic [active] [ref=e1]: Hello, world!`),
   });
 
   await client.close();
@@ -72,12 +71,12 @@ test('executable path', async ({ startClient, server }) => {
     arguments: { url: server.HELLO_WORLD },
   });
   expect(response).toHaveResponse({
-    result: expect.stringContaining(`executable doesn't exist`),
+    error: expect.stringContaining(`executable doesn't exist`),
     isError: true,
   });
 });
 
-test('persistent context', async ({ startClient, server }) => {
+test('persistent context', async ({ startClient, server }, testInfo) => {
   server.setContent('/', `
     <body>
     </body>
@@ -87,12 +86,14 @@ test('persistent context', async ({ startClient, server }) => {
     </script>
   `, 'text/html');
 
-  const { client } = await startClient();
+  const { client } = await startClient({
+    args: [`--user-data-dir=${testInfo.outputPath('user-data-dir')}`],
+  });
   expect(await client.callTool({
     name: 'browser_navigate',
     arguments: { url: server.PREFIX },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`Storage: NO`),
+    snapshot: expect.stringContaining(`Storage: NO`),
   });
 
   await new Promise(resolve => setTimeout(resolve, 3000));
@@ -101,12 +102,14 @@ test('persistent context', async ({ startClient, server }) => {
     name: 'browser_close',
   });
 
-  const { client: client2 } = await startClient();
+  const { client: client2 } = await startClient({
+    args: [`--user-data-dir=${testInfo.outputPath('user-data-dir')}`],
+  });
   expect(await client2.callTool({
     name: 'browser_navigate',
     arguments: { url: server.PREFIX },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`Storage: YES`),
+    snapshot: expect.stringContaining(`Storage: YES`),
   });
 });
 
@@ -125,7 +128,7 @@ test('isolated context', async ({ startClient, server }) => {
     name: 'browser_navigate',
     arguments: { url: server.PREFIX },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`Storage: NO`),
+    snapshot: expect.stringContaining(`Storage: NO`),
   });
 
   await client1.callTool({
@@ -137,7 +140,7 @@ test('isolated context', async ({ startClient, server }) => {
     name: 'browser_navigate',
     arguments: { url: server.PREFIX },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`Storage: NO`),
+    snapshot: expect.stringContaining(`Storage: NO`),
   });
 });
 
@@ -168,6 +171,42 @@ test('isolated context with storage state', async ({ startClient, server }, test
     name: 'browser_navigate',
     arguments: { url: server.PREFIX },
   })).toHaveResponse({
-    pageState: expect.stringContaining(`Storage: session-value`),
+    snapshot: expect.stringContaining(`Storage: session-value`),
+  });
+});
+
+test('proper launch error message for broken browser and persistent context', {
+  annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright-mcp/issues/1305' }
+}, async ({ startClient, server, mcpBrowser }, testInfo) => {
+  test.skip(process.platform === 'win32', 'Skipping on Windows because we need /bin/sh.');
+  const scriptPath = testInfo.outputPath('launcher.sh');
+  const scriptContent = `#!/bin/sh
+echo "Bogus browser script"
+exit 1
+`;
+  await fs.promises.writeFile(scriptPath, scriptContent, { mode: 0o755 });
+
+  const { client } = await startClient({
+    args: [`--executable-path=${scriptPath}`],
+  });
+  const result = await client.callTool({
+    name: 'browser_navigate',
+    arguments: { url: server.PREFIX },
+  });
+  expect.soft(result).toHaveResponse({
+    isError: true,
+    error: expect.stringContaining(`Bogus browser script`),
+  });
+  // Chromium waits for the CDP endpoint, so we know if the process failed to launch
+  // before connecting.
+  if (mcpBrowser === 'chromium') {
+    expect.soft(result).toHaveResponse({
+      isError: true,
+      error: expect.stringContaining(`Failed to launch the browser process.`),
+    });
+  }
+  expect.soft(result).toHaveResponse({
+    isError: true,
+    error: expect.not.stringContaining(`Browser is already in use`),
   });
 });

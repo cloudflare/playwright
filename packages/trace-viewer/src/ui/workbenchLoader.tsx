@@ -15,7 +15,7 @@
 */
 
 import * as React from 'react';
-import { MultiTraceModel } from './modelUtil';
+import { TraceModel } from '@isomorphic/trace/traceModel';
 import './workbenchLoader.css';
 import { Workbench } from './workbench';
 import { TestServerConnection, WebSocketTestServerTransport } from '@testIsomorphic/testServerConnection';
@@ -28,7 +28,7 @@ export const WorkbenchLoader: React.FunctionComponent<{
   const [isServer, setIsServer] = React.useState<boolean>(false);
   const [traceURL, setTraceURL] = React.useState<string>();
   const [uploadedTraceName, setUploadedTraceName] = React.useState<string>();
-  const [model, setModel] = React.useState<MultiTraceModel>(emptyModel);
+  const [model, setModel] = React.useState<TraceModel>(emptyModel);
   const [progress, setProgress] = React.useState<{ done: number, total: number }>({ done: 0, total: 0 });
   const [dragOver, setDragOver] = React.useState<boolean>(false);
   const [processingErrorMessage, setProcessingErrorMessage] = React.useState<string | null>(null);
@@ -56,8 +56,9 @@ export const WorkbenchLoader: React.FunctionComponent<{
     const listener = async (e: ClipboardEvent) => {
       if (!e.clipboardData?.files.length)
         return;
+      const zipMimeTypes = ['application/zip', 'application/x-zip-compressed'];
       for (const file of e.clipboardData.files) {
-        if (file.type !== 'application/zip')
+        if (!zipMimeTypes.includes(file.type))
           return;
       }
       e.preventDefault();
@@ -124,6 +125,22 @@ export const WorkbenchLoader: React.FunctionComponent<{
     }
   }, []);
 
+  const fetchTrace = React.useCallback(async (traceURL: string): Promise<string | undefined> => {
+    const params = new URLSearchParams();
+    params.set('trace', traceURL);
+    const response = await fetch(`contexts?${params.toString()}`);
+    if (!response.ok) {
+      const { error } = await response.json();
+      setProcessingErrorMessage(error);
+      return error;
+    }
+    const contextEntries = await response.json();
+    const model = new TraceModel(traceURL, contextEntries);
+    setProgress({ done: 0, total: 0 });
+    setProcessingErrorMessage(null);
+    setModel(model);
+  }, []);
+
   React.useEffect(() => {
     (async () => {
       if (!traceURL) {
@@ -138,25 +155,21 @@ export const WorkbenchLoader: React.FunctionComponent<{
       try {
         navigator.serviceWorker.addEventListener('message', swListener);
         setProgress({ done: 0, total: 1 });
-
-        const params = new URLSearchParams();
-        params.set('trace', traceURL);
-        const response = await fetch(`contexts?${params.toString()}`);
-        if (!response.ok) {
+        let error = await fetchTrace(traceURL);
+        if (error?.includes('please grant permission for Local Network Access')) {
+          // fetching the asset opens the permission prompt. but only from window, not from SW (https://issues.chromium.org/issues/460180743)
+          await fetch(traceURL, { method: 'HEAD', headers: { 'x-pw-serviceworker': 'skip' } });
+          error = await fetchTrace(traceURL);
+        }
+        if (error) {
           if (!isServer)
             setTraceURL(undefined);
-          setProcessingErrorMessage((await response.json()).error);
-          return;
         }
-        const contextEntries = await response.json();
-        const model = new MultiTraceModel(traceURL, contextEntries);
-        setProgress({ done: 0, total: 0 });
-        setModel(model);
       } finally {
         navigator.serviceWorker.removeEventListener('message', swListener);
       }
     })();
-  }, [isServer, traceURL, uploadedTraceName]);
+  }, [isServer, traceURL, uploadedTraceName, fetchTrace]);
 
   const showLoading = progress.done !== progress.total && progress.total !== 0 && !processingErrorMessage;
 
@@ -174,7 +187,11 @@ export const WorkbenchLoader: React.FunctionComponent<{
 
   const showFileUploadDropArea = !!(!isServer && !dragOver && !fileForLocalModeError && (!traceURL || processingErrorMessage));
 
-  return <div className='vbox workbench-loader' onDragOver={event => { event.preventDefault(); setDragOver(true); }}>
+  return <div className='vbox workbench-loader' onDragOver={event => {
+    event.preventDefault();
+    if (event.dataTransfer.types.includes('Files'))
+      setDragOver(true);
+  }}>
     <div className='hbox header' {...(showFileUploadDropArea ? { inert: true } : {})}>
       <div className='logo'>
         <img src='playwright-logo.svg' alt='Playwright logo' />
@@ -228,4 +245,4 @@ export const WorkbenchLoader: React.FunctionComponent<{
   </div>;
 };
 
-export const emptyModel = new MultiTraceModel('', []);
+export const emptyModel = new TraceModel('', []);

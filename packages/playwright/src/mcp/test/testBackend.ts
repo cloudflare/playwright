@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
+import { z as zod } from 'playwright-core/lib/mcpBundle';
+
 import * as mcp from '../sdk/exports';
 import { TestContext } from './testContext';
 import * as testTools from './testTools.js';
 import * as generatorTools from './generatorTools.js';
 import * as plannerTools from './plannerTools.js';
 import { browserTools } from '../browser/tools';
-import { z as zod } from  '../sdk/bundle';
 
 import type { TestTool } from './testTool';
 import type { Tool as BrowserTool } from '../browser/tools/tool';
@@ -42,15 +43,15 @@ export class TestServerBackend implements mcp.ServerBackend {
   ];
   private _options: { muteConsole?: boolean, headless?: boolean };
   private _context: TestContext | undefined;
-  private _configOption: string | undefined;
+  private _configPath: string | undefined;
 
-  constructor(configOption: string | undefined, options?: { muteConsole?: boolean, headless?: boolean }) {
+  constructor(configPath: string | undefined, options?: { muteConsole?: boolean, headless?: boolean }) {
     this._options = options || {};
-    this._configOption = configOption;
+    this._configPath = configPath;
   }
 
   async initialize(clientInfo: mcp.ClientInfo): Promise<void> {
-    this._context = new TestContext(clientInfo, this._configOption, this._options);
+    this._context = new TestContext(clientInfo, this._configPath, this._options);
   }
 
   async listTools(): Promise<mcp.Tool[]> {
@@ -69,7 +70,7 @@ export class TestServerBackend implements mcp.ServerBackend {
   }
 
   serverClosed() {
-    void this._context!.close();
+    void this._context?.close();
   }
 }
 

@@ -10,11 +10,13 @@ const bundles = {
   'pngjs': '../bundles/pngjs',
   'utilsBundleImpl': '../../playwright-core/bundles/utils',
   'zipBundleImpl': '../../playwright-core/bundles/zip',
+  'mcpBundleImpl': '../../playwright-core/bundles/mcp',
   'expectBundleImpl': '../../playwright/bundles/expect',
 };
 
 const external = [
   'assert',
+  'async_hooks',
   'buffer',
   'child_process',
   'constants',
@@ -23,6 +25,7 @@ const external = [
   'events',
   'fs',
   'http',
+  'http2',
   'https',
   'module',
   'net',
@@ -30,9 +33,29 @@ const external = [
   'path',
   'process',
   'stream',
+  'string_decoder',
   'tls',
   'url',
   'util',
+  // Node.js prefixed modules
+  'node:crypto',
+  'node:url',
+  'node:stream',
+  'node:http',
+  'node:https',
+  'node:http2',
+  'node:buffer',
+  'node:events',
+  'node:async_hooks',
+  'node:child_process',
+  'node:fs',
+  'node:path',
+  'node:process',
+  'node:util',
+  'node:net',
+  'node:string_decoder',
+  'node:tls',
+  'node:os',
 ];
 
 const basedir = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +94,7 @@ const basedir = path.dirname(fileURLToPath(import.meta.url));
           'node:path': 'path',
           'node:fs': 'fs',
           'node:process': 'process',
+          'node:string_decoder': 'string_decoder',
 
           // jest npm package is commonjs, 
           ...jestPackages,

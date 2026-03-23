@@ -30,6 +30,7 @@ export default defineConfig({
       'path': 'node:path',
       'process': 'node:process',
       'stream': 'node:stream',
+      'string_decoder': 'node:string_decoder',
       'tls': 'node:tls',
       'url': 'node:url',
       'util': 'node:util',
@@ -38,6 +39,7 @@ export default defineConfig({
       // bundles
       './utilsBundleImpl': path.resolve(__dirname, './src/bundles/utilsBundleImpl'),
       './zipBundleImpl': path.resolve(__dirname, './src/bundles/zipBundleImpl'),
+      './mcpBundleImpl': path.resolve(__dirname, './src/bundles/mcpBundleImpl'),
       './expectBundleImpl': path.resolve(__dirname, './src/bundles/expectBundleImpl'),
       'pngjs': path.resolve(__dirname, './src/bundles/pngjs'),
 
@@ -114,6 +116,7 @@ export default defineConfig({
         'node:path',
         'node:process',
         'node:stream',
+        'node:string_decoder',
         'node:timers',
         'node:tls',
         'node:url',

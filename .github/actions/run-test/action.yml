@@ -7,7 +7,7 @@ inputs:
   node-version:
     description: 'Node.js version to use'
     required: false
-    default: '18'
+    default: '20'
   browsers-to-install:
     description: 'Browser to install. Default is all browsers.'
     required: false
@@ -15,6 +15,10 @@ inputs:
   bot-name:
     description: 'Bot name'
     required: true
+  shard-index:
+    description: 'Shard index (optional)'
+    required: false
+    default: '0'
   shell:
     description: 'Shell to use'
     required: false
@@ -61,13 +65,13 @@ runs:
         fi
       shell: bash
       env:
-        PWTEST_BOT_NAME: ${{ inputs.bot-name }}
+        PW_TAG: "@${{ inputs.bot-name }}"
     - name: Run tests
       if: inputs.shell != 'bash'
       run: ${{ inputs.command }}
       shell: ${{ inputs.shell }}
       env:
-        PWTEST_BOT_NAME: ${{ inputs.bot-name }}
+        PW_TAG: "@${{ inputs.bot-name }}"
     - name: Azure Login
       uses: azure/login@v2
       if: ${{ !cancelled() && github.event_name == 'push' && github.repository == 'microsoft/playwright' }}
@@ -87,4 +91,4 @@ runs:
       uses: ./.github/actions/upload-blob-report
       with:
         report_dir: blob-report
-        job_name: ${{ inputs.bot-name }}
+        job_name: ${{ inputs.bot-name }}-${{ inputs.shard-index }}

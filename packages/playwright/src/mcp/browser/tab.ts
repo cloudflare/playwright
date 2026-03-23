@@ -18,7 +18,7 @@ import { EventEmitter } from 'events';
 import * as playwright from 'playwright-core';
 import { asLocator, ManualPromise } from 'playwright-core/lib/utils';
 
-import { callOnPageNoTrace, waitForCompletion } from './tools/utils';
+import { callOnPageNoTrace, waitForCompletion, eventWaiter } from './tools/utils';
 import { logUnhandledError } from '../log';
 import { ModalState } from './tools/tool';
 import { handleDialog } from './tools/dialogs';
@@ -37,28 +37,65 @@ export type TabEventsInterface = {
   [TabEvents.modalState]: [modalState: ModalState];
 };
 
-export type TabSnapshot = {
-  url: string;
+type Download = {
+  download: playwright.Download;
+  finished: boolean;
+  outputFile: string;
+};
+
+type ConsoleLogEntry = {
+  type: 'console';
+  wallTime: number;
+  message: ConsoleMessage;
+};
+
+type DownloadStartLogEntry = {
+  type: 'download-start';
+  wallTime: number;
+  download: Download;
+};
+
+type DownloadFinishLogEntry = {
+  type: 'download-finish';
+  wallTime: number;
+  download: Download;
+};
+
+type RequestLogEntry = {
+  type: 'request';
+  wallTime: number;
+  request: playwright.Request;
+};
+
+type EventEntry = ConsoleLogEntry | DownloadStartLogEntry | DownloadFinishLogEntry | RequestLogEntry;
+
+
+export type TabHeader = {
   title: string;
+  url: string;
+  current: boolean;
+};
+
+export type TabSnapshot = {
   ariaSnapshot: string;
   ariaSnapshotDiff?: string;
   modalStates: ModalState[];
-  consoleMessages: ConsoleMessage[];
-  downloads: { download: playwright.Download, finished: boolean, outputFile: string }[];
+  events: EventEntry[];
 };
 
 export class Tab extends EventEmitter<TabEventsInterface> {
   readonly context: Context;
   readonly page: Page;
-  private _lastTitle = 'about:blank';
+  private _lastHeader: TabHeader = { title: 'about:blank', url: 'about:blank', current: false };
   private _consoleMessages: ConsoleMessage[] = [];
-  private _recentConsoleMessages: ConsoleMessage[] = [];
+  private _downloads: Download[] = [];
   private _requests: Set<playwright.Request> = new Set();
   private _onPageClose: (tab: Tab) => void;
   private _modalStates: ModalState[] = [];
-  private _downloads: { download: playwright.Download, finished: boolean, outputFile: string }[] = [];
-  readonly initializedPromise: Promise<void>;
+  private _initializedPromise: Promise<void>;
   private _needsFullSnapshot = false;
+  private _eventEntries: EventEntry[] = [];
+  private _recentEventEntries: EventEntry[] = [];
 
   constructor(context: Context, page: playwright.Page, onPageClose: (tab: Tab) => void) {
     super();
@@ -67,7 +104,7 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     this._onPageClose = onPageClose;
     page.on('console', event => this._handleConsoleMessage(messageToConsoleMessage(event)));
     page.on('pageerror', error => this._handleConsoleMessage(pageErrorToConsoleMessage(error)));
-    page.on('request', request => this._requests.add(request));
+    page.on('request', request => this._handleRequest(request));
     page.on('close', () => this._onClose());
     page.on('filechooser', chooser => {
       this.setModalState({
@@ -84,7 +121,7 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     page.setDefaultNavigationTimeout(this.context.config.timeouts.navigation);
     page.setDefaultTimeout(this.context.config.timeouts.action);
     (page as any)[tabSymbol] = this;
-    this.initializedPromise = this._initialize();
+    this._initializedPromise = this._initialize();
   }
 
   static forPage(page: playwright.Page): Tab | undefined {
@@ -131,10 +168,6 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     this._modalStates = this._modalStates.filter(state => state !== modalState);
   }
 
-  modalStatesMarkdown(): string[] {
-    return renderModalStates(this.context, this.modalStates());
-  }
-
   private _dialogShown(dialog: playwright.Dialog) {
     this.setModalState({
       type: 'dialog',
@@ -148,22 +181,36 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     const entry = {
       download,
       finished: false,
-      outputFile: await this.context.outputFile(download.suggestedFilename(), { origin: 'web', reason: 'Saving download' })
+      outputFile: await this.context.outputFile(download.suggestedFilename(), { origin: 'web', title: 'Saving download' })
     };
     this._downloads.push(entry);
+    this._addLogEntry({ type: 'download-start', wallTime: Date.now(), download: entry });
     await download.saveAs(entry.outputFile);
     entry.finished = true;
+    this._addLogEntry({ type: 'download-finish', wallTime: Date.now(), download: entry });
   }
 
   private _clearCollectedArtifacts() {
     this._consoleMessages.length = 0;
-    this._recentConsoleMessages.length = 0;
+    this._downloads.length = 0;
     this._requests.clear();
+    this._eventEntries.length = 0;
+    this._recentEventEntries.length = 0;
+  }
+
+  private _handleRequest(request: playwright.Request) {
+    this._requests.add(request);
+    this._addLogEntry({ type: 'request', wallTime: Date.now(), request });
   }
 
   private _handleConsoleMessage(message: ConsoleMessage) {
     this._consoleMessages.push(message);
-    this._recentConsoleMessages.push(message);
+    this._addLogEntry({ type: 'console', wallTime: Date.now(), message });
+  }
+
+  private _addLogEntry(entry: EventEntry) {
+    this._eventEntries.push(entry);
+    this._recentEventEntries.push(entry);
   }
 
   private _onClose() {
@@ -171,30 +218,36 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     this._onPageClose(this);
   }
 
-  async updateTitle() {
+  async headerSnapshot(): Promise<TabHeader & { changed: boolean }> {
+    let title: string | undefined;
     await this._raceAgainstModalStates(async () => {
-      this._lastTitle = await callOnPageNoTrace(this.page, page => page.title());
+      title = await callOnPageNoTrace(this.page, page => page.title());
     });
+    if (this._lastHeader.title !== title || this._lastHeader.url !== this.page.url() || this._lastHeader.current !== this.isCurrentTab()) {
+      this._lastHeader = { title: title ?? '', url: this.page.url(), current: this.isCurrentTab() };
+      return { ...this._lastHeader, changed: true };
+    }
+    return { ...this._lastHeader, changed: false };
   }
 
-  lastTitle(): string {
-    return this._lastTitle;
-  }
 
   isCurrentTab(): boolean {
     return this === this.context.currentTab();
   }
 
   async waitForLoadState(state: 'load', options?: { timeout?: number }): Promise<void> {
+    await this._initializedPromise;
     await callOnPageNoTrace(this.page, page => page.waitForLoadState(state, options).catch(logUnhandledError));
   }
 
   async navigate(url: string) {
+    await this._initializedPromise;
     this._clearCollectedArtifacts();
 
-    const downloadEvent = callOnPageNoTrace(this.page, page => page.waitForEvent('download').catch(logUnhandledError));
+    const { promise: downloadEvent, abort: abortDownloadEvent } = eventWaiter<playwright.Download>(this.page, 'download', 3000);
     try {
       await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+      abortDownloadEvent();
     } catch (_e: unknown) {
       const e = _e as Error;
       const mightBeDownload =
@@ -203,10 +256,7 @@ export class Tab extends EventEmitter<TabEventsInterface> {
       if (!mightBeDownload)
         throw e;
       // on chromium, the download event is fired *after* page.goto rejects, so we wait a lil bit
-      const download = await Promise.race([
-        downloadEvent,
-        new Promise(resolve => setTimeout(resolve, 3000)),
-      ]);
+      const download = await downloadEvent;
       if (!download)
         throw e;
       // Make sure other "download" listeners are notified first.
@@ -218,45 +268,41 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     await this.waitForLoadState('load', { timeout: 5000 });
   }
 
-  async consoleMessages(type?: 'error'): Promise<ConsoleMessage[]> {
-    await this.initializedPromise;
-    return this._consoleMessages.filter(message => type ? message.type === type : true);
+  async consoleMessages(level: ConsoleMessageLevel): Promise<ConsoleMessage[]> {
+    await this._initializedPromise;
+    return this._consoleMessages.filter(message => shouldIncludeMessage(level, message.type));
   }
 
   async requests(): Promise<Set<playwright.Request>> {
-    await this.initializedPromise;
+    await this._initializedPromise;
     return this._requests;
   }
 
   async captureSnapshot(): Promise<TabSnapshot> {
+    await this._initializedPromise;
     let tabSnapshot: TabSnapshot | undefined;
     const modalStates = await this._raceAgainstModalStates(async () => {
       const snapshot = await this.page._snapshotForAI({ track: 'response' });
       tabSnapshot = {
-        url: this.page.url(),
-        title: await this.page.title(),
         ariaSnapshot: snapshot.full,
         ariaSnapshotDiff: this._needsFullSnapshot ? undefined : snapshot.incremental,
         modalStates: [],
-        consoleMessages: [],
-        downloads: this._downloads,
+        events: []
       };
     });
     if (tabSnapshot) {
-      // Assign console message late so that we did not lose any to modal state.
-      tabSnapshot.consoleMessages = this._recentConsoleMessages;
-      this._recentConsoleMessages = [];
+      tabSnapshot.events = this._recentEventEntries;
+      this._recentEventEntries = [];
     }
+
     // If we failed to capture a snapshot this time, make sure we do a full one next time,
     // to avoid reporting deltas against un-reported snapshot.
     this._needsFullSnapshot = !tabSnapshot;
     return tabSnapshot ?? {
-      url: this.page.url(),
-      title: '',
       ariaSnapshot: '',
+      ariaSnapshotDiff: '',
       modalStates,
-      consoleMessages: [],
-      downloads: [],
+      events: [],
     };
   }
 
@@ -282,17 +328,22 @@ export class Tab extends EventEmitter<TabEventsInterface> {
   }
 
   async waitForCompletion(callback: () => Promise<void>) {
+    await this._initializedPromise;
     await this._raceAgainstModalStates(() => waitForCompletion(this, callback));
   }
 
-  async refLocator(params: { element: string, ref: string }): Promise<{ locator: Locator, resolved: string }> {
+  async refLocator(params: { element?: string, ref: string }): Promise<{ locator: Locator, resolved: string }> {
+    await this._initializedPromise;
     return (await this.refLocators([params]))[0];
   }
 
-  async refLocators(params: { element: string, ref: string }[]): Promise<{ locator: Locator, resolved: string }[]> {
+  async refLocators(params: { element?: string, ref: string }[]): Promise<{ locator: Locator, resolved: string }[]> {
+    await this._initializedPromise;
     return Promise.all(params.map(async param => {
       try {
-        const locator = this.page.locator(`aria-ref=${param.ref}`).describe(param.element) as Locator;
+        let locator = this.page.locator(`aria-ref=${param.ref}`);
+        if (param.element)
+          locator = locator.describe(param.element);
         const { resolvedSelector } = await locator._resolveSelector();
         return { locator, resolved: asLocator('javascript', resolvedSelector) };
       } catch (e) {
@@ -308,13 +359,13 @@ export class Tab extends EventEmitter<TabEventsInterface> {
     }
 
     await callOnPageNoTrace(this.page, page => {
-      return page.evaluate(() => new Promise(f => setTimeout(f, 1000)));
+      return page.evaluate(() => new Promise(f => setTimeout(f, 1000))).catch(() => {});
     });
   }
 }
 
 export type ConsoleMessage = {
-  type: ReturnType<playwright.ConsoleMessage['type']> | undefined;
+  type: ReturnType<playwright.ConsoleMessage['type']>;
   text: string;
   toString(): string;
 };
@@ -342,13 +393,52 @@ function pageErrorToConsoleMessage(errorOrValue: Error | any): ConsoleMessage {
   };
 }
 
-export function renderModalStates(context: Context, modalStates: ModalState[]): string[] {
-  const result: string[] = ['### Modal state'];
+export function renderModalStates(modalStates: ModalState[]): string[] {
+  const result: string[] = [];
   if (modalStates.length === 0)
     result.push('- There is no modal state present');
   for (const state of modalStates)
     result.push(`- [${state.description}]: can be handled by the "${state.clearedBy}" tool`);
   return result;
+}
+
+type ConsoleMessageType = ReturnType<playwright.ConsoleMessage['type']>;
+type ConsoleMessageLevel = 'error' | 'warning' | 'info' | 'debug';
+const consoleMessageLevels: ConsoleMessageLevel[] = ['error', 'warning', 'info', 'debug'];
+
+export function shouldIncludeMessage(thresholdLevel: ConsoleMessageLevel, type: ConsoleMessageType): boolean {
+  const messageLevel = consoleLevelForMessageType(type);
+  return consoleMessageLevels.indexOf(messageLevel) <= consoleMessageLevels.indexOf(thresholdLevel);
+}
+
+function consoleLevelForMessageType(type: ConsoleMessageType): ConsoleMessageLevel {
+  switch (type) {
+    case 'assert':
+    case 'error':
+      return 'error';
+    case 'warning':
+      return 'warning';
+    case 'count':
+    case 'dir':
+    case 'dirxml':
+    case 'info':
+    case 'log':
+    case 'table':
+    case 'time':
+    case 'timeEnd':
+      return 'info';
+    case 'clear':
+    case 'debug':
+    case 'endGroup':
+    case 'profile':
+    case 'profileEnd':
+    case 'startGroup':
+    case 'startGroupCollapsed':
+    case 'trace':
+      return 'debug';
+    default:
+      return 'info';
+  }
 }
 
 const tabSymbol = Symbol('tabSymbol');

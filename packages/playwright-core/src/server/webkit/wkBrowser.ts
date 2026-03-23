@@ -69,7 +69,6 @@ export class WKBrowser extends Browser {
     this._browserSession.on('Playwright.downloadCreated', this._onDownloadCreated.bind(this));
     this._browserSession.on('Playwright.downloadFilenameSuggested', this._onDownloadFilenameSuggested.bind(this));
     this._browserSession.on('Playwright.downloadFinished', this._onDownloadFinished.bind(this));
-    this._browserSession.on('Playwright.screencastFinished', this._onScreencastFinished.bind(this));
     this._browserSession.on(kPageProxyMessageReceived, this._onPageProxyMessageReceived.bind(this));
   }
 
@@ -78,7 +77,7 @@ export class WKBrowser extends Browser {
       wkPage.didClose();
     this._wkPages.clear();
     for (const video of this._idToVideo.values())
-      video.artifact.reportFinished(new TargetClosedError());
+      video.artifact.reportFinished(new TargetClosedError(this.closeReason()));
     this._idToVideo.clear();
     this._didClose();
   }
@@ -150,10 +149,6 @@ export class WKBrowser extends Browser {
 
   _onDownloadFinished(payload: Protocol.Playwright.downloadFinishedPayload) {
     this._downloadFinished(payload.uuid, payload.error);
-  }
-
-  _onScreencastFinished(payload: Protocol.Playwright.screencastFinishedPayload) {
-    this._takeVideo(payload.screencastId)?.reportFinished();
   }
 
   _onPageProxyCreated(event: Protocol.Playwright.pageProxyCreatedPayload) {
@@ -374,7 +369,7 @@ export class WKBrowserContext extends BrowserContext {
 
   async doClose(reason: string | undefined) {
     if (!this._browserContextId) {
-      await Promise.all(this._wkPages().map(wkPage => wkPage._stopVideo()));
+      await Promise.all(this._wkPages().map(wkPage => wkPage._page.screencast.stopVideoRecording()));
       // Closing persistent context should close the browser.
       await this._browser.close({ reason });
     } else {

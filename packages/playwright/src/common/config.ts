@@ -108,16 +108,18 @@ export class FullConfigInternal {
       maxFailures: takeFirst(configCLIOverrides.debug ? 1 : undefined, configCLIOverrides.maxFailures, userConfig.maxFailures, 0),
       metadata: metadata ?? userConfig.metadata,
       preserveOutput: takeFirst(userConfig.preserveOutput, 'always'),
+      projects: [],
+      quiet: takeFirst(configCLIOverrides.quiet, userConfig.quiet, false),
       reporter: takeFirst(configCLIOverrides.reporter, resolveReporters(userConfig.reporter, configDir), [[defaultReporter]]),
       reportSlowTests: takeFirst(userConfig.reportSlowTests, { max: 5, threshold: 300_000 /* 5 minutes */ }),
-      quiet: takeFirst(configCLIOverrides.quiet, userConfig.quiet, false),
-      projects: [],
+      // @ts-expect-error runAgents is hidden
+      runAgents: takeFirst(configCLIOverrides.runAgents, 'none'),
       shard: takeFirst(configCLIOverrides.shard, userConfig.shard, null),
       tags: globalTags,
       updateSnapshots: takeFirst(configCLIOverrides.updateSnapshots, userConfig.updateSnapshots, 'missing'),
       updateSourceMethod: takeFirst(configCLIOverrides.updateSourceMethod, userConfig.updateSourceMethod, 'patch'),
       version: require('../../package.json').version,
-      workers: resolveWorkers(takeFirst(configCLIOverrides.debug ? 1 : undefined, configCLIOverrides.workers, userConfig.workers, '50%')),
+      workers: resolveWorkers(takeFirst((configCLIOverrides.debug || configCLIOverrides.pause) ? 1 : undefined, configCLIOverrides.workers, userConfig.workers, '50%')),
       webServer: null,
     };
     for (const key in userConfig) {

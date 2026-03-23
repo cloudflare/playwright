@@ -13,3 +13,10 @@ export const spawnSync = () => {
 export const fork = () => {
     throw new Error('fork not implemented');
 };
+
+export default {
+    execSync,
+    spawn,
+    spawnSync,
+    fork,
+};

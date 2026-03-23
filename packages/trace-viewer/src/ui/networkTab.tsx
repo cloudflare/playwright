@@ -21,10 +21,11 @@ import './networkTab.css';
 import { NetworkResourceDetails } from './networkResourceDetails';
 import { bytesToString, msToString } from '@web/uiUtils';
 import { PlaceholderPanel } from './placeholderPanel';
-import { context, type MultiTraceModel } from './modelUtil';
+import { context } from '@isomorphic/trace/traceModel';
+import type { TraceModel } from '@isomorphic/trace/traceModel';
 import { GridView, type RenderedGridCell } from '@web/components/gridView';
 import { SplitView } from '@web/components/splitView';
-import type { ContextEntry } from '../types/entries';
+import type { ContextEntry } from '@isomorphic/trace/entries';
 import { NetworkFilters, defaultFilterState, type FilterState, type ResourceType } from './networkFilters';
 import type { Language } from '@isomorphic/locatorGenerators';
 
@@ -50,7 +51,7 @@ type ColumnName = keyof RenderedEntry;
 type Sorting = { by: ColumnName, negate: boolean};
 const NetworkGridView = GridView<RenderedEntry>;
 
-export function useNetworkTabModel(model: MultiTraceModel | undefined, selectedTime: Boundaries | undefined): NetworkTabModel {
+export function useNetworkTabModel(model: TraceModel | undefined, selectedTime: Boundaries | undefined): NetworkTabModel {
   const resources = React.useMemo(() => {
     const resources = model?.resources || [];
     const filtered = resources.filter(resource => {
@@ -73,6 +74,8 @@ export const NetworkTab: React.FunctionComponent<{
   const [sorting, setSorting] = React.useState<Sorting | undefined>(undefined);
   const [selectedEntry, setSelectedEntry] = React.useState<RenderedEntry | undefined>(undefined);
   const [filterState, setFilterState] = React.useState(defaultFilterState);
+
+  const visibleSelectedEntry = React.useMemo(() => (selectedEntry && networkModel.resources.includes(selectedEntry.resource)) ? selectedEntry : undefined, [selectedEntry, networkModel.resources]);
 
   const { renderedEntries } = React.useMemo(() => {
     const renderedEntries = networkModel.resources.map((entry, i) => renderEntry(entry, boundaries, networkModel.contextIdMap, i)).filter(filterEntry(filterState));
@@ -97,10 +100,10 @@ export const NetworkTab: React.FunctionComponent<{
     name='network'
     ariaLabel='Network requests'
     items={renderedEntries}
-    selectedItem={selectedEntry}
+    selectedItem={visibleSelectedEntry}
     onSelected={item => setSelectedEntry(item)}
     onHighlighted={item => onResourceHovered?.(item?.ordinal)}
-    columns={visibleColumns(!!selectedEntry, renderedEntries)}
+    columns={visibleColumns(!!visibleSelectedEntry, renderedEntries)}
     columnTitle={columnTitle}
     columnWidths={columnWidths}
     setColumnWidths={setColumnWidths}
@@ -112,14 +115,14 @@ export const NetworkTab: React.FunctionComponent<{
   />;
   return <>
     <NetworkFilters filterState={filterState} onFilterStateChange={onFilterStateChange} />
-    {!selectedEntry && grid}
-    {selectedEntry &&
+    {!visibleSelectedEntry && grid}
+    {visibleSelectedEntry &&
       <SplitView
         sidebarSize={columnWidths.get('name')!}
         sidebarIsFirst={true}
         orientation='horizontal'
         settingName='networkResourceDetails'
-        main={<NetworkResourceDetails resource={selectedEntry.resource} sdkLanguage={sdkLanguage} startTimeOffset={selectedEntry.start} onClose={() => setSelectedEntry(undefined)} />}
+        main={<NetworkResourceDetails resource={visibleSelectedEntry.resource} sdkLanguage={sdkLanguage} startTimeOffset={visibleSelectedEntry.start} onClose={() => setSelectedEntry(undefined)} />}
         sidebar={grid}
       />}
   </>;
@@ -218,7 +221,7 @@ class ContextIdMap {
   private _lastPageId = 0;
   private _lastApiRequestContextId = 0;
 
-  constructor(model: MultiTraceModel | undefined) {}
+  constructor(model: TraceModel | undefined) {}
 
   contextId(resource: Entry): string {
     if (resource.pageref)

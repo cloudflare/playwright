@@ -18,7 +18,6 @@
 import http from 'http';
 import http2 from 'http2';
 import https from 'https';
-import url from 'url';
 
 import { HttpsProxyAgent, SocksProxyAgent, getProxyForUrl } from '../../utilsBundle';
 import { httpHappyEyeballsAgent, httpsHappyEyeballsAgent } from './happyEyeballs';
@@ -40,10 +39,8 @@ export type HTTPRequestParams = {
 export const NET_DEFAULT_TIMEOUT = 30_000;
 
 export function httpRequest(params: HTTPRequestParams, onResponse: (r: http.IncomingMessage) => void, onError: (error: Error) => void): { cancel(error: Error | undefined): void } {
-  const parsedUrl = url.parse(params.url);
-  let options: https.RequestOptions = {
-    ...parsedUrl,
-    agent: parsedUrl.protocol === 'https:' ? httpsHappyEyeballsAgent : httpHappyEyeballsAgent,
+  let url = new URL(params.url);
+  const options: https.RequestOptions = {
     method: params.method || 'GET',
     headers: params.headers,
   };
@@ -52,21 +49,17 @@ export function httpRequest(params: HTTPRequestParams, onResponse: (r: http.Inco
 
   const proxyURL = getProxyForUrl(params.url);
   if (proxyURL) {
+    const parsedProxyURL = normalizeProxyURL(proxyURL);
     if (params.url.startsWith('http:')) {
-      const parsedProxyURL = url.parse(proxyURL);
-      options = {
-        path: parsedUrl.href,
-        host: parsedProxyURL.hostname,
-        port: parsedProxyURL.port,
-        protocol: parsedProxyURL.protocol || 'http:',
-        headers: options.headers,
-        method: options.method
-      };
+      parsedProxyURL.pathname = url.toString();
+      url = parsedProxyURL;
     } else {
-      options.agent = new HttpsProxyAgent(normalizeProxyURL(proxyURL));
+      options.agent = new HttpsProxyAgent(parsedProxyURL);
       options.rejectUnauthorized = false;
     }
   }
+
+  options.agent ??= url.protocol === 'https:' ? httpsHappyEyeballsAgent : httpHappyEyeballsAgent;
 
   let cancelRequest: (e: Error | undefined) => void;
   const requestCallback = (res: http.IncomingMessage) => {
@@ -80,9 +73,9 @@ export function httpRequest(params: HTTPRequestParams, onResponse: (r: http.Inco
       onResponse(res);
     }
   };
-  const request = options.protocol === 'https:' ?
-    https.request(options, requestCallback) :
-    http.request(options, requestCallback);
+  const request = url.protocol === 'https:' ?
+    https.request(url, options, requestCallback) :
+    http.request(url, options, requestCallback);
   request.on('error', onError);
   if (params.socketTimeout !== undefined) {
     request.setTimeout(params.socketTimeout, () =>  {
@@ -198,6 +191,22 @@ export function createHttp2Server(...args: any[]): http2.Http2SecureServer {
   const server = http2.createSecureServer(...args);
   decorateServer(server);
   return server;
+}
+
+export async function startHttpServer(server: http.Server, options: { host?: string, port?: number }) {
+  const { host = 'localhost', port = 0 } = options;
+  const errorPromise = new ManualPromise();
+  const errorListener = (error: Error) => errorPromise.reject(error);
+  server.on('error', errorListener);
+  try {
+    server.listen(port, host);
+    await Promise.race([
+      new Promise(cb => server.once('listening', cb)),
+      errorPromise,
+    ]);
+  } finally {
+    server.removeListener('error', errorListener);
+  }
 }
 
 export async function isURLAvailable(url: URL, ignoreHTTPSErrors: boolean, onLog?: (data: string) => void, onStdErr?: (data: string) => void) {

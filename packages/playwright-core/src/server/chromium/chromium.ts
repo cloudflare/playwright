@@ -22,7 +22,7 @@ import path from 'path';
 import { chromiumSwitches } from './chromiumSwitches';
 import { CRBrowser } from './crBrowser';
 import { kBrowserCloseMessageId } from './crConnection';
-import { debugMode, headersArrayToObject, headersObjectToArray, } from '../../utils';
+import { debugMode, hasGpuMac, headersArrayToObject, headersObjectToArray } from '../../utils';
 import { wrapInASCIIBox } from '../utils/ascii';
 import { RecentLogsCollector } from '../utils/debugLogger';
 import { ManualPromise } from '../../utils/isomorphic/manualPromise';
@@ -42,7 +42,6 @@ import type { HTTPRequestParams } from '../utils/network';
 import type { BrowserOptions, BrowserProcess } from '../browser';
 import type { SdkObject } from '../instrumentation';
 import type { Progress } from '../progress';
-import type { ProtocolError } from '../protocolError';
 import type { ConnectionTransport, ProtocolRequest } from '../transport';
 import type { BrowserContext } from '../browserContext';
 import type * as types from '../types';
@@ -76,11 +75,11 @@ export class Chromium extends BrowserType {
     return super.launchPersistentContext(progress, userDataDir, options);
   }
 
-  override async connectOverCDP(progress: Progress, endpointURL: string, options: { slowMo?: number, headers?: types.HeadersArray }) {
+  override async connectOverCDP(progress: Progress, endpointURL: string, options: { slowMo?: number, headers?: types.HeadersArray, isLocal?: boolean }) {
     return await this._connectOverCDPInternal(progress, endpointURL, options);
   }
 
-  async _connectOverCDPInternal(progress: Progress, endpointURL: string, options: types.LaunchOptions & { headers?: types.HeadersArray }, onClose?: () => Promise<void>) {
+  async _connectOverCDPInternal(progress: Progress, endpointURL: string, options: types.LaunchOptions & { headers?: types.HeadersArray, isLocal?: boolean }, onClose?: () => Promise<void>) {
     let headersMap: { [key: string]: string; } | undefined;
     if (options.headers)
       headersMap = headersArrayToObject(options.headers, false);
@@ -128,7 +127,8 @@ export class Chromium extends BrowserType {
       if (persistent)
         validateBrowserContextOptions(persistent, browserOptions);
       const browser = await progress.race(CRBrowser.connect(this.attribution.playwright, chromeTransport, browserOptions));
-      browser._isCollocatedWithServer = false;
+      if (!options.isLocal)
+        browser._isCollocatedWithServer = false;
       browser.on(Browser.Events.Disconnected, doCleanup);
       return browser;
     } catch (error) {
@@ -144,13 +144,8 @@ export class Chromium extends BrowserType {
   }
 
   override async connectToTransport(transport: ConnectionTransport, options: BrowserOptions, browserLogsCollector: RecentLogsCollector): Promise<CRBrowser> {
-    let devtools = this._devtools;
-    if ((options as any).__testHookForDevTools) {
-      devtools = this._createDevTools();
-      await (options as any).__testHookForDevTools(devtools);
-    }
     try {
-      return await CRBrowser.connect(this.attribution.playwright, transport, options, devtools);
+      return await CRBrowser.connect(this.attribution.playwright, transport, options, this._devtools);
     } catch (e) {
       if (browserLogsCollector.recentLogs().some(log => log.includes('Failed to create a ProcessSingleton for your profile directory.'))) {
         throw new Error(
@@ -162,16 +157,14 @@ export class Chromium extends BrowserType {
     }
   }
 
-  override doRewriteStartupLog(error: ProtocolError): ProtocolError {
-    if (!error.logs)
-      return error;
-    if (error.logs.includes('Missing X server'))
-      error.logs = '\n' + wrapInASCIIBox(kNoXServerRunningError, 1);
+  override doRewriteStartupLog(logs: string): string {
+    if (logs.includes('Missing X server'))
+      logs = '\n' + wrapInASCIIBox(kNoXServerRunningError, 1);
     // These error messages are taken from Chromium source code as of July, 2020:
     // https://github.com/chromium/chromium/blob/70565f67e79f79e17663ad1337dc6e63ee207ce9/content/browser/zygote_host/zygote_host_impl_linux.cc
-    if (!error.logs.includes('crbug.com/357670') && !error.logs.includes('No usable sandbox!') && !error.logs.includes('crbug.com/638180'))
-      return error;
-    error.logs = [
+    if (!logs.includes('crbug.com/357670') && !logs.includes('No usable sandbox!') && !logs.includes('crbug.com/638180'))
+      return logs;
+    return [
       `Chromium sandboxing failed!`,
       `================================`,
       `To avoid the sandboxing issue, do either of the following:`,
@@ -180,7 +173,6 @@ export class Chromium extends BrowserType {
       `================================`,
       ``,
     ].join('\n');
-    return error;
   }
 
   override amendEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -324,13 +316,11 @@ export class Chromium extends BrowserType {
       throw new Error('Arguments can not specify page to be opened');
     const chromeArguments = [...chromiumSwitches(options.assistantMode, options.channel)];
 
-    if (os.platform() === 'darwin') {
+    if (os.platform() !== 'darwin' || !hasGpuMac()) {
       // See https://issues.chromium.org/issues/40277080
       chromeArguments.push('--enable-unsafe-swiftshader');
     }
 
-    if (options.devtools)
-      chromeArguments.push('--auto-open-devtools-for-tabs');
     if (options.headless) {
       chromeArguments.push('--headless');
 
@@ -372,6 +362,10 @@ export class Chromium extends BrowserType {
   }
 
   override getExecutableName(options: types.LaunchOptions): string {
+    if (options.channel && registry.isChromiumAlias(options.channel))
+      return 'chromium';
+    if (options.channel === 'chromium-tip-of-tree')
+      return options.headless ? 'chromium-tip-of-tree-headless-shell' : 'chromium-tip-of-tree';
     if (options.channel)
       return options.channel;
     return options.headless ? 'chromium-headless-shell' : 'chromium';

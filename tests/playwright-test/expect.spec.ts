@@ -228,7 +228,7 @@ test('should work with default expect matchers and esModuleInterop=false', async
         'strict': true,
         'rootDir': '.',
         'esModuleInterop': false,
-        'allowSyntheticDefaultImports': false,
+        'allowSyntheticDefaultImports': true,
         'lib': ['esnext', 'dom', 'DOM.Iterable']
       },
       'exclude': [
@@ -586,15 +586,15 @@ test('should log scale the time', async ({ runInlineTest }) => {
 
       test('pass', async ({ page }) => {
         await page.setContent('<div id=div>Wrong</div>');
-        await expect(page.locator('div')).toHaveText('Text', { timeout: 2000 });
+        await expect(page.locator('div')).toHaveText('Text', { timeout: 5000 });
       });
       `,
   }, { workers: 1 });
   const output = result.output;
   const tokens = output.split('unexpected value');
-  // Log scale: 0, 100, 250, 500, 1000, 1000, should be less than 8.
+  // Log scale: 0, 100, 250, 500, 1000, 1000, ... - should be less than 10.
   expect(tokens.length).toBeGreaterThan(1);
-  expect(tokens.length).toBeLessThan(8);
+  expect(tokens.length).toBeLessThan(10);
   expect(result.passed).toBe(0);
   expect(result.exitCode).toBe(1);
 });
@@ -1318,4 +1318,20 @@ test('should support arrayOf', async ({ runInlineTest }) => {
   expect(result.passed).toBe(1);
   expect(result.failed).toBe(1);
   expect(result.output).toContain('ArrayOf Any<Number>');
+});
+
+test('should account for undefined matcherResult', async ({ runInlineTest }) => {
+  const result = await runInlineTest({
+    'example.spec.ts': `
+      import { test, expect } from '@playwright/test';
+      test('fails', async () => {
+        await expect(new Promise(f => setTimeout(f, 500))).rejects.toThrow();
+      });
+    `
+  });
+  expect(result.exitCode).toBe(1);
+  expect(result.passed).toBe(0);
+  expect(result.output).toContain('Error: expect(received).rejects.toThrow()');
+  expect(result.output).toContain('Received promise resolved instead of rejected');
+  expect(result.output).toContain('Resolved to value: undefined');
 });

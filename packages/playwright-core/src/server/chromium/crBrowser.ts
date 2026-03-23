@@ -327,10 +327,16 @@ export class CRBrowser extends Browser {
   }
 }
 
-export class CRBrowserContext extends BrowserContext {
-  static CREvents = {
-    ServiceWorker: 'serviceworker',
-  };
+const CREvents = {
+  ServiceWorker: 'serviceworker',
+} as const;
+
+export type CREventsMap = {
+  [CREvents.ServiceWorker]: [serviceWorker: CRServiceWorker];
+};
+
+export class CRBrowserContext extends BrowserContext<CREventsMap> {
+  static CREvents = CREvents;
 
   declare readonly _browser: CRBrowser;
 
@@ -426,7 +432,7 @@ export class CRBrowserContext extends BrowserContext {
   }
 
   async doGrantPermissions(origin: string, permissions: string[]) {
-    const webPermissionToProtocol = new Map<string, Protocol.Browser.PermissionType>([
+    const webPermissionToProtocol = new Map<string, Protocol.Browser.PermissionType | Protocol.Browser.PermissionType[]>([
       ['geolocation', 'geolocation'],
       ['midi', 'midi'],
       ['notifications', 'notifications'],
@@ -444,15 +450,27 @@ export class CRBrowserContext extends BrowserContext {
       ['midi-sysex', 'midiSysex'],
       ['storage-access', 'storageAccess'],
       ['local-fonts', 'localFonts'],
-      ['local-network-access', 'localNetworkAccess'],
+      ['local-network-access', ['localNetworkAccess', 'localNetwork', 'loopbackNetwork']],
     ]);
-    const filtered = permissions.map(permission => {
-      const protocolPermission = webPermissionToProtocol.get(permission);
-      if (!protocolPermission)
-        throw new Error('Unknown permission: ' + permission);
-      return protocolPermission;
-    });
-    await this._browser._session.send('Browser.grantPermissions', { origin: origin === '*' ? undefined : origin, browserContextId: this._browserContextId, permissions: filtered });
+
+    const grantPermissions = async (mapping: Map<string, Protocol.Browser.PermissionType | Protocol.Browser.PermissionType[]>) => {
+      const filtered = permissions.flatMap(permission => {
+        const protocolPermission = mapping.get(permission);
+        if (!protocolPermission)
+          throw new Error('Unknown permission: ' + permission);
+        return typeof protocolPermission === 'string' ? [protocolPermission] : protocolPermission;
+      });
+      await this._browser._session.send('Browser.grantPermissions', { origin: origin === '*' ? undefined : origin, browserContextId: this._browserContextId, permissions: filtered });
+    };
+
+    try {
+      await grantPermissions(webPermissionToProtocol);
+    } catch (e) {
+      // Old stable browsers dislike the new permission name, so we use the fallback mapping.
+      const fallbackMapping = new Map(webPermissionToProtocol);
+      fallbackMapping.set('local-network-access', ['localNetworkAccess']);
+      await grantPermissions(fallbackMapping);
+    }
   }
 
   async doClearPermissions() {
@@ -557,7 +575,7 @@ export class CRBrowserContext extends BrowserContext {
   }
 
   async stopVideoRecording() {
-    await Promise.all(this._crPages().map(crPage => crPage._mainFrameSession._stopVideoRecording()));
+    await Promise.all(this._crPages().map(crPage => crPage._page.screencast.stopVideoRecording()));
   }
 
   onClosePersistent() {

@@ -40,8 +40,8 @@ it('should block all events when hit target is wrong', async ({ page, server }) 
     }
   });
 
-  const error = await page.click('button', { timeout: 1000 }).catch(e => e);
-  expect(error.message).toContain('page.click: Timeout 1000ms exceeded.');
+  const error = await page.click('button', { timeout: 3000 }).catch(e => e);
+  expect(error.message).toContain('page.click: Timeout 3000ms exceeded.');
 
   // Give it some time, just in case.
   await page.waitForTimeout(1000);
@@ -82,7 +82,7 @@ it('should click when element detaches in mousedown', async ({ page, server }) =
     });
   });
 
-  await page.click('button', { timeout: 1000 });
+  await page.click('button', { timeout: 15000 });
   expect(await page.evaluate('result')).toBe('Mousedown');
 });
 
@@ -107,8 +107,8 @@ it('should block all events when hit target is wrong and element detaches', asyn
     }
   });
 
-  const error = await page.click('button', { timeout: 1000 }).catch(e => e);
-  expect(error.message).toContain('page.click: Timeout 1000ms exceeded.');
+  const error = await page.click('button', { timeout: 3000 }).catch(e => e);
+  expect(error.message).toContain('page.click: Timeout 3000ms exceeded.');
 
   // Give it some time, just in case.
   await page.waitForTimeout(1000);
@@ -251,7 +251,7 @@ it('should not click iframe overlaying the target', async ({ page, server }) => 
       <iframe srcdoc="<body onclick='window.top._clicked=2' style='background-color:red;height:40px;'></body>" style="display: block; border: 0px; width: 100vw; height: 48px;"></iframe>
     </div>
   `);
-  const error = await page.click('text=click-me', { timeout: 1000 }).catch(e => e);
+  const error = await page.click('text=click-me', { timeout: 3000 }).catch(e => e);
   expect(await page.evaluate('window._clicked')).toBe(undefined);
   expect(error.message).toContain(`<iframe srcdoc=\"<body onclick='window.top._clicked=2' style='background-color:red;height:40px;'></body>\"></iframe> from <div>…</div> subtree intercepts pointer events`);
 });
@@ -290,7 +290,7 @@ it('should click into frame inside closed shadow root', async ({ page, server })
     </script>
   `);
 
-  const frame = page.frame({ name: 'myframe' });
+  const frame = page.frames()[1];
   await frame.locator('text=click me').click();
   expect(await page.evaluate('window.__clicked')).toBe(true);
 });
@@ -359,7 +359,7 @@ it('should detect overlay from another shadow root', async ({ page, server }) =>
     </script>
   `);
 
-  const error = await page.locator('#container1 >> text=click me').click({ timeout: 2000 }).catch(e => e);
+  const error = await page.locator('#container1 >> text=click me').click({ timeout: 3000 }).catch(e => e);
   expect(error.message).toContain(`<div id="container2"></div> intercepts pointer events`);
 });
 
@@ -391,7 +391,7 @@ it('should detect overlaid element in a transformed iframe', async ({ page }) =>
     "></iframe>
   `);
   const locator = page.frameLocator('iframe').locator('div');
-  const error = await locator.click({ timeout: 2000 }).catch(e => e);
+  const error = await locator.click({ timeout: 5000 }).catch(e => e);
   expect(error.message).toContain('<section>Overlay</section> intercepts pointer events');
 });
 

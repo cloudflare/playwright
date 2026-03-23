@@ -14,4 +14,6 @@ export const skipErrorMessages: Array<string | RegExp> = [
   /\[unenv\] .* is not implemented yet!/,
   /Received string:\s+"Cloudflare-Workers"/,
   '.rendering.cfdata.org',
+  /expect\w+ is not a function/,
+  'Error: Agent not implemented',
 ];

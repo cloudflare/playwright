@@ -19,7 +19,7 @@ import { asLocator } from '@isomorphic/locatorGenerators';
 import { parseAttributeSelector, parseSelector, stringifySelector, visitAllSelectorParts } from '@isomorphic/selectorParser';
 import { cacheNormalizedWhitespaces, normalizeWhiteSpace, trimStringWithEllipsis } from '@isomorphic/stringUtils';
 
-import { generateAriaTree, getAllElementsMatchingExpectAriaTemplate, matchesExpectAriaTemplate, renderAriaTree } from './ariaSnapshot';
+import { generateAriaTree, getAllElementsMatchingExpectAriaTemplate, matchesExpectAriaTemplate, renderAriaTree, findNewElement } from './ariaSnapshot';
 import { beginDOMCaches, enclosingShadowRootOrDocument, endDOMCaches, isElementVisible, isInsideScope, parentElementOrShadowHost, setGlobalOptions } from './domUtils';
 import { Highlight } from './highlight';
 import { kLayoutSelectorNames, layoutSelectorScore } from './layoutSelectorUtils';
@@ -47,7 +47,11 @@ import type { ElementText, TextMatcher } from './selectorUtils';
 import type { Builtins } from './utilityScript';
 
 
-export type FrameExpectParams = Omit<channels.FrameExpectParams, 'expectedValue' | 'timeout'> & { expectedValue?: any };
+export type FrameExpectParams = Omit<channels.FrameExpectParams, 'expectedValue' | 'timeout'> & {
+  expectedValue?: any;
+  timeoutForLogs?: number;
+  noAutoWaiting?: boolean;
+};
 
 export type ElementState = 'visible' | 'hidden' | 'enabled' | 'disabled' | 'editable' | 'checked' | 'unchecked' | 'indeterminate' | 'stable';
 export type ElementStateWithoutStable = Exclude<ElementState, 'stable'>;
@@ -110,6 +114,7 @@ export class InjectedScript {
     normalizeWhiteSpace,
     parseAriaSnapshot,
     generateAriaTree,
+    findNewElement,
     // Builtins protect injected code from clock emulation.
     builtins: null as unknown as Builtins,
   };
@@ -275,6 +280,7 @@ export class InjectedScript {
     const result = this.querySelectorAll(selector, root);
     if (strict && result.length > 1)
       throw this.strictModeViolationError(selector, result);
+    this.checkDeprecatedSelectorUsage(selector, result);
     return result[0];
   }
 
@@ -835,6 +841,8 @@ export class InjectedScript {
         if (isNaN(Number(value)))
           throw this.createStacklessError('Cannot type text into input[type=number]');
       }
+      if (type === 'color')
+        value = value.toLowerCase();
       if (kInputTypesToSetValue.has(type)) {
         value = value.trim();
         input.focus();
@@ -1228,26 +1236,44 @@ export class InjectedScript {
     return oneLine(`<${element.nodeName.toLowerCase()}${attrText}>${trimStringWithEllipsis(text, 50)}</${element.nodeName.toLowerCase()}>`);
   }
 
-  strictModeViolationError(selector: ParsedSelector, matches: Element[]): Error {
+  private _generateSelectors(elements: Element[]) {
     this._evaluator.begin();
     beginAriaCaches();
     beginDOMCaches();
     try {
       // Firefox is slow to access DOM bindings in the utility world, making it very expensive to generate a lot of selectors.
       const maxElements = this._isUtilityWorld && this._browserName === 'firefox' ? 2 : 10;
-      const infos = matches.slice(0, maxElements).map(m => ({
+      const infos = elements.slice(0, maxElements).map(m => ({
         preview: this.previewNode(m),
         selector: this.generateSelectorSimple(m),
       }));
-      const lines = infos.map((info, i) => `\n    ${i + 1}) ${info.preview} aka ${asLocator(this._sdkLanguage, info.selector)}`);
-      if (infos.length < matches.length)
-        lines.push('\n    ...');
-      return this.createStacklessError(`strict mode violation: ${asLocator(this._sdkLanguage, stringifySelector(selector))} resolved to ${matches.length} elements:${lines.join('')}\n`);
+      return infos.map((info, i) => `${i + 1}) ${info.preview} aka ${asLocator(this._sdkLanguage, info.selector)}`);
     } finally {
       endDOMCaches();
       endAriaCaches();
       this._evaluator.end();
     }
+  }
+
+  strictModeViolationError(selector: ParsedSelector, matches: Element[]): Error {
+    const lines = this._generateSelectors(matches).map(line => `\n    ` + line);
+    if (lines.length < matches.length)
+      lines.push('\n    ...');
+    return this.createStacklessError(`strict mode violation: ${asLocator(this._sdkLanguage, stringifySelector(selector))} resolved to ${matches.length} elements:${lines.join('')}\n`);
+  }
+
+  checkDeprecatedSelectorUsage(selector: ParsedSelector, matches: Element[]) {
+    const kDeprecatedSelectors = new Set(['_react', '_vue', 'xpath:light', 'text:light', 'id:light',
+      'data-testid:light', 'data-test-id:light', 'data-test:light']);
+    if (!matches.length)
+      return;
+    const deperecated = selector.parts.find(part => kDeprecatedSelectors.has(part.name));
+    if (!deperecated)
+      return;
+    const lines = this._generateSelectors(matches).map(line => `\n    ` + line);
+    if (lines.length < matches.length)
+      lines.push('\n    ...');
+    throw this.createStacklessError(`"${deperecated.name}" selector is not supported: ${asLocator(this._sdkLanguage, stringifySelector(selector))} resolved to ${matches.length} element${matches.length === 1 ? '' : 's'}:${lines.join('')}\n`);
   }
 
   createStacklessError(message: string): Error {

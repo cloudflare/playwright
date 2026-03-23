@@ -14,228 +14,254 @@
  * limitations under the License.
  */
 
-import { debug } from 'playwright-core/lib/utilsBundle';
-import { renderModalStates } from './tab';
+import fs from 'fs';
+import path from 'path';
 
-import type { Tab, TabSnapshot } from './tab';
+import { debug } from 'playwright-core/lib/utilsBundle';
+import { renderModalStates, shouldIncludeMessage } from './tab';
+import { dateAsFileName } from './tools/utils';
+
+import type { TabHeader } from './tab';
 import type { CallToolResult, ImageContent, TextContent } from '@modelcontextprotocol/sdk/types.js';
 import type { Context } from './context';
 
 export const requestDebug = debug('pw:mcp:request');
 
+type Result = {
+  text?: string;
+  data?: Buffer;
+  title?: string;
+  filename?: string;
+};
+
 export class Response {
-  private _result: string[] = [];
+  private _ordinal: number;
+  private _results: Result[] = [];
+  private _errors: string[] = [];
   private _code: string[] = [];
   private _images: { contentType: string, data: Buffer }[] = [];
   private _context: Context;
   private _includeSnapshot: 'none' | 'full' | 'incremental' = 'none';
-  private _includeTabs = false;
-  private _tabSnapshot: TabSnapshot | undefined;
+  private _includeSnapshotFileName: string | undefined;
 
   readonly toolName: string;
   readonly toolArgs: Record<string, any>;
-  private _isError: boolean | undefined;
 
-  constructor(context: Context, toolName: string, toolArgs: Record<string, any>) {
+  private constructor(ordinal: number, context: Context, toolName: string, toolArgs: Record<string, any>) {
+    this._ordinal = ordinal;
     this._context = context;
     this.toolName = toolName;
     this.toolArgs = toolArgs;
   }
 
-  addResult(result: string) {
-    this._result.push(result);
+  static _ordinal = 0;
+
+  static create(context: Context, toolName: string, toolArgs: Record<string, any>) {
+    return new Response(++Response._ordinal, context, toolName, toolArgs);
+  }
+
+  addTextResult(result: string) {
+    this._results.push({ text: result });
+  }
+
+  async addResult(result: { text?: string, data?: Buffer, title?: string, suggestedFilename?: string, ext?: string }): Promise<{ fileName?: string }> {
+    // Binary always goes into a file.
+    if (result.data && !result.suggestedFilename)
+      result.suggestedFilename = dateAsFileName(result.ext ?? 'bin');
+
+    // What can go into a file goes into a file in outputMode === file.
+    if (this._context.config.outputMode === 'file') {
+      if (!result.suggestedFilename)
+        result.suggestedFilename = dateAsFileName(result.ext ?? (result.text ? 'txt' : 'bin'));
+    }
+
+    const entry: Result = { text: result.text, data: result.data, title: result.title };
+    if (result.suggestedFilename)
+      entry.filename = await this._context.outputFile(result.suggestedFilename, { origin: 'llm', title: result.title ?? 'Saved result' });
+
+    this._results.push(entry);
+    return { fileName: entry.filename };
   }
 
   addError(error: string) {
-    this._result.push(error);
-    this._isError = true;
-  }
-
-  isError() {
-    return this._isError;
-  }
-
-  result() {
-    return this._result.join('\n');
+    this._errors.push(error);
   }
 
   addCode(code: string) {
     this._code.push(code);
   }
 
-  code() {
-    return this._code.join('\n');
-  }
-
   addImage(image: { contentType: string, data: Buffer }) {
     this._images.push(image);
   }
 
-  images() {
-    return this._images;
+  setIncludeSnapshot() {
+    this._includeSnapshot = this._context.config.snapshot.mode;
   }
 
-  setIncludeSnapshot(full?: 'full') {
-    this._includeSnapshot = full ?? 'incremental';
+  setIncludeFullSnapshot(includeSnapshotFileName?: string) {
+    this._includeSnapshot = 'full';
+    this._includeSnapshotFileName = includeSnapshotFileName;
   }
 
-  setIncludeTabs() {
-    this._includeTabs = true;
-  }
+  async build(): Promise<{ content: (TextContent | ImageContent)[], isError?: boolean }> {
+    const rootPath = this._context.firstRootPath();
+    const sections: { title: string, content: string[] }[] = [];
+    const addSection = (title: string): string[] => {
+      const section = { title, content: [] as string[] };
+      sections.push(section);
+      return section.content;
+    };
 
-  async finish() {
-    // All the async snapshotting post-action is happening here.
-    // Everything below should race against modal states.
-    if (this._includeSnapshot !== 'none' && this._context.currentTab())
-      this._tabSnapshot = await this._context.currentTabOrDie().captureSnapshot();
-    for (const tab of this._context.tabs())
-      await tab.updateTitle();
-  }
-
-  tabSnapshot(): TabSnapshot | undefined {
-    return this._tabSnapshot;
-  }
-
-  logBegin() {
-    if (requestDebug.enabled)
-      requestDebug(this.toolName, this.toolArgs);
-  }
-
-  logEnd() {
-    if (requestDebug.enabled)
-      requestDebug(this.serialize({ omitSnapshot: true, omitBlobs: true }));
-  }
-
-  serialize(options: { omitSnapshot?: boolean, omitBlobs?: boolean } = {}): { content: (TextContent | ImageContent)[], isError?: boolean } {
-    const response: string[] = [];
-
-    // Start with command result.
-    if (this._result.length) {
-      response.push('### Result');
-      response.push(this._result.join('\n'));
-      response.push('');
+    if (this._errors.length) {
+      const text = addSection('Error');
+      text.push('### Error');
+      text.push(this._errors.join('\n'));
     }
 
-    // Add code if it exists.
-    if (this._code.length) {
-      response.push(`### Ran Playwright code
-\`\`\`js
-${this._code.join('\n')}
-\`\`\``);
-      response.push('');
+    // Results
+    if (this._results.length) {
+      const text = addSection('Result');
+      for (const result of this._results) {
+        if (result.filename) {
+          text.push(`- [${result.title}](${rootPath ? path.relative(rootPath, result.filename) : result.filename})`);
+          if (result.data)
+            await fs.promises.writeFile(result.filename, result.data);
+          else if (result.text)
+            await fs.promises.writeFile(result.filename, this._redactText(result.text));
+        } else if (result.text) {
+          text.push(result.text);
+        }
+      }
     }
 
-    // List browser tabs.
-    if (this._includeSnapshot !== 'none' || this._includeTabs)
-      response.push(...renderTabsMarkdown(this._context.tabs(), this._includeTabs));
-
-    // Add snapshot if provided.
-    if (this._tabSnapshot?.modalStates.length) {
-      response.push(...renderModalStates(this._context, this._tabSnapshot.modalStates));
-      response.push('');
-    } else if (this._tabSnapshot) {
-      const includeSnapshot = options.omitSnapshot ? 'none' : this._includeSnapshot;
-      response.push(renderTabSnapshot(this._tabSnapshot, includeSnapshot));
-      response.push('');
+    // Code
+    if (this._context.config.codegen !== 'none' && this._code.length) {
+      const text = addSection('Ran Playwright code');
+      text.push(...this._code);
     }
 
-    // Main response part
+    // Render tab titles upon changes or when more than one tab.
+    const tabSnapshot = this._context.currentTab() ? await this._context.currentTabOrDie().captureSnapshot() : undefined;
+    const tabHeaders = await Promise.all(this._context.tabs().map(tab => tab.headerSnapshot()));
+    if (tabHeaders.some(header => header.changed)) {
+      if (tabHeaders.length !== 1) {
+        const text = addSection('Open tabs');
+        text.push(...renderTabsMarkdown(tabHeaders));
+      }
+
+      const text = addSection('Page');
+      text.push(...renderTabMarkdown(tabHeaders[0]));
+    }
+
+    // Handle modal states.
+    if (tabSnapshot?.modalStates.length) {
+      const text = addSection('Modal state');
+      text.push(...renderModalStates(tabSnapshot.modalStates));
+    }
+
+    // Handle tab snapshot
+    if (tabSnapshot && this._includeSnapshot === 'full') {
+      let fileName: string | undefined;
+      if (this._includeSnapshotFileName)
+        fileName = await this._context.outputFile(this._includeSnapshotFileName, { origin: 'llm', title: 'Saved snapshot' });
+      else if (this._context.config.outputMode === 'file')
+        fileName = await this._context.outputFile(`snapshot-${this._ordinal}.yml`, { origin: 'code', title: 'Saved snapshot' });
+      if (fileName) {
+        await fs.promises.writeFile(fileName, tabSnapshot.ariaSnapshot);
+        const text = addSection('Snapshot');
+        text.push(`- File: ${rootPath ? path.relative(rootPath, fileName) : fileName}`);
+      } else {
+        const text = addSection('Snapshot');
+        text.push('```yaml');
+        text.push(tabSnapshot.ariaSnapshot);
+        text.push('```');
+      }
+    }
+
+    if (tabSnapshot && this._includeSnapshot === 'incremental') {
+      const text = addSection('Snapshot');
+      text.push('```yaml');
+      if (tabSnapshot.ariaSnapshotDiff !== undefined)
+        text.push(tabSnapshot.ariaSnapshotDiff);
+      else
+        text.push(tabSnapshot.ariaSnapshot);
+      text.push('```');
+    }
+
+    // Handle tab log
+    if (tabSnapshot?.events.filter(event => event.type !== 'request').length) {
+      const text = addSection('Events');
+      for (const event of tabSnapshot.events) {
+        if (event.type === 'console') {
+          if (shouldIncludeMessage(this._context.config.console.level, event.message.type))
+            text.push(`- ${trimMiddle(event.message.toString(), 100)}`);
+        } else if (event.type === 'download-start') {
+          text.push(`- Downloading file ${event.download.download.suggestedFilename()} ...`);
+        } else if (event.type === 'download-finish') {
+          text.push(`- Downloaded file ${event.download.download.suggestedFilename()} to "${rootPath ? path.relative(rootPath, event.download.outputFile) : event.download.outputFile}"`);
+        }
+      }
+    }
+
+    const allText = sections.flatMap(section => {
+      const content: string[] = [];
+      content.push(`### ${section.title}`);
+      content.push(...section.content);
+      content.push('');
+      return content;
+    }).join('\n');
+
     const content: (TextContent | ImageContent)[] = [
-      { type: 'text', text: response.join('\n') },
+      {
+        type: 'text',
+        text: this._redactText(allText)
+      },
     ];
 
     // Image attachments.
     if (this._context.config.imageResponses !== 'omit') {
       for (const image of this._images)
-        content.push({ type: 'image', data: options.omitBlobs ? '<blob>' : image.data.toString('base64'), mimeType: image.contentType });
+        content.push({ type: 'image', data: image.data.toString('base64'), mimeType: image.contentType });
     }
 
-    this._redactSecrets(content);
-    return { content, isError: this._isError };
+    return {
+      content,
+      ...this._errors.length > 0 ? { isError: true } : {},
+    };
   }
 
-  private _redactSecrets(content: (TextContent | ImageContent)[]) {
-    if (!this._context.config.secrets)
-      return;
-
-    for (const item of content) {
-      if (item.type !== 'text')
-        continue;
-      for (const [secretName, secretValue] of Object.entries(this._context.config.secrets))
-        item.text = item.text.replaceAll(secretValue, `<secret>${secretName}</secret>`);
-    }
+  private _redactText(text: string): string {
+    for (const [secretName, secretValue] of Object.entries(this._context.config.secrets ?? {}))
+      text = text.replaceAll(secretValue, `<secret>${secretName}</secret>`);
+    return text;
   }
 }
 
-function renderTabSnapshot(tabSnapshot: TabSnapshot, includeSnapshot: 'none' | 'full' | 'incremental'): string {
-  const lines: string[] = [];
-
-  if (tabSnapshot.consoleMessages.length) {
-    lines.push(`### New console messages`);
-    for (const message of tabSnapshot.consoleMessages)
-      lines.push(`- ${trim(message.toString(), 100)}`);
-    lines.push('');
-  }
-
-  if (tabSnapshot.downloads.length) {
-    lines.push(`### Downloads`);
-    for (const entry of tabSnapshot.downloads) {
-      if (entry.finished)
-        lines.push(`- Downloaded file ${entry.download.suggestedFilename()} to ${entry.outputFile}`);
-      else
-        lines.push(`- Downloading file ${entry.download.suggestedFilename()} ...`);
-    }
-    lines.push('');
-  }
-
-  if (includeSnapshot === 'incremental' && tabSnapshot.ariaSnapshotDiff === '') {
-    // When incremental snapshot is present, but empty, do not render page state altogether.
-    return lines.join('\n');
-  }
-
-  lines.push(`### Page state`);
-  lines.push(`- Page URL: ${tabSnapshot.url}`);
-  lines.push(`- Page Title: ${tabSnapshot.title}`);
-
-  if (includeSnapshot !== 'none') {
-    lines.push(`- Page Snapshot:`);
-    lines.push('```yaml');
-    if (includeSnapshot === 'incremental' && tabSnapshot.ariaSnapshotDiff !== undefined)
-      lines.push(tabSnapshot.ariaSnapshotDiff);
-    else
-      lines.push(tabSnapshot.ariaSnapshot);
-    lines.push('```');
-  }
-
-  return lines.join('\n');
-}
-
-function renderTabsMarkdown(tabs: Tab[], force: boolean = false): string[] {
-  if (tabs.length === 1 && !force)
-    return [];
-
-  if (!tabs.length) {
-    return [
-      '### Open tabs',
-      'No open tabs. Use the "browser_navigate" tool to navigate to a page first.',
-      '',
-    ];
-  }
-
-  const lines: string[] = ['### Open tabs'];
-  for (let i = 0; i < tabs.length; i++) {
-    const tab = tabs[i];
-    const current = tab.isCurrentTab() ? ' (current)' : '';
-    lines.push(`- ${i}:${current} [${tab.lastTitle()}] (${tab.page.url()})`);
-  }
-  lines.push('');
+export function renderTabMarkdown(tab: TabHeader): string[] {
+  const lines = [`- Page URL: ${tab.url}`];
+  if (tab.title)
+    lines.push(`- Page Title: ${tab.title}`);
   return lines;
 }
 
-function trim(text: string, maxLength: number) {
+export function renderTabsMarkdown(tabs: TabHeader[]): string[] {
+  if (!tabs.length)
+    return ['No open tabs. Use the "browser_navigate" tool to navigate to a page first.'];
+
+  const lines: string[] = [];
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i];
+    const current = tab.current ? ' (current)' : '';
+    lines.push(`- ${i}:${current} [${tab.title}](${tab.url})`);
+  }
+  return lines;
+}
+
+function trimMiddle(text: string, maxLength: number) {
   if (text.length <= maxLength)
     return text;
-  return text.slice(0, maxLength) + '...';
+  return text.slice(0, Math.floor(maxLength / 2)) + '...' + text.slice(- 3 - Math.floor(maxLength / 2));
 }
 
 function parseSections(text: string): Map<string, string> {
@@ -261,26 +287,29 @@ export function parseResponse(response: CallToolResult) {
   const text = response.content[0].text;
 
   const sections = parseSections(text);
+  const error = sections.get('Error');
   const result = sections.get('Result');
   const code = sections.get('Ran Playwright code');
   const tabs = sections.get('Open tabs');
-  const pageState = sections.get('Page state');
-  const consoleMessages = sections.get('New console messages');
+  const page = sections.get('Page');
+  const snapshot = sections.get('Snapshot');
+  const events = sections.get('Events');
   const modalState = sections.get('Modal state');
-  const downloads = sections.get('Downloads');
   const codeNoFrame = code?.replace(/^```js\n/, '').replace(/\n```$/, '');
   const isError = response.isError;
-  const attachments = response.content.slice(1);
+  const attachments = response.content.length > 1 ? response.content.slice(1) : undefined;
 
   return {
     result,
+    error,
     code: codeNoFrame,
     tabs,
-    pageState,
-    consoleMessages,
+    page,
+    snapshot,
+    events,
     modalState,
-    downloads,
     isError,
     attachments,
+    text,
   };
 }

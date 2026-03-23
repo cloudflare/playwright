@@ -37,7 +37,8 @@ class LaunchScenario {
     const browser = await this.browser();
     if (this._context)
       await (browser as any)._disconnectFromReusedContext('reusedContext');
-    const defaultContextOptions = (this._browserType as any)._playwright._defaultContextOptions;
+    const defaultContextOptions = {};
+    await (this._browserType as any)._instrumentation.runBeforeCreateBrowserContext(defaultContextOptions);
     this._context = await (browser as any)._newContextForReuse({ ...defaultContextOptions, ...options });
     return this._context;
   }
@@ -67,7 +68,8 @@ class ConnectScenario {
     if (this._browser)
       await this._browser.close();
     this._browser = await this._browserType.connect(server.wsEndpoint());
-    const defaultContextOptions = (this._browserType as any)._playwright._defaultContextOptions;
+    const defaultContextOptions = {};
+    await (this._browserType as any)._instrumentation.runBeforeCreateBrowserContext(defaultContextOptions);
     return await (this._browser as any)._newContextForReuse({ ...defaultContextOptions, ...options });
   }
 
@@ -269,8 +271,9 @@ for (const scenario of ['launch', 'connect'] as const) {
 
     test('should reset mouse position', {
       annotation: { type: 'issue', description: 'https://github.com/microsoft/playwright/issues/22432' },
-    }, async ({ reusedContext, browserName, platform }) => {
+    }, async ({ reusedContext, browserName, platform, headless }) => {
       // Note: this test only reproduces the issue locally when run with --repeat-each=20.
+      test.skip(!headless, 'headed browser has mouse jiggles');
 
       const pageContent = `
         <style>
