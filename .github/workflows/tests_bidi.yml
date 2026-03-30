@@ -63,7 +63,7 @@ jobs:
         PWTEST_USE_BIDI_EXPECTATIONS: ${{ matrix.isPullRequest && '1' || '' }}
     - name: Upload csv report to GitHub
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: csv-report-${{ matrix.channel }}
         path: test-results/report.csv
@@ -71,7 +71,7 @@ jobs:
 
     - name: Upload json report to GitHub
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: json-report-${{ matrix.channel }}
         path: test-results/report.json
@@ -79,7 +79,7 @@ jobs:
 
     - name: Azure Login
       if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
-      uses: azure/login@v2
+      uses: azure/login@v3
       with:
         client-id: ${{ secrets.AZURE_BLOB_REPORTS_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_BLOB_REPORTS_TENANT_ID }}
