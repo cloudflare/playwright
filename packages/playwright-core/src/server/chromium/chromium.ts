@@ -89,7 +89,8 @@ export class Chromium extends BrowserType {
     else if (headersMap && !Object.keys(headersMap).some(key => key.toLowerCase() === 'user-agent'))
       headersMap['User-Agent'] = getUserAgent();
 
-    const artifactsDir = await progress.race(fs.promises.mkdtemp(ARTIFACTS_FOLDER));
+    const artifactsDir = ARTIFACTS_FOLDER + Math.random().toString(36).slice(2);
+    await progress.race(fs.promises.mkdir(artifactsDir, { recursive: true }));
     const doCleanup = async () => {
       await removeFolders([artifactsDir]);
       const cb = onClose;

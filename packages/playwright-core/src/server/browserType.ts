@@ -155,7 +155,8 @@ export abstract class BrowserType extends SdkObject {
     await this._createArtifactDirs(options);
 
     const tempDirectories: string[] = [];
-    const artifactsDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'playwright-artifacts-'));
+    const artifactsDir = path.join(os.tmpdir(), 'playwright-artifacts-' + Math.random().toString(36).slice(2));
+    await fs.promises.mkdir(artifactsDir, { recursive: true });
     tempDirectories.push(artifactsDir);
 
     if (userDataDir) {
@@ -164,7 +165,8 @@ export abstract class BrowserType extends SdkObject {
       if (!await existsAsync(userDataDir))
         await fs.promises.mkdir(userDataDir, { recursive: true, mode: 0o700 });
     } else {
-      userDataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `playwright_${this._name}dev_profile-`));
+      userDataDir = path.join(os.tmpdir(), `playwright_${this._name}dev_profile-` + Math.random().toString(36).slice(2));
+      await fs.promises.mkdir(userDataDir, { recursive: true });
       tempDirectories.push(userDataDir);
     }
     await this.prepareUserDataDir(options, userDataDir);
