@@ -4,10 +4,9 @@ import playwright from '@cloudflare/playwright';
 import { test, expect } from '../server/workerFixtures';
 
 async function fetchSingleSession(endpoint: BrowserWorker, sessionId: string) {
-  const response = await endpoint.fetch(`http://fake.host/v1/sessions?sessionId=${sessionId}`);
-  const { sessions } = await response.json() as { sessions: ActiveSession[] };
-  expect(sessions).toHaveLength(1);
-  const session = sessions[0];
+  const response = await endpoint.fetch(`http://fake.host/v1/devtools/session/${sessionId}`);
+  expect(response.ok).toBeTruthy();
+  const session = await response.json() as ActiveSession;
   expect(session.sessionId).toBe(sessionId);
   return session;
 }
@@ -88,13 +87,16 @@ test(`should have functions in default exported object`, () => {
 
 test(`should create endpoint url`, async ({ binding }) => {
   const url1 = endpointURLString(binding);
-  expect(url1).toContain('http://fake.host/v1/connectDevtools?browser_binding=BROWSER');
+  expect(url1).toContain('http://fake.host/v1/devtools/browser?browser_binding=BROWSER');
 
   const url2 = endpointURLString('BROWSER');
-  expect(url2).toContain('http://fake.host/v1/connectDevtools?browser_binding=BROWSER');
+  expect(url2).toContain('http://fake.host/v1/devtools/browser?browser_binding=BROWSER');
 
   // @ts-expect-error
   expect(() => endpointURLString('UNEXISTENT_BROWSER')).toThrow();
+
+  const url3 = endpointURLString(binding, { sessionId: 'test-session-id' });
+  expect(url3).toContain('http://fake.host/v1/devtools/browser/test-session-id?browser_binding=BROWSER');
 });
 
 test(`should create browser with persistent context on playwright.chromium.connectOverCDP`, async ({ binding, playwright }) => {

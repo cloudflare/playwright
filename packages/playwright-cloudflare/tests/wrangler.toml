@@ -1,7 +1,7 @@
 name = "playwright-test-workers"
 main = "src/server/index.ts"
 compatibility_flags = ["nodejs_compat"]
-compatibility_date = "2025-09-17"
+compatibility_date = "2026-04-04"
 upload_source_maps = true
 
 base_dir = "../../../tests"
@@ -24,6 +24,9 @@ directory = "../../../tests/assets"
 binding = "ASSETS"
 run_worker_first = true
 
+[observability]
+enabled = true
+
 [[durable_objects.bindings]]
 name = "TESTS_SERVER"
 class_name = "TestsServer"
@@ -31,3 +34,4 @@ class_name = "TestsServer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["TestsServer"]
+
