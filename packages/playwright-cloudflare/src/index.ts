@@ -47,8 +47,7 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
 
 async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: string, persistent?: boolean }): Promise<WebSocket> {
   resetMonotonicTime();
-  const url = new URL(`${HTTP_FAKE_HOST}/v1/connectDevtools`);
-  url.searchParams.set('browser_session', options.sessionId);
+  const url = new URL(`${HTTP_FAKE_HOST}/v1/devtools/browser/${options.sessionId}`);
   if (options.persistent)
     url.searchParams.set('persistent', 'true');
   const response = await getBrowserBinding(endpoint).fetch(url, {
@@ -65,7 +64,9 @@ async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: 
 function extractOptions(endpoint: BrowserEndpoint): { sessionId?: string, keep_alive?: number, persistent?: boolean } {
   if (typeof endpoint === 'string' || endpoint instanceof URL) {
     const url = endpoint instanceof URL ? endpoint : new URL(endpoint);
-    const sessionId = url.searchParams.get('browser_session') ?? undefined;
+    // Support both old format (?browser_session=) and new format (/v1/devtools/browser/:sessionId)
+    const pathMatch = url.pathname.match(/^\/v1\/devtools\/browser\/([^/]+)$/);
+    const sessionId = pathMatch?.[1] ?? url.searchParams.get('browser_session') ?? undefined;
     const keepAlive = url.searchParams.has('keep_alive') ? parseInt(url.searchParams.get('keep_alive')!, 10) : undefined;
     const persistent = url.searchParams.has('persistent');
     return { sessionId, keep_alive: keepAlive, persistent };
@@ -78,10 +79,9 @@ export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, op
   if (!bindingKey || !(bindingKey in env))
     throw new Error(`No binding found for ${binding}`);
 
-  const url = new URL(`${HTTP_FAKE_HOST}/v1/connectDevtools`);
+  const sessionPath = options?.sessionId ? `/${options.sessionId}` : '';
+  const url = new URL(`${HTTP_FAKE_HOST}/v1/devtools/browser${sessionPath}`);
   url.searchParams.set('browser_binding', bindingKey);
-  if (options?.sessionId)
-    url.searchParams.set('browser_session', options.sessionId);
   if (options?.persistent)
     url.searchParams.set('persistent', 'true');
   if (options?.keepAlive)

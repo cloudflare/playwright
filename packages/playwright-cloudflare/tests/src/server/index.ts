@@ -11,8 +11,14 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith('/v1'))
-      return await getBinding(url).fetch(`http://fake.host${url.pathname}`);
+    if (url.pathname.startsWith('/v1')) {
+      console.log('Forwarding request to binding', url.pathname);
+      const binding = getBinding(url);
+      const forwardUrl = new URL(request.url);
+      forwardUrl.protocol = 'http:';
+      forwardUrl.host = 'fake.host';
+      return await binding.fetch(new Request(forwardUrl.toString(), request));
+    }
     if (url.pathname === '/')
       return Response.json(await testSuites());
 
