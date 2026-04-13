@@ -15,7 +15,7 @@ export type TestRequestPayload = {
 // eslint-disable-next-line no-console
 const log = console.log.bind(console);
 
-const skipTestsFullTitles = new Set(skipTests.map(t => t.join(' > ')));
+const skipTestsFullTitles = new Set(skipTests);
 
 function formatError(error: TestInfoError | Error | string) {
   if (typeof error === 'string')
