@@ -87,6 +87,7 @@ export interface LimitsResponse {
 export interface WorkersLaunchOptions {
   keep_alive?: number; // milliseconds to keep browser alive even if it has no activity (from 10_000ms to 600_000ms, default is 60_000)
   recording?: boolean;
+  lab?: boolean;
 }
 
 /**

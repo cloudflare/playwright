@@ -152,6 +152,8 @@ export async function acquire(endpoint: BrowserEndpoint, options?: WorkersLaunch
     searchParams.set("keep_alive", options.keep_alive.toString());
   if (options?.recording)
     searchParams.set("recording", options.recording.toString());
+  if (options?.lab)
+    searchParams.set("lab", options.lab.toString());
 
   const acquireUrl = `${HTTP_FAKE_HOST}/v1/acquire?${searchParams.toString()}`;
   const res = await getBrowserBinding(endpoint).fetch(acquireUrl);
