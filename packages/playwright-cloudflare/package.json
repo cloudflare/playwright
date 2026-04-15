@@ -1,6 +1,6 @@
 {
   "name": "@cloudflare/playwright",
-  "description": "Playwright for Cloudflare Workers",
+  "description": "Playwright for Cloudflare Browser Run (formerly Browser Rendering)",
   "version": "1.0.0-next",
   "license": "Apache-2.0",
   "type": "module",
