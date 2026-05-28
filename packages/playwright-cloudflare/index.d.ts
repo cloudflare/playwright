@@ -1,11 +1,11 @@
 import * as FS from 'fs';
-import type { Browser } from './types/types';
-import { chromium, request, selectors, devices } from './types/types';
+import type { Browser } from './types/types.d.ts';
+import { chromium, request, selectors, devices } from './types/types.d.ts';
 import { env } from 'cloudflare:workers';
 
-export * from './types/types';
+export * from './types/types.d.ts';
 
-declare module './types/types' {
+declare module './types/types.d.ts' {
   interface Browser {
     /**
      * Get the Browser Rendering session ID associated with this browser

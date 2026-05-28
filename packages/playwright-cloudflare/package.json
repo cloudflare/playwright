@@ -16,6 +16,9 @@
     "./internal": {
       "types": "./internal.d.ts",
       "default": "./lib/internal.js"
+    },
+    "./types/types": {
+      "types": "./types/types.d.ts"
     }
   },
   "scripts": {
