@@ -1,6 +1,5 @@
 import { createInProcessPlaywright } from 'playwright-core/lib/inProcessFactory';
 import { kBrowserCloseMessageId } from 'playwright-core/lib/server/chromium/crConnection';
-import { env } from 'cloudflare:workers';
 import { setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils/isomorphic/time';
 
 import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
@@ -12,6 +11,23 @@ import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
 import type { AcquireResponse, ActiveSession, Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, ConnectOverCDPOptions, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
 import type { ChannelOwner } from 'playwright-core/lib/client/channelOwner';
+
+// Resolve cloudflare:workers env lazily so the module can load in
+// non-Worker runtimes (Node.js, Deno, Bun). Uses createRequire for
+// ESM compliance. Falls back to empty object when not in Workers.
+let _env: Record<string, any> | null = null;
+function getEnv(): Record<string, any> {
+  if (_env === null) {
+    try {
+      const { createRequire } = require('node:module');
+      const cjsRequire = createRequire(import.meta.url);
+      _env = cjsRequire('cloudflare:workers').env ?? {};
+    } catch {
+      _env = {};
+    }
+  }
+  return _env;
+}
 
 function resetMonotonicTime() {
   // performance.timeOrigin is always 0 in Cloudflare Workers. Besides, Date.now() is 0 in global scope,
@@ -75,6 +91,7 @@ function extractOptions(endpoint: BrowserEndpoint): { sessionId?: string, keep_a
 }
 
 export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: { sessionId?: string, persistent?: boolean, keepAlive?: number }): string {
+  const env = getEnv();
   const bindingKey = typeof binding === 'string' ? binding : Object.keys(env).find(key => (env as any)[key] === binding);
   if (!bindingKey || !(bindingKey in env))
     throw new Error(`No binding found for ${binding}`);
@@ -101,6 +118,7 @@ async function createBrowser(transport: WebSocketTransport, options?: { persiste
 }
 
 function getBrowserBinding(endpoint: BrowserEndpoint): BrowserWorker {
+  const env = getEnv();
   if (typeof endpoint === 'string' || endpoint instanceof URL) {
     const url = endpoint instanceof URL ? endpoint : new URL(endpoint);
     const binding = url.searchParams.get('browser_binding') as BrowserBindingKey;
