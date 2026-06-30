@@ -5,6 +5,11 @@ import { env } from 'cloudflare:workers';
 
 export * from './types/types';
 
+// Re-export the Cloudflare.* CDP command types and pull in their augmentation
+// of Protocol.CommandParameters / CommandReturnValues so that
+// cdpSession.send('Cloudflare.*', ...) is typed.
+export * from './cloudflare-cdp';
+
 declare module './types/types' {
   interface Browser {
     /**
