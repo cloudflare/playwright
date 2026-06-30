@@ -158,7 +158,7 @@ export interface GetHandoffStateResponse {
 /**
  * @public
  */
-export interface GetSessionIdRequest {}
+export type GetSessionIdRequest = Record<string, never>;
 
 /**
  * @public
@@ -211,6 +211,9 @@ export interface GetLiveViewResponse {
 // ============================================================================
 
 declare module './types/protocol' {
+  // Augmenting the generated Protocol namespace requires a namespace to match
+  // its own declaration, so the no-namespace rule does not apply here.
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   export namespace Protocol {
     interface CommandParameters {
       'Cloudflare.handoff': HandoffRequest;
