@@ -145,18 +145,18 @@ export function history(endpoint: BrowserEndpoint): Promise<ClosedSession[]>;
  */
 export function limits(endpoint: BrowserEndpoint): Promise<LimitsResponse>;
 
-const playwright = {
-  chromium,
-  selectors,
-  request,
-  devices,
-  endpointURLString,
-  connect,
-  launch,
-  limits,
-  sessions,
-  history,
-  acquire,
+declare const playwright: {
+  chromium: typeof chromium;
+  selectors: typeof selectors;
+  request: typeof request;
+  devices: typeof devices;
+  endpointURLString: typeof endpointURLString;
+  connect: typeof connect;
+  launch: typeof launch;
+  limits: typeof limits;
+  sessions: typeof sessions;
+  history: typeof history;
+  acquire: typeof acquire;
 };
 
 export type Playwright = typeof playwright;

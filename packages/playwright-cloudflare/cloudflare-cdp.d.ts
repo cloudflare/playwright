@@ -181,6 +181,10 @@ export interface GetLiveViewRequest {
    * Live view mode: devtools, tab, or full. Defaults to "devtools".
    */
   mode?: LiveViewMode;
+  /**
+   * Expiration time in milliseconds. Defaults to 5 minutes.
+   */
+  expiresInMs?: number;
 }
 
 /**
@@ -229,5 +233,20 @@ declare module './types/protocol' {
       'Cloudflare.getSessionId': GetSessionIdResponse;
       'Cloudflare.getLiveView': GetLiveViewResponse;
     }
+  }
+}
+
+// Also augment `playwright-core`'s CDPSession so scripts that connect to
+// Browser Run from Node (via `chromium.connectOverCDP('/devtools/browser')` from `playwright-core`
+// directly) get typed `cdp.send('Cloudflare.*', ...)` by importing types from
+// `@cloudflare/playwright`. `send` is a method signature upstream, so overload
+// merging applies. Requires `playwright-core` as a resolvable peer.
+declare module 'playwright-core' {
+  interface CDPSession {
+    send(method: 'Cloudflare.handoff', params?: HandoffRequest): Promise<HandoffResponse>;
+    send(method: 'Cloudflare.handoffComplete', params?: HandoffCompleteRequest): Promise<HandoffCompleteResponse>;
+    send(method: 'Cloudflare.getHandoffState', params?: GetHandoffStateRequest): Promise<GetHandoffStateResponse>;
+    send(method: 'Cloudflare.getSessionId', params?: GetSessionIdRequest): Promise<GetSessionIdResponse>;
+    send(method: 'Cloudflare.getLiveView', params?: GetLiveViewRequest): Promise<GetLiveViewResponse>;
   }
 }
