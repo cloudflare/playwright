@@ -1,0 +1,31 @@
+packages/playwright-cloudflare/tests/package-lock.json
+  s_b7ef17dbf9d369::t_3dcda4c1b0a377 13,15-16,32-37,39-57,174-180,1137-1149,1178-1215,1261-1267,1288-1408,1416-1506,1521-1557,1568-1607,1618-1627,1670-1753,1769-1772,1775-1776,1779-2175,2193-2292,2295-2301,2309-2318,2326-2345,2393-2629,2688-2774,2788-2872,2881-2893,2904-2910,2921-2931,3010-3026
+packages/playwright-cloudflare/tests/package.json
+  s_b7ef17dbf9d369::t_c02fed6921d01f 8-11,14,16-17,19-36
+packages/playwright-cloudflare/tests/test-d/cloudflare-cdp.test-d.ts
+  s_7bc16223246d35::t_748697b89371d9 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a84a2a3f2b67ad7ee93e195914de6176fd6f1acc",
+  "prompts": {},
+  "sessions": {
+    "s_7bc16223246d35": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_092d97b1bffeSPEu3xOVwABUWJ",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Sofia Cardita <scardita@cloudflare.com>"
+    },
+    "s_b7ef17dbf9d369": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_093d38c57ffeMSAY46iuxfARzb",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Sofia Cardita <scardita@cloudflare.com>"
+    }
+  }
+}
