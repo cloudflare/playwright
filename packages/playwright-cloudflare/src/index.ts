@@ -32,13 +32,14 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
 // HACK this is a major hack, but we need it to make playwright-mcp and stagehand work without modifying their code extensively.
 // Both playwright-mcp and stagehand use playwright.chromium.connectOverCDP if a CDP endpoint is passed,
 // so we need to override it to use our own connectOverCDP implementation.
-(playwright.chromium as any).connectOverCDP = (endpointURLOrOptions: (ConnectOverCDPOptions & { wsEndpoint?: string }) | string) => {
+(playwright.chromium as any).connectOverCDP = (endpointURLOrOptions: (ConnectOverCDPOptions & { wsEndpoint?: string }) | string, options?: ConnectOverCDPOptions) => {
+  const connectOptions = typeof endpointURLOrOptions === 'string' ? options : endpointURLOrOptions;
   const wsEndpoint = typeof endpointURLOrOptions === 'string' ? endpointURLOrOptions : endpointURLOrOptions.wsEndpoint ?? endpointURLOrOptions.endpointURL;
   if (!wsEndpoint)
     throw new Error('No wsEndpoint provided');
 
   if (isExternalWebSocketEndpoint(wsEndpoint))
-    return connectToExternalWebSocket(wsEndpoint);
+    return connectToExternalWebSocket(wsEndpoint, connectOptions);
 
   const wsUrl = new URL(wsEndpoint);
   // by default, playwright.chromium.connectOverCDP enforces persistent to true (the default behavior upstream)
@@ -152,12 +153,12 @@ export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, op
   return url.toString();
 }
 
-async function createBrowser(transport: WebSocketTransport, options?: { persistent?: boolean }): Promise<Browser> {
+async function createBrowser(transport: WebSocketTransport, options?: { persistent?: boolean }, connectOptions?: Pick<ConnectOverCDPOptions, 'isLocal' | 'logger' | 'slowMo' | 'timeout'>): Promise<Browser> {
   return await transportZone.run(transport, async () => {
     const url = new URL(WS_FAKE_HOST);
     if (options?.persistent)
       url.searchParams.set('persistent', 'true');
-    const browser = await originalConnectOverCDP.call(playwright.chromium, url.toString(), {}) as Browser;
+    const browser = await originalConnectOverCDP.call(playwright.chromium, url.toString(), connectOptions ?? {}) as Browser;
     // sessionId is undefined for kitesurf browsers
     // The public types express that through the SessionlessBrowser overload of launch().
     browser.sessionId = () => transport.sessionId as string;
