@@ -113,6 +113,22 @@ test(`should create browser with persistent context on playwright.chromium.conne
   await browser.close();
 });
 
+test(`should route external WebSocket endpoints through CDP`, async ({ playwright }) => {
+  const originalWebSocket = globalThis.WebSocket;
+  class RejectingWebSocket {
+    addEventListener(type: string, listener: (event: unknown) => void) {
+      if (type === 'error')
+        queueMicrotask(() => listener(new Error('external CDP test')));
+    }
+  }
+  globalThis.WebSocket = RejectingWebSocket as unknown as typeof WebSocket;
+  try {
+    await expect(playwright.chromium.connectOverCDP('wss://example.test/devtools/browser')).rejects.toThrow('external CDP test');
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
 test(`should launch browser with no persistent context by default`, async ({ binding }) => {
   const url = endpointURLString(binding);
   const browser = await launch(url);
