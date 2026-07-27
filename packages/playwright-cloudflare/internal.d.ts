@@ -1,8 +1,8 @@
 import { isUnderTest } from 'playwright-core/lib/utils';
-import { BrowserBindingName } from './tests/src/utils.d.ts';
+import { BrowserBindingName } from './tests/src/utils.js';
 
-export * from './tests.d.ts';
-export { expect, _baseTest, Fixtures, mergeTests } from './types/test.d.ts';
+export * from './tests.js';
+export { expect, _baseTest, Fixtures, mergeTests } from './types/test.js';
 
 export type TestStatus = 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
 
