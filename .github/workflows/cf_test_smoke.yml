@@ -26,6 +26,12 @@ jobs:
           npm run build
           npm run test:deploy
 
+      - name: Type-check Cloudflare CDP types
+        run: |
+          cd packages/playwright-cloudflare/tests
+          npm ci
+          npm run test-types
+
       - name: Run Smoke Tests
         run: |
           cd packages/playwright-cloudflare
