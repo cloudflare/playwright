@@ -1,11 +1,11 @@
 import * as FS from 'fs';
-import type { Browser } from './types/types';
-import { chromium, request, selectors, devices } from './types/types';
+import type { Browser } from './types/types.js';
+import { chromium, request, selectors, devices } from './types/types.js';
 import { env } from 'cloudflare:workers';
 
-export * from './types/types';
+export * from './types/types.js';
 
-declare module './types/types' {
+declare module './types/types.js' {
   interface Browser {
     /**
      * Get the Browser Rendering session ID associated with this browser
@@ -140,18 +140,18 @@ export function history(endpoint: BrowserEndpoint): Promise<ClosedSession[]>;
  */
 export function limits(endpoint: BrowserEndpoint): Promise<LimitsResponse>;
 
-const playwright = {
-  chromium,
-  selectors,
-  request,
-  devices,
-  endpointURLString,
-  connect,
-  launch,
-  limits,
-  sessions,
-  history,
-  acquire,
+declare const playwright: {
+  chromium: typeof chromium;
+  selectors: typeof selectors;
+  request: typeof request;
+  devices: typeof devices;
+  endpointURLString: typeof endpointURLString;
+  connect: typeof connect;
+  launch: typeof launch;
+  limits: typeof limits;
+  sessions: typeof sessions;
+  history: typeof history;
+  acquire: typeof acquire;
 };
 
 export type Playwright = typeof playwright;
