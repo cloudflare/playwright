@@ -3,6 +3,11 @@
   "description": "Playwright for Cloudflare Browser Run (formerly Browser Rendering)",
   "version": "1.1.0-next",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cloudflare/playwright.git",
+    "directory": "packages/playwright-cloudflare"
+  },
   "type": "module",
   "exports": {
     ".": {
