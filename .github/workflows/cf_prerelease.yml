@@ -22,4 +22,5 @@ jobs:
           git submodule update --init
           cd packages/playwright-cloudflare
           npm run build
+          npm run test:node-import
           npx pkg-pr-new publish

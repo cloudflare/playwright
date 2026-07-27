@@ -29,6 +29,7 @@
     "ci:tests": "cd tests && npm ci",
     "build:bundles": "node utils/build_bundles.js",
     "build:types": "node utils/copy_types.js",
+    "test:node-import": "node tests/node-import.mjs",
     "build": "npm run generate-injected:core && npm run ci:bundles && npm run build:bundles && npm run build:types && npx vite build",
     "test:generate:worker": "node ./utils/generate_worker_tests.js && cd tests && npx vite build",
     "test:generate:proxy": "node ./utils/generate_proxy_tests.js",
