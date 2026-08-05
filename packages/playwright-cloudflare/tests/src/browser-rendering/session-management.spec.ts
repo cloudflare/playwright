@@ -97,6 +97,9 @@ test(`should create endpoint url`, async ({ binding }) => {
 
   const url3 = endpointURLString(binding, { sessionId: 'test-session-id' });
   expect(url3).toContain('http://fake.host/v1/devtools/browser/test-session-id?browser_binding=BROWSER');
+
+  const url4 = endpointURLString(binding, { browser: 'kitesurf' });
+  expect(url4).toBe('http://fake.host/v1/devtools/browser?browser_binding=BROWSER&browser=kitesurf');
 });
 
 test(`should create browser with persistent context on playwright.chromium.connectOverCDP`, async ({ binding, playwright }) => {

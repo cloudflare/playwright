@@ -22,6 +22,16 @@ declare module './types/types' {
 }
 
 /**
+ * Returned by `launch()` when `browser: 'kitesurf'` is passed, since in that case no
+ * session is acquired and the connection is made straight to the devtools endpoint.
+ *
+ * @public
+ */
+export interface SessionlessBrowser extends Omit<Browser, 'sessionId'> {
+  sessionId(): undefined;
+}
+
+/**
  * @public
  */
 export interface BrowserWorker {
@@ -93,6 +103,7 @@ export interface WorkersLaunchOptions {
   keep_alive?: number; // milliseconds to keep browser alive even if it has no activity (from 10_000ms to 600_000ms, default is 60_000)
   recording?: boolean;
   lab?: boolean;
+  browser?: 'kitesurf'; // when set to 'kitesurf', no session is acquired and the connection is made directly to /v1/devtools/browser
 }
 
 /**
@@ -114,6 +125,7 @@ export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, op
 export function connect(endpoint: string | URL): Promise<Browser>;
 export function connect(endpoint: BrowserWorker, sessionIdOrOptions: string | WorkersConnectOptions): Promise<Browser>;
 
+export function launch(endpoint: BrowserEndpoint, options: WorkersLaunchOptions & { browser: 'kitesurf' }): Promise<SessionlessBrowser>;
 export function launch(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<Browser>;
 
 export function acquire(endpoint: BrowserEndpoint, options?: WorkersLaunchOptions): Promise<AcquireResponse>;

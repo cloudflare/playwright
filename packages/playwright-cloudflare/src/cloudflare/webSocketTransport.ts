@@ -9,7 +9,7 @@ export class WebSocketTransport implements ConnectionTransport {
   private _ws: WebSocket;
   onmessage?: (message: ProtocolResponse) => void;
   onclose?: () => void;
-  readonly sessionId: string;
+  readonly sessionId: string | undefined;
 
   static async connect(): Promise<WebSocketTransport> {
     // read the endpoint and options injected in cliend side
@@ -19,7 +19,7 @@ export class WebSocketTransport implements ConnectionTransport {
     return transport;
   }
 
-  constructor(ws: WebSocket, sessionId: string) {
+  constructor(ws: WebSocket, sessionId: string | undefined) {
     this._ws = ws;
     this.sessionId = sessionId;
     this._ws.addEventListener('message', event => {
@@ -30,7 +30,7 @@ export class WebSocketTransport implements ConnectionTransport {
     });
     this._ws.addEventListener('error', e => {
       // eslint-disable-next-line no-console
-      console.error(`Websocket error: SessionID: ${sessionId}`, e);
+      console.error(`Websocket error${sessionId ? `: SessionID: ${sessionId}` : ''}`, e);
     });
   }
 
@@ -51,6 +51,6 @@ export class WebSocketTransport implements ConnectionTransport {
   }
 
   toString(): string {
-    return this.sessionId;
+    return this.sessionId ?? '';
   }
 }

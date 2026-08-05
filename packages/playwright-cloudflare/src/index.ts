@@ -45,11 +45,13 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
     : launch(wsUrl.toString());
 };
 
-async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: string, persistent?: boolean }): Promise<WebSocket> {
+async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId?: string, persistent?: boolean, browser?: string }): Promise<WebSocket> {
   resetMonotonicTime();
-  const url = new URL(`${HTTP_FAKE_HOST}/v1/devtools/browser/${options.sessionId}`);
+  const url = new URL(`${HTTP_FAKE_HOST}/v1/devtools/browser${options.sessionId ? `/${options.sessionId}` : ''}`);
   if (options.persistent)
     url.searchParams.set('persistent', 'true');
+  if (options.browser)
+    url.searchParams.set('browser', options.browser);
   const response = await getBrowserBinding(endpoint).fetch(url, {
     headers: {
       'Upgrade': 'websocket',
@@ -61,7 +63,7 @@ async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId: 
   return webSocket;
 }
 
-function extractOptions(endpoint: BrowserEndpoint): { sessionId?: string, keep_alive?: number, persistent?: boolean } {
+function extractOptions(endpoint: BrowserEndpoint): { sessionId?: string, keep_alive?: number, persistent?: boolean, browser?: 'kitesurf' } {
   if (typeof endpoint === 'string' || endpoint instanceof URL) {
     const url = endpoint instanceof URL ? endpoint : new URL(endpoint);
     // Support both old format (?browser_session=) and new format (/v1/devtools/browser/:sessionId)
@@ -69,12 +71,13 @@ function extractOptions(endpoint: BrowserEndpoint): { sessionId?: string, keep_a
     const sessionId = pathMatch?.[1] ?? url.searchParams.get('browser_session') ?? undefined;
     const keepAlive = url.searchParams.has('keep_alive') ? parseInt(url.searchParams.get('keep_alive')!, 10) : undefined;
     const persistent = url.searchParams.has('persistent');
-    return { sessionId, keep_alive: keepAlive, persistent };
+    const browser = (url.searchParams.get('browser') as 'kitesurf' | null) ?? undefined;
+    return { sessionId, keep_alive: keepAlive, persistent, browser };
   }
   return {};
 }
 
-export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: { sessionId?: string, persistent?: boolean, keepAlive?: number }): string {
+export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: { sessionId?: string, persistent?: boolean, keepAlive?: number, browser?: 'kitesurf' }): string {
   const bindingKey = typeof binding === 'string' ? binding : Object.keys(env).find(key => (env as any)[key] === binding);
   if (!bindingKey || !(bindingKey in env))
     throw new Error(`No binding found for ${binding}`);
@@ -82,6 +85,8 @@ export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, op
   const sessionPath = options?.sessionId ? `/${options.sessionId}` : '';
   const url = new URL(`${HTTP_FAKE_HOST}/v1/devtools/browser${sessionPath}`);
   url.searchParams.set('browser_binding', bindingKey);
+  if (options?.browser)
+    url.searchParams.set('browser', options.browser);
   if (options?.persistent)
     url.searchParams.set('persistent', 'true');
   if (options?.keepAlive)
@@ -95,7 +100,9 @@ async function createBrowser(transport: WebSocketTransport, options?: { persiste
     if (options?.persistent)
       url.searchParams.set('persistent', 'true');
     const browser = await originalConnectOverCDP.call(playwright.chromium, url.toString(), {}) as Browser;
-    browser.sessionId = () => transport.sessionId;
+    // sessionId is undefined for kitesurf browsers
+    // The public types express that through the SessionlessBrowser overload of launch().
+    browser.sessionId = () => transport.sessionId as string;
     return browser;
   });
 }
@@ -126,9 +133,11 @@ export async function connect(endpoint: BrowserEndpoint, sessionIdOrOptions?: st
 }
 
 export async function launch(endpoint: BrowserEndpoint, launchOptions?: WorkersLaunchOptions & { persistent?: boolean }): Promise<Browser> {
-  const { sessionId } = await acquire(endpoint, launchOptions);
-  const options = { ...extractOptions(endpoint), ...launchOptions, sessionId };
-  const webSocket = await connectDevtools(getBrowserBinding(endpoint), options);
+  const options = { ...extractOptions(endpoint), ...launchOptions };
+  // kitesurf browsers acquire and connect in one go, skip acquire
+  // and connect straight to the devtools endpoint without a session id
+  const sessionId = options.browser === 'kitesurf' ? undefined : (await acquire(endpoint, launchOptions)).sessionId;
+  const webSocket = await connectDevtools(getBrowserBinding(endpoint), { ...options, sessionId });
   const transport = new WebSocketTransport(webSocket, sessionId);
   // keeps the endpoint and options for client -> server async communication
   const browser = await createBrowser(transport, options) as Browser & ChannelOwner;
