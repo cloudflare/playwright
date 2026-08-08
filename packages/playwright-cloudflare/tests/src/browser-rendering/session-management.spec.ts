@@ -113,6 +113,56 @@ test(`should create browser with persistent context on playwright.chromium.conne
   await browser.close();
 });
 
+test(`should route external WebSocket endpoints through CDP`, async ({ playwright }) => {
+  const originalWebSocket = globalThis.WebSocket;
+  class RejectingWebSocket {
+    addEventListener(type: string, listener: (event: unknown) => void) {
+      if (type === 'error')
+        queueMicrotask(() => listener(new Error('external CDP test')));
+    }
+    removeEventListener() {}
+  }
+  globalThis.WebSocket = RejectingWebSocket as unknown as typeof WebSocket;
+  try {
+    await expect(playwright.chromium.connectOverCDP('wss://example.test/devtools/browser')).rejects.toThrow('connection failed');
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
+test(`should reject when external WebSocket closes before opening`, async ({ playwright }) => {
+  const originalWebSocket = globalThis.WebSocket;
+  class ClosingWebSocket {
+    addEventListener(type: string, listener: (event: unknown) => void) {
+      if (type === 'close')
+        queueMicrotask(() => listener(new Event('close')));
+    }
+    removeEventListener() {}
+    close() {}
+  }
+  globalThis.WebSocket = ClosingWebSocket as unknown as typeof WebSocket;
+  try {
+    await expect(playwright.chromium.connectOverCDP('wss://example.test/devtools/browser')).rejects.toThrow('closed before opening');
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
+test(`should time out while opening an external WebSocket`, async ({ playwright }) => {
+  const originalWebSocket = globalThis.WebSocket;
+  class HangingWebSocket {
+    addEventListener() {}
+    removeEventListener() {}
+    close() {}
+  }
+  globalThis.WebSocket = HangingWebSocket as unknown as typeof WebSocket;
+  try {
+    await expect(playwright.chromium.connectOverCDP('wss://example.test/devtools/browser', { timeout: 1 })).rejects.toThrow('Timed out');
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
 test(`should launch browser with no persistent context by default`, async ({ binding }) => {
   const url = endpointURLString(binding);
   const browser = await launch(url);

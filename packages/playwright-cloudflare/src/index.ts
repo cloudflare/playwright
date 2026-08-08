@@ -32,10 +32,15 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
 // HACK this is a major hack, but we need it to make playwright-mcp and stagehand work without modifying their code extensively.
 // Both playwright-mcp and stagehand use playwright.chromium.connectOverCDP if a CDP endpoint is passed,
 // so we need to override it to use our own connectOverCDP implementation.
-(playwright.chromium as any).connectOverCDP = (endpointURLOrOptions: (ConnectOverCDPOptions & { wsEndpoint?: string }) | string) => {
+(playwright.chromium as any).connectOverCDP = (endpointURLOrOptions: (ConnectOverCDPOptions & { wsEndpoint?: string }) | string, options?: ConnectOverCDPOptions) => {
+  const connectOptions = typeof endpointURLOrOptions === 'string' ? options : endpointURLOrOptions;
   const wsEndpoint = typeof endpointURLOrOptions === 'string' ? endpointURLOrOptions : endpointURLOrOptions.wsEndpoint ?? endpointURLOrOptions.endpointURL;
   if (!wsEndpoint)
     throw new Error('No wsEndpoint provided');
+
+  if (isExternalWebSocketEndpoint(wsEndpoint))
+    return connectToExternalWebSocket(wsEndpoint, connectOptions);
+
   const wsUrl = new URL(wsEndpoint);
   // by default, playwright.chromium.connectOverCDP enforces persistent to true (the default behavior upstream)
   if (!wsUrl.searchParams.has('persistent'))
@@ -44,6 +49,60 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
     ? connect(wsUrl.toString())
     : launch(wsUrl.toString());
 };
+
+function isExternalWebSocketEndpoint(endpoint: string): boolean {
+  return endpoint.startsWith('ws://') || endpoint.startsWith('wss://');
+}
+
+async function connectToExternalWebSocket(wsEndpoint: string, options?: ConnectOverCDPOptions): Promise<Browser> {
+  resetMonotonicTime();
+  const webSocket = new WebSocket(wsEndpoint);
+  await waitForExternalWebSocketOpen(webSocket, options?.timeout ?? 30_000);
+  const sessionId = new URL(wsEndpoint).searchParams.get('browser_session') ?? '';
+  const transport = new WebSocketTransport(webSocket, sessionId);
+  const browserOptions = options && {
+    isLocal: options.isLocal,
+    logger: options.logger,
+    slowMo: options.slowMo,
+    timeout: options.timeout,
+  };
+  return await createBrowser(transport, { persistent: true }, browserOptions);
+}
+
+function waitForExternalWebSocketOpen(webSocket: WebSocket, timeout: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      if (timeoutId)
+        clearTimeout(timeoutId);
+      webSocket.removeEventListener('open', onOpen);
+      webSocket.removeEventListener('error', onError);
+      webSocket.removeEventListener('close', onClose);
+    };
+    const onOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error('External CDP WebSocket connection failed'));
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error('External CDP WebSocket closed before opening'));
+    };
+    webSocket.addEventListener('open', onOpen);
+    webSocket.addEventListener('error', onError);
+    webSocket.addEventListener('close', onClose);
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        cleanup();
+        webSocket.close();
+        reject(new Error(`Timed out after ${timeout}ms while connecting to external CDP endpoint`));
+      }, timeout);
+    }
+  });
+}
 
 async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId?: string, persistent?: boolean, browser?: string }): Promise<WebSocket> {
   resetMonotonicTime();
@@ -94,12 +153,12 @@ export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, op
   return url.toString();
 }
 
-async function createBrowser(transport: WebSocketTransport, options?: { persistent?: boolean }): Promise<Browser> {
+async function createBrowser(transport: WebSocketTransport, options?: { persistent?: boolean }, connectOptions?: Pick<ConnectOverCDPOptions, 'isLocal' | 'logger' | 'slowMo' | 'timeout'>): Promise<Browser> {
   return await transportZone.run(transport, async () => {
     const url = new URL(WS_FAKE_HOST);
     if (options?.persistent)
       url.searchParams.set('persistent', 'true');
-    const browser = await originalConnectOverCDP.call(playwright.chromium, url.toString(), {}) as Browser;
+    const browser = await originalConnectOverCDP.call(playwright.chromium, url.toString(), connectOptions ?? {}) as Browser;
     // sessionId is undefined for kitesurf browsers
     // The public types express that through the SessionlessBrowser overload of launch().
     browser.sessionId = () => transport.sessionId as string;
