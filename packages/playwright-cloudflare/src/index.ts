@@ -6,11 +6,12 @@ import { setTimeOrigin, timeOrigin } from 'playwright-core/lib/utils/isomorphic/
 import { transportZone, WebSocketTransport } from './cloudflare/webSocketTransport';
 import { wrapClientApis } from './cloudflare/wrapClientApis';
 import { unsupportedOperations } from './cloudflare/unsupportedOperations';
+import { encodeGuardrailsHeader, GUARDRAILS_HEADER } from './cloudflare/guardrails';
 import * as packageJson from '../package.json';
 
 import type { ProtocolRequest } from 'playwright-core/lib/server/transport';
 import type { CRBrowser } from 'playwright-core/lib/server/chromium/crBrowser';
-import type { AcquireResponse, ActiveSession, Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, ConnectOverCDPOptions, HistoryResponse, LimitsResponse, SessionsResponse, WorkersLaunchOptions } from '..';
+import type { AcquireResponse, ActiveSession, Browser, BrowserBindingKey, BrowserEndpoint, BrowserWorker, ClosedSession, ConnectOverCDPOptions, HistoryResponse, LimitsResponse, SessionGuardrails, SessionsResponse, WorkersLaunchOptions } from '..';
 import type { ChannelOwner } from 'playwright-core/lib/client/channelOwner';
 
 function resetMonotonicTime() {
@@ -45,20 +46,30 @@ const originalConnectOverCDP = playwright.chromium.connectOverCDP;
     : launch(wsUrl.toString());
 };
 
-async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId?: string, persistent?: boolean, browser?: string }): Promise<WebSocket> {
+async function connectDevtools(endpoint: BrowserEndpoint, options: { sessionId?: string, persistent?: boolean, browser?: string, guardrails?: SessionGuardrails }): Promise<WebSocket> {
   resetMonotonicTime();
   const url = new URL(`${HTTP_FAKE_HOST}/v1/devtools/browser${options.sessionId ? `/${options.sessionId}` : ''}`);
   if (options.persistent)
     url.searchParams.set('persistent', 'true');
   if (options.browser)
     url.searchParams.set('browser', options.browser);
+  // Only on the upgrade that acquires. Connecting to an existing session carries the policy
+  // it was acquired with, and core rejects a session-scoped one there because guardrails are
+  // latched at acquire time and cannot be changed afterwards.
+  const guardrails = options.sessionId ? undefined : options.guardrails;
   const response = await getBrowserBinding(endpoint).fetch(url, {
     headers: {
       'Upgrade': 'websocket',
       'cf-brapi-client': `@cloudflare/playwright@${packageJson.version}`,
+      ...(guardrails ? { [GUARDRAILS_HEADER]: encodeGuardrailsHeader(guardrails) } : {}),
     },
   });
-  const webSocket = response.webSocket!;
+  // A refused upgrade has no websocket to accept, so surface what core said instead of
+  // failing on a null dereference further down.
+  if (!response.webSocket)
+    throw new Error(`Unable to connect to browser: code: ${response.status}: message: ${await response.text()}`);
+
+  const webSocket = response.webSocket;
   webSocket.accept();
   return webSocket;
 }
@@ -164,8 +175,20 @@ export async function acquire(endpoint: BrowserEndpoint, options?: WorkersLaunch
   if (options?.lab)
     searchParams.set("lab", options.lab.toString());
 
-  const acquireUrl = `${HTTP_FAKE_HOST}/v1/acquire?${searchParams.toString()}`;
-  const res = await getBrowserBinding(endpoint).fetch(acquireUrl);
+  // POST /v1/devtools/browser rather than GET /v1/acquire: it takes the same query
+  // parameters and is the only acquire endpoint that accepts a guardrails policy.
+  const acquireUrl = `${HTTP_FAKE_HOST}/v1/devtools/browser?${searchParams.toString()}`;
+  const res = await getBrowserBinding(endpoint).fetch(acquireUrl, {
+    method: 'POST',
+    // Guardrails travel in the body here, unlike the websocket upgrades that have to
+    // use a header.
+    ...(options?.guardrails
+      ? {
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ guardrails: options.guardrails }),
+      }
+      : {}),
+  });
   const status = res.status;
   const text = await res.text();
   if (status !== 200) {
