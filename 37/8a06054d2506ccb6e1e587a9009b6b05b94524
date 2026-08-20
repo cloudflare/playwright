@@ -1,0 +1,29 @@
+packages/playwright-cloudflare/index.d.ts
+  s_f38d204fd3989e::t_c6d2977b96b1e9 34-64,138-140,157-159
+packages/playwright-cloudflare/tests/test-d/guardrails.test-d.ts
+  s_704b6cf7846353::t_cf58895be4b8ed 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "378a06054d2506ccb6e1e587a9009b6b05b94524",
+  "prompts": {},
+  "sessions": {
+    "s_704b6cf7846353": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_feb019f4effecCBTAuicy73qFe",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Sofia Cardita <scardita@cloudflare.com>"
+    },
+    "s_f38d204fd3989e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_feb000989ffelfRMc8qNXWb0zR",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Sofia Cardita <scardita@cloudflare.com>"
+    }
+  }
+}
