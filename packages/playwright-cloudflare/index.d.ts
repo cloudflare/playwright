@@ -32,6 +32,37 @@ export interface SessionlessBrowser extends Omit<Browser, 'sessionId'> {
 }
 
 /**
+ * Guardrails that restrict the outbound traffic of a browser session.
+ *
+ * @remarks
+ * Set when the session is acquired and latched for its lifetime: they cannot be
+ * changed or removed by later connections. An empty `allowedDomains` denies all
+ * outbound traffic, and an invalid policy fails closed rather than allowing
+ * unrestricted access.
+ *
+ * @public
+ */
+export interface SessionGuardrails {
+  /**
+   * Hostname patterns the browser may access, max 50.
+   *
+   * @remarks
+   * Each entry is a bare hostname (no scheme, port or path) and may contain a
+   * single `*` wildcard. Prefer `*.example.com` (subdomain wildcard) over
+   * `*example.com` (prefix wildcard), which also matches lookalikes such as
+   * `evilexample.com`.
+   */
+  allowedDomains?: string[];
+  /**
+   * Preset names or HTTPS URLs of newline-separated hostname lists, max 4.
+   *
+   * @remarks
+   * The available preset is `common-cdns`.
+   */
+  allowedDomainSets?: string[];
+}
+
+/**
  * @public
  */
 export interface BrowserWorker {
@@ -104,6 +135,9 @@ export interface WorkersLaunchOptions {
   recording?: boolean;
   lab?: boolean;
   browser?: 'kitesurf'; // when set to 'kitesurf', no session is acquired and the connection is made directly to /v1/devtools/browser
+  // restricts the outbound traffic of the session being acquired, latched for
+  // its lifetime
+  guardrails?: SessionGuardrails;
 }
 
 /**
@@ -120,7 +154,9 @@ type KeysByValueType<T, ValueType> = {
 
 export type BrowserBindingKey = KeysByValueType<typeof env, BrowserWorker>;
 
-export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: WorkersLaunchOptions | WorkersConnectOptions): string;
+// `guardrails` is excluded: they are sent in the acquire request body, so an endpoint
+// URL has no way to carry them and accepting one here would silently drop it.
+export function endpointURLString(binding: BrowserWorker | BrowserBindingKey, options?: Omit<WorkersLaunchOptions, 'guardrails'> | WorkersConnectOptions): string;
 
 export function connect(endpoint: string | URL): Promise<Browser>;
 export function connect(endpoint: BrowserWorker, sessionIdOrOptions: string | WorkersConnectOptions): Promise<Browser>;
