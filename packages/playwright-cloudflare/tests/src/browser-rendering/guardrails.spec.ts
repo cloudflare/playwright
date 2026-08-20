@@ -2,7 +2,7 @@ import { launch, acquire, sessions } from '@cloudflare/playwright';
 
 import { test, expect } from '../server/workerFixtures';
 
-test(`should allow navigation to an allowed domain and block everything else`, async ({ binding, server }) => {
+test(`should allow navigation to an allowed domain and block everything else @smoke`, async ({ binding, server }) => {
   const browser = await launch(binding, { guardrails: { allowedDomains: [server.HOSTNAME] } });
   try {
     const page = await browser.newPage();
