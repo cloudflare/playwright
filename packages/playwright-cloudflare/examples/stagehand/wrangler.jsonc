@@ -2,7 +2,7 @@
   "name": "stagehand-example",
   "main": "src/worker/index.ts",
   "compatibility_flags": ["nodejs_compat"],
-  "compatibility_date": "2025-09-17",
+  "compatibility_date": "2026-04-14",
   "workers_dev": true,
   "upload_source_maps": true,
   "observability": {
