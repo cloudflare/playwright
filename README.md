@@ -31,6 +31,25 @@ compatibility_flags = [ "nodejs_compat" ]
 browser = { binding = "MYBROWSER" }
 ```
 
+## Route selected browser requests through your Worker
+
+Browser Run RPC bindings accept an `outboundByHost` map. Each value is a Worker
+Fetcher created by the caller. Browser Run sends requests for that hostname to
+the Fetcher, so the request can use the caller's authentication or private
+network access.
+
+```ts
+const browser = await launch(env.MYBROWSER, {
+  outboundByHost: {
+    'app.example.com': ctx.exports.MyApp({ props: {} }),
+  },
+});
+```
+
+Create the Fetcher and launch the browser in the same Worker invocation. The
+map carries live Worker capabilities and is not supported by URL endpoints or
+legacy HTTP-only bindings.
+
 ## CDP Protocol Support
 
 [Browser Run now has full CDP support](https://developers.cloudflare.com/changelog/post/2026-04-10-browser-rendering-cdp-endpoint/),
