@@ -1,0 +1,34 @@
+name: "Playwright for Cloudflare - Stagehand Typecheck"
+
+on:
+  pull_request:
+    paths:
+      - "packages/playwright-cloudflare/examples/stagehand/**"
+      - ".github/workflows/cf_typecheck_stagehand.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/playwright-cloudflare/examples/stagehand/**"
+      - ".github/workflows/cf_typecheck_stagehand.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/playwright-cloudflare/examples/stagehand
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: packages/playwright-cloudflare/examples/stagehand/package-lock.json
+      - run: npm ci
+      - run: npx wrangler types
+      - run: npm run typecheck
