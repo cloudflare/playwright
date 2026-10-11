@@ -1,0 +1,33 @@
+name: "Playwright for Cloudflare - Unit Tests"
+
+on:
+  pull_request:
+    paths:
+      - "packages/playwright-cloudflare/src/**"
+      - "packages/playwright-cloudflare/tests/**"
+      - ".github/workflows/cf_unit_tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/playwright-cloudflare/src/**"
+      - "packages/playwright-cloudflare/tests/**"
+      - ".github/workflows/cf_unit_tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/playwright-cloudflare/tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: npm
+          cache-dependency-path: packages/playwright-cloudflare/tests/package-lock.json
+      - run: npm ci
+      - run: npm run test:unit
