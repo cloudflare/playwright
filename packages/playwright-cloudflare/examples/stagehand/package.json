@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "npm run build && vite preview",
     "deploy": "npm run build && wrangler deploy"
   },

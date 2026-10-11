@@ -10,6 +10,7 @@ type WorkersAIOptions = AiOptions & {
 };
 
 const modelId = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+type ModelInputs = AiModels[typeof modelId]["inputs"];
 
 // Basic implementation of LLMClient for Workers AI.
 // This uses @cf/meta/llama-3.3-70b-instruct-fp8-fast model. If you want to
@@ -29,16 +30,17 @@ export class WorkersAIClient extends LLMClient {
   async createChatCompletion<T>({ options }: CreateChatCompletionOptions): Promise<T> {
     const schema = options.response_model?.schema;
     this.options?.logger?.({ category: "workersai", message: "thinking..." });
-    const { response } = await this.binding.run(this.modelName as keyof AiModels, {
+    // Stagehand's message and tool types are broader than the Workers AI declarations.
+    const inputs = {
       messages: options.messages,
-      // @ts-ignore
       tools: options.tools,
       response_format: schema ? {
         type: "json_schema",
         json_schema: zodToJsonSchema(schema),
       } : undefined,
       temperature: 0,
-    }, this.options) as AiTextGenerationOutput;
+    } as unknown as ModelInputs;
+    const { response } = await this.binding.run(modelId, inputs, this.options) as AiTextGenerationOutput;
     this.options?.logger?.({ category: "workersai", message: "completed thinking!" });
 
     return {
