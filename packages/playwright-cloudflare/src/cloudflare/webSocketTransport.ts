@@ -7,6 +7,7 @@ export const transportZone = new AsyncLocalStorage<WebSocketTransport>();
 
 export class WebSocketTransport implements ConnectionTransport {
   private _ws: WebSocket;
+  private _closing = false;
   onmessage?: (message: ProtocolResponse) => void;
   onclose?: () => void;
   readonly sessionId: string | undefined;
@@ -26,19 +27,26 @@ export class WebSocketTransport implements ConnectionTransport {
       this.onmessage?.(JSON.parse(event.data) as ProtocolResponse);
     });
     this._ws.addEventListener('close', () => {
+      this._closing = true;
       this.onclose?.();
     });
     this._ws.addEventListener('error', e => {
+      if (this._closing)
+        return;
       // eslint-disable-next-line no-console
       console.error(`Websocket error${sessionId ? `: SessionID: ${sessionId}` : ''}`, e);
     });
   }
 
   send(message: ProtocolRequest): void {
+    // Browser Run can raise an error event while completing a requested shutdown.
+    if (message.method === 'Browser.close')
+      this._closing = true;
     this._ws.send(JSON.stringify(message));
   }
 
   close(): void {
+    this._closing = true;
     this._ws.close();
     this.onclose?.();
   }
